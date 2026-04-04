@@ -1,0 +1,712 @@
+{
+  "depouillement": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "dissipation-dun-anneau": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "la-main-qui-vole": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "annulation": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "resistance-accrue": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "ange-gardien": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "arc-electrique": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "boule-acidifiee": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "boule-de-feu": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "cerceau-de-feu": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "coup-de-vent": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "cumulonimbus": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "desintegration": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": false
+  },
+  "destruction": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "dommage": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "dommage-superieur": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "don-adverse": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "eclair": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "energie-acide": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "eruption-acide": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "etouffement": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "explosion-energetique": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "flechette-acide": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "fleche-magique": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "fouet-enflamme": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "globe-infernal": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "grenacide": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "lance-flamme": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "main-brulante": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 5
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "missile-nucleaire": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "projectile-magique": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "pulverisateur": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "rayon-acide": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "rayon-laser": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "souffle-enflamme": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "spirale-de-feu": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "succion-vampirique": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "super-boule-de-feu": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "torpille": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "tourbillon": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "transmission-vitale": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "violence": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "carquois-de-fleches-magiques": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": true
+  },
+  "champ-declairs": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": true
+  },
+  "destruction-massive": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "disco-laser": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "pluie-de-boules-de-feu": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": true
+  },
+  "souffrance-empirique": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": true
+  },
+  "vapeur-explosive": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "fontaine": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": false
+  },
+  "potion-denergie": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "potion-denergie-majeure": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "potion-denergie-superieure": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "potion-denergie-supreme": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "puissance-vitale": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": false
+  },
+  "puissance-vitale-majeure": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": false
+  },
+  "puissance-vitale-superieure": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": false
+  },
+  "puissance-vitale-supreme": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": false
+  },
+  "colere-du-magicien": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "sommeil": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
+  "telepathie": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": true
+  },
+  "transfert-de-corps": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "vitesse-double": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "malediction": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 2,
+    "mirrorAllowed": true
+  },
+  "champ-vampirique-demmerlaus": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": true
+  },
+  "intervention-divine-demmerlaus": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 2,
+    "mirrorAllowed": false
+  },
+  "sacrifice-demmerlaus": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 2,
+    "mirrorAllowed": false
+  },
+  "sanctuaire-demmerlaus": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "tenebres-demmerlaus": {
+    "resistance": {
+      "color": "yellow",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "miroir": {
+    "resistance": {
+      "color": "red",
+      "rollsRequired": 0
+    },
+    "resistanceAccrueAllowed": false,
+    "annulationAllowed": false,
+    "annulationCardsRequired": 0,
+    "mirrorAllowed": false
+  },
+  "au-seuil-de-la-mort": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  }
+}

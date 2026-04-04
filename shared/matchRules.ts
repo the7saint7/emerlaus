@@ -62,7 +62,6 @@ export function assignHost(match: MatchState, userId?: string): void {
 export function seedSkeletonStats(match: MatchState): void {
   for (const seat of match.seats) {
     seat.handCount = 4;
-    seat.hp = 10;
-    seat.maxHp = 50;
+    seat.hp = 50;
   }
 }

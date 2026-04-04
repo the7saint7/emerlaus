@@ -32,11 +32,12 @@ function renderMessage(message: ChatMessage): string {
 }
 
 export function renderChatView({ chatMessages, draft, expanded }: ChatViewParams): string {
-  const visibleMessages = expanded ? chatMessages : chatMessages.slice(-2);
+  const playerMessages = chatMessages.filter((message) => message.userId !== "dealer");
+  const visibleMessages = expanded ? playerMessages : playerMessages.slice(-2);
   const messageMarkup =
     visibleMessages.length > 0
       ? visibleMessages.map((message) => renderMessage(message)).join("")
-      : `<p class="chat-empty">No messages yet.</p>`;
+      : `<p class="chat-empty">No player messages yet.</p>`;
 
   return `
     <section class="chat-panel ${expanded ? "chat-panel--expanded" : "chat-panel--compact"}" data-chat-panel="true">

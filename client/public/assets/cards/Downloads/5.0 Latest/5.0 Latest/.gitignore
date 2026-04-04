@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+# Ignore all .env files except .env.example
+.env*
+!.env.example
+# Explicitly ignore these specific .env files (reference only, not loaded by bot)
+.env.live
+.env.test
+.env (Live)
+.env (Test)
+characters_repo/
+vn_states/
+vn_cache/
+tf_outfits.json
+tf_backgrounds.json
+tf_history_snapshot.json
+tfbot_gacha.sqlite3
+tfbot_gacha_old.sqlite3
+submissions/
+# Legacy state files (migrated to vn_states/)
+tf_state.json
+tf_stats.json
+transform_replies.json
+tf_reroll.json
+games/states/

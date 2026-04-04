@@ -1,5 +1,6 @@
 import "./styles.css";
 import { createApp } from "./src/app";
+import { createCardBandMapperApp } from "./src/dev/cardBandMapperApp";
 
 const rootElement = document.querySelector<HTMLDivElement>("#app");
 
@@ -7,7 +8,10 @@ if (rootElement == null) {
   throw new Error("App root element not found");
 }
 
-createApp(rootElement).catch((error) => {
+const isBandMapper = new URLSearchParams(window.location.search).get("dev") === "band-mapper";
+const boot = isBandMapper ? createCardBandMapperApp : createApp;
+
+boot(rootElement).catch((error) => {
   console.error(error);
   rootElement.innerHTML = `
     <main class="crash-screen">

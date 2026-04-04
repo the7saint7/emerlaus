@@ -1,8 +1,12 @@
 import type {
+  AnnounceDiceRollRequest,
   JoinResponse,
+  KickPlayerRequest,
   LocalUserProfile,
   MatchConfigResponse,
-  MatchState
+  MatchState,
+  PendingActionResponseRequest,
+  PlayCardRequest
 } from "../../../shared/types";
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -39,8 +43,10 @@ export async function joinMatch(instanceId: string, profile: LocalUserProfile): 
   return parseJson<JoinResponse>(response);
 }
 
-export async function fetchMatch(instanceId: string): Promise<MatchState> {
-  const response = await fetch(`/api/matches/${instanceId}`);
+export async function fetchMatch(instanceId: string, playerSessionToken: string): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}`, {
+    headers: buildPlayerHeaders(playerSessionToken)
+  });
   return parseJson<MatchState>(response);
 }
 
@@ -61,6 +67,20 @@ export async function requestStartMatch(instanceId: string, playerSessionToken: 
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify({})
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function requestKickPlayer(
+  instanceId: string,
+  playerSessionToken: string,
+  request: KickPlayerRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/host/kick-player`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
   });
 
   return parseJson<MatchState>(response);
@@ -87,6 +107,48 @@ export async function disconnectFromMatch(instanceId: string, playerSessionToken
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify({})
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function playCard(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PlayCardRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/play-card`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function announceDiceRoll(
+  instanceId: string,
+  playerSessionToken: string,
+  request: AnnounceDiceRollRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/dice-roll`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function respondToPendingAction(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingActionResponseRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/respond`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
   });
 
   return parseJson<MatchState>(response);

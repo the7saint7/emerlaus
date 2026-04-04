@@ -1,20 +1,33 @@
 import express from "express";
 import type {
   AddBotRequest,
+  AnnounceDiceRollRequest,
   DisconnectRequest,
   DiscordAuthTokenRequest,
   JoinRequest,
+  KickPlayerRequest,
   MatchConfigResponse,
+  PendingActionResponseRequest,
+  PlayCardRequest,
   SendChatMessageRequest,
   StartMatchRequest
 } from "../shared/types";
+import type { SaveBaseDefenseBandMappingRequest } from "../shared/cards/types";
 import { config } from "./config";
+import {
+  readBaseDefenseBandMappings,
+  writeBaseDefenseBandMapping
+} from "./services/baseDefenseBandMappingService";
 import { exchangeDiscordCode } from "./services/discordOAuth";
 import {
   addBot,
+  announceDiceRoll,
   disconnectPlayer,
   getMatchState,
   joinMatch,
+  kickPlayer,
+  playMatchCard,
+  respondMatchAction,
   sendChatMessage,
   startMatch
 } from "./services/matchService";
@@ -36,6 +49,21 @@ app.get("/api/config", (_request, response) => {
   response.json(payload);
 });
 
+app.get("/api/dev/base-defense-band-mappings", (_request, response) => {
+  response.json(readBaseDefenseBandMappings());
+});
+
+app.post("/api/dev/base-defense-band-mappings/:cardId", (request, response) => {
+  try {
+    const body = request.body as SaveBaseDefenseBandMappingRequest;
+    response.json(writeBaseDefenseBandMapping(request.params.cardId, body.mapping));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to save defense band mapping"
+    });
+  }
+});
+
 app.post("/api/token", async (request, response) => {
   try {
     const body = request.body as DiscordAuthTokenRequest;
@@ -49,7 +77,14 @@ app.post("/api/token", async (request, response) => {
 });
 
 app.get("/api/matches/:instanceId", (request, response) => {
-  response.json(getMatchState(request.params.instanceId));
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    response.json(getMatchState(request.params.instanceId, userId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to load match"
+    });
+  }
 });
 
 function requireAuthenticatedUserId(request: express.Request): string {
@@ -104,6 +139,18 @@ app.post("/api/matches/:instanceId/host/start", (request, response) => {
   }
 });
 
+app.post("/api/matches/:instanceId/host/kick-player", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as KickPlayerRequest;
+    response.json(kickPlayer(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to kick player"
+    });
+  }
+});
+
 app.post("/api/matches/:instanceId/disconnect", (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
@@ -124,6 +171,42 @@ app.post("/api/matches/:instanceId/chat", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to send chat message"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/dice-roll", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as AnnounceDiceRollRequest;
+    response.json(announceDiceRoll(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to announce dice roll"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/play-card", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PlayCardRequest;
+    response.json(playMatchCard(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to play card"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/respond", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingActionResponseRequest;
+    response.json(respondMatchAction(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to respond to pending action"
     });
   }
 });

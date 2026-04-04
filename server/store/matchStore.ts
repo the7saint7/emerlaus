@@ -1,9 +1,9 @@
 import { createEmptyMatch } from "../../shared/matchRules";
-import type { MatchState } from "../../shared/types";
+import type { StoredMatchState } from "../services/gameEngineTypes";
 
-const matches = new Map<string, MatchState>();
+const matches = new Map<string, StoredMatchState>();
 
-export function getOrCreateMatch(instanceId: string): MatchState {
+export function getOrCreateMatch(instanceId: string): StoredMatchState {
   const existing = matches.get(instanceId);
   if (existing != null) {
     return existing;
@@ -14,11 +14,11 @@ export function getOrCreateMatch(instanceId: string): MatchState {
   return created;
 }
 
-export function getMatch(instanceId: string): MatchState | undefined {
+export function getMatch(instanceId: string): StoredMatchState | undefined {
   return matches.get(instanceId);
 }
 
-export function saveMatch(match: MatchState): MatchState {
+export function saveMatch(match: StoredMatchState): StoredMatchState {
   matches.set(match.instanceId, match);
   return match;
 }

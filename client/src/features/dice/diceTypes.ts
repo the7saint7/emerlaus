@@ -4,4 +4,7 @@ export interface DiceRollResult {
   notation: string;
   total: number;
   values: number[];
+  animatedTotal: number;
+  animatedValues: number[];
+  rawPayload: string;
 }

@@ -1,0 +1,8 @@
+{
+  "Anneau de puissance +2": {
+    "description": "Cette carte doit être déposée devant soi pour être active. Elle augmente le niveau de puissance de 2 aussi longtemps que le magicien portera l’anneau."
+  },
+  "Vitesse double": {
+    "description": "Cette pierre permet à l’attaquant d’utiliser deux autres cartes de son choix. Ces cartes doivent être jouées une à la suite de l’autre. On pige les cartes manquantes à la fin de notre tour."
+  }
+}
