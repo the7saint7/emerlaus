@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/Work/Desktop/Emerlaus -type f \\\\\\( -name \"*.ts\" -o -name \"*.js\" \\\\\\) ! -path \"*/node_modules/*\" ! -path \"*/.git/*\" ! -path \"*/dist/*\" -exec wc -l {} +)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e ':*)",
+      "Bash(npm run:*)",
+      "WebFetch(domain:codepen.io)",
+      "WebSearch",
+      "Bash(find C:\\\\Users\\\\Work\\\\Desktop\\\\Emerlaus\\\\client\\\\src:*)",
+      "WebFetch(domain:daily-dev-tips.com)",
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:matthewlein.com)",
+      "WebFetch(domain:alvaromontoro.com)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:paulrhayes.com)",
+      "WebFetch(domain:cdpn.io)"
+    ]
+  }
+}

@@ -1,12 +1,13 @@
 import type { DiceRollResult } from "./diceTypes";
 
-const OVERLAY_ID_PREFIX = "dice-roll-overlay";
-const CANVAS_HOST_ID_PREFIX = "dice-roll-canvas-host";
-const RESULT_DELAY_MS = 1100;
-const HIDE_DELAY_MS = 3200;
-const ROLL_TIMEOUT_MS = 5000;
-const DEFAULT_THEME_COLOR = "#4b2a6f";
-const DEFAULT_SCALE = 15;
+const ROLL_ANIM_MS = 2500;
+const FACE_SETTLE_MS = 500;
+const RESULT_DELAY_MS = 500;
+const HIDE_DELAY_MS = 2000;
+const HIDE_FADE_MS = 300;
+const MAX_STAGGER_MS = 400;
+const BASE_DIE_SIZE = 120;
+const DIE_GAP = 14;
 
 export interface DiceStagePlacement {
   left: number;
@@ -14,13 +15,6 @@ export interface DiceStagePlacement {
   width: number;
   height: number;
 }
-
-interface DiceRollGroup {
-  rollsArray?: Array<{ value?: number }>;
-  value?: number;
-}
-
-type ForcedDieNotation = Record<string, unknown>;
 
 interface RollOptions {
   resolvedResult?: Partial<DiceRollResult>;
@@ -30,356 +24,198 @@ interface RollOptions {
 
 interface ActiveRollOverlay {
   overlay: HTMLDivElement;
-  box: import("@3d-dice/dice-box").default;
   hideTimer: number | null;
 }
 
-interface DiceBoxResolvedRoll {
-  value?: number;
+const SUPPORTED_SIDES = new Set([4, 6, 8, 10, 12, 20]);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-interface DiceBoxResolvedGroup {
-  value?: number;
-  modifier?: number;
-  rolls?: DiceBoxResolvedRoll[];
-  rollsArray?: DiceBoxResolvedRoll[];
+function randomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function logDiceDebug(message: string): void {
-  const patchLogger = (
-    window as typeof window & {
-      __emerlausDicePatchLog?: (message: string) => void;
-    }
-  ).__emerlausDicePatchLog;
-
-  patchLogger?.(message);
-}
-
-function stringifyRawPayload(payload: unknown): string {
-  try {
-    const seen = new WeakSet<object>();
-    return JSON.stringify(
-      payload,
-      (_key, value) => {
-        if (typeof value === "object" && value !== null) {
-          if (seen.has(value)) {
-            return "[Circular]";
-          }
-
-          seen.add(value);
-        }
-
-        return value;
-      }
-    ) ?? "null";
-  } catch {
-    return "[Unserializable payload]";
+function parseNotation(raw: string): { qty: number; sides: number; isD100: boolean } | null {
+  if (/^1?d100$/i.test(raw)) {
+    return { qty: 2, sides: 10, isD100: true };
   }
+
+  const match = raw.match(/^(\d+)d(\d+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const qty = Number(match[1]);
+  const sides = Number(match[2]);
+  if (!Number.isInteger(qty) || !Number.isInteger(sides) || !SUPPORTED_SIDES.has(sides)) {
+    return null;
+  }
+
+  return { qty, sides, isD100: false };
 }
 
-function createOverlayMarkup(idSuffix: string): HTMLDivElement {
+// For D100: total 1-100 → [tens die face (1-10), units die face (1-10)]
+// Face 10 represents "0" on a D10
+function d100Faces(total: number): [number, number] {
+  const clamped = Math.max(1, Math.min(100, total));
+  const tens = Math.floor(clamped / 10) % 10;
+  const units = clamped % 10;
+  return [tens === 0 ? 10 : tens, units === 0 ? 10 : units];
+}
+
+function computeScale(dieCount: number, stageWidth: number): number {
+  const needed = dieCount * BASE_DIE_SIZE + Math.max(0, dieCount - 1) * DIE_GAP;
+  return needed <= stageWidth ? 1 : stageWidth / needed;
+}
+
+function createDieEl(sides: number, color: string): HTMLDivElement {
+  const die = document.createElement("div");
+  die.className = `css-die css-die--d${sides}`;
+  die.style.setProperty("--die-color", color);
+  for (let i = 0; i < sides; i++) {
+    die.appendChild(document.createElement("figure"));
+  }
+
+  return die;
+}
+
+function buildOverlay(idSuffix: string): HTMLDivElement {
   const overlay = document.createElement("div");
-  overlay.id = `${OVERLAY_ID_PREFIX}-${idSuffix}`;
+  overlay.id = `dice-roll-overlay-${idSuffix}`;
   overlay.className = "dice-roll-overlay dice-roll-overlay--hidden";
   overlay.innerHTML = `
     <div class="dice-roll-stage">
-      <div id="${CANVAS_HOST_ID_PREFIX}-${idSuffix}" class="dice-roll-canvas-host"></div>
-      <div class="dice-roll-status" data-dice-status="true"></div>
+      <div class="dice-roll-die-area"></div>
+      <div class="dice-roll-status" data-dice-status="true">\u00a0</div>
     </div>
   `;
   document.body.appendChild(overlay);
   return overlay;
 }
 
-function readTotal(results: unknown): number {
-  if (!Array.isArray(results)) {
-    return 0;
+function setStatus(overlay: HTMLDivElement, text: string): void {
+  const el = overlay.querySelector<HTMLElement>("[data-dice-status='true']");
+  if (el) {
+    el.textContent = text;
   }
-
-  return results.reduce((sum, group) => {
-    const typedGroup = group as DiceRollGroup;
-    if (typeof typedGroup.value === "number") {
-      return sum + typedGroup.value;
-    }
-
-    const groupTotal =
-      typedGroup.rollsArray?.reduce((groupSum, roll) => {
-        return groupSum + (typeof roll.value === "number" ? roll.value : 0);
-      }, 0) ?? 0;
-
-    return sum + groupTotal;
-  }, 0);
 }
 
-function readValues(results: unknown): number[] {
-  if (!Array.isArray(results)) {
-    return [];
+function applyStagePlacement(overlay: HTMLDivElement, placement: DiceStagePlacement | null | undefined): void {
+  const stage = overlay.querySelector<HTMLElement>(".dice-roll-stage");
+  if (!stage) {
+    return;
   }
 
-  return results.flatMap((group) => {
-    const typedGroup = group as DiceRollGroup;
-    return typedGroup.rollsArray?.flatMap((roll) =>
-      typeof roll.value === "number" ? [roll.value] : []
-    ) ?? [];
-  });
-}
-
-function normalizeResolvedResults(results: unknown): DiceBoxResolvedGroup[] {
-  if (!Array.isArray(results)) {
-    return [];
+  if (!placement) {
+    stage.style.left = "";
+    stage.style.top = "";
+    stage.style.width = "";
+    stage.style.height = "";
+    return;
   }
 
-  return results.flatMap((group) => {
-    if (group == null || typeof group !== "object") {
-      return [];
-    }
-
-    const typedGroup = group as DiceBoxResolvedGroup;
-    const rolls =
-      Array.isArray(typedGroup.rollsArray)
-        ? typedGroup.rollsArray
-        : Array.isArray(typedGroup.rolls)
-          ? typedGroup.rolls
-          : [];
-
-    const rollValues = rolls.flatMap((roll) =>
-      typeof roll?.value === "number" ? [roll.value] : []
-    );
-    const modifier = typeof typedGroup.modifier === "number" ? typedGroup.modifier : 0;
-    const fallbackValue =
-      typeof typedGroup.value === "number"
-        ? typedGroup.value
-        : rollValues.reduce((sum, value) => sum + value, 0) + modifier;
-
-    return [{
-      value: fallbackValue,
-      rollsArray: rollValues.map((value) => ({ value }))
-    }];
-  });
-}
-
-function buildForcedRollNotation(
-  notation: string,
-  values: number[]
-): ForcedDieNotation[] | null {
-  const match = notation.match(/^(\d+)d(\d+)$/i);
-  if (match == null) {
-    return null;
-  }
-
-  const quantity = Number(match[1]);
-  const sides = Number(match[2]);
-  if (!Number.isInteger(quantity) || !Number.isInteger(sides) || values.length !== quantity) {
-    return null;
-  }
-
-  const groupId = Math.floor(Math.random() * 1_000_000_000);
-  return values.map((value) => ({
-    sides,
-    qty: 1,
-    value,
-    groupId
-  }));
+  stage.style.left = `${placement.left}px`;
+  stage.style.top = `${placement.top}px`;
+  stage.style.width = `${placement.width}px`;
+  stage.style.height = `${placement.height}px`;
 }
 
 class DiceController {
-  private DiceBoxCtor: typeof import("@3d-dice/dice-box").default | null = null;
-  private readyPromise: Promise<void> | null = null;
   private activeOverlays = new Set<ActiveRollOverlay>();
 
-  async init(): Promise<void> {
-    if (this.readyPromise != null) {
-      return this.readyPromise;
-    }
-
-    this.readyPromise = (async () => {
-      const imported = await import("@3d-dice/dice-box");
-      this.DiceBoxCtor = imported.default;
-    })();
-
-    return this.readyPromise;
-  }
-
-  private setStatus(overlay: HTMLDivElement, content: string): void {
-    const status = overlay.querySelector<HTMLElement>("[data-dice-status='true']");
-    if (status != null) {
-      status.textContent = content;
-    }
-  }
-
-  private setStagePlacement(overlay: HTMLDivElement, placement?: DiceStagePlacement | null): void {
-    const stage = overlay.querySelector<HTMLElement>(".dice-roll-stage");
-    if (stage == null) {
-      return;
-    }
-
-    if (placement == null) {
-      stage.style.left = "";
-      stage.style.top = "";
-      stage.style.width = "";
-      stage.style.height = "";
-      return;
-    }
-
-    stage.style.left = `${placement.left}px`;
-    stage.style.top = `${placement.top}px`;
-    stage.style.width = `${placement.width}px`;
-    stage.style.height = `${placement.height}px`;
-  }
-
-  private showOverlay(overlay: HTMLDivElement): void {
-    overlay.classList.remove("dice-roll-overlay--hidden");
-  }
-
-  private cleanupOverlay(activeOverlay: ActiveRollOverlay): void {
-    if (activeOverlay.hideTimer != null) {
-      window.clearTimeout(activeOverlay.hideTimer);
-    }
-
-    activeOverlay.box.clear();
-    activeOverlay.overlay.remove();
-    this.activeOverlays.delete(activeOverlay);
+  init(): Promise<void> {
+    return Promise.resolve();
   }
 
   hide(): void {
-    for (const activeOverlay of [...this.activeOverlays]) {
-      this.cleanupOverlay(activeOverlay);
+    for (const active of [...this.activeOverlays]) {
+      this.cleanupOverlay(active);
     }
   }
 
+  private cleanupOverlay(active: ActiveRollOverlay): void {
+    if (active.hideTimer != null) {
+      window.clearTimeout(active.hideTimer);
+    }
+
+    active.overlay.remove();
+    this.activeOverlays.delete(active);
+  }
+
   async roll(notation: string, options?: RollOptions): Promise<DiceRollResult> {
-    const normalizedNotation = notation.trim().toLowerCase();
-    await this.init();
-    if (this.DiceBoxCtor == null) {
+    const normalized = notation.trim().toLowerCase();
+    const total = options?.resolvedResult?.total ?? 0;
+    const values = options?.resolvedResult?.values ?? [];
+    const color = options?.themeColor ?? "#4b2a6f";
+    const parsed = parseNotation(normalized);
+
+    if (!parsed) {
       return {
-        notation: normalizedNotation,
-        total: 0,
-        values: [],
-        animatedTotal: 0,
-        animatedValues: [],
-        rawPayload: "[]"
+        notation: normalized,
+        total,
+        values,
+        animatedTotal: total,
+        animatedValues: values,
+        rawPayload: "{}"
       };
     }
 
+    const faceTargets: number[] = parsed.isD100
+      ? d100Faces(total)
+      : Array.from({ length: parsed.qty }, (_, i) => values[i] ?? 1);
+
     const idSuffix = crypto.randomUUID();
-    const overlay = createOverlayMarkup(idSuffix);
-    const hostId = `${CANVAS_HOST_ID_PREFIX}-${idSuffix}`;
-    this.setStagePlacement(overlay, options?.placement ?? null);
-    this.showOverlay(overlay);
-    this.setStatus(overlay, `Rolling ${normalizedNotation}...`);
+    const overlay = buildOverlay(idSuffix);
+    applyStagePlacement(overlay, options?.placement);
+    overlay.classList.remove("dice-roll-overlay--hidden");
+    setStatus(overlay, `Rolling ${normalized.toUpperCase()}\u2026`);
 
-    const box = new this.DiceBoxCtor({
-      container: `#${hostId}`,
-      assetPath: "/assets/dice-box/",
-      offscreen: false,
-      scale: DEFAULT_SCALE,
-      theme: "default",
-      themeColor: options?.themeColor ?? DEFAULT_THEME_COLOR
-    });
+    const active: ActiveRollOverlay = { overlay, hideTimer: null };
+    this.activeOverlays.add(active);
 
-    await box.init();
-    box.updateConfig?.({
-      themeColor: options?.themeColor ?? DEFAULT_THEME_COLOR
-    });
+    const dieArea = overlay.querySelector<HTMLElement>(".dice-roll-die-area");
+    if (dieArea) {
+      const stageWidth = options?.placement?.width ?? 260;
+      const scale = computeScale(faceTargets.length, stageWidth);
+      if (scale < 1) {
+        dieArea.style.transformOrigin = "top center";
+        dieArea.style.transform = `scale(${scale.toFixed(3)})`;
+      }
 
-    const activeOverlay: ActiveRollOverlay = {
-      overlay,
-      box,
-      hideTimer: null
+      const dieEls = faceTargets.map(() => createDieEl(parsed.sides, color));
+      for (const el of dieEls) {
+        dieArea.appendChild(el);
+      }
+
+      await Promise.all(dieEls.map(async (dieEl, i) => {
+        const stagger = i === 0 ? 0 : randomInt(60, MAX_STAGGER_MS);
+        await delay(stagger);
+        dieEl.classList.add("rolling");
+        await delay(ROLL_ANIM_MS);
+        dieEl.classList.remove("rolling");
+        dieEl.setAttribute("data-face", String(faceTargets[i]));
+        await delay(FACE_SETTLE_MS);
+      }));
+    }
+
+    await delay(RESULT_DELAY_MS);
+    setStatus(overlay, `Total ${total}`);
+
+    active.hideTimer = window.setTimeout(() => {
+      overlay.classList.add("dice-roll-overlay--hidden");
+      window.setTimeout(() => this.cleanupOverlay(active), HIDE_FADE_MS);
+    }, HIDE_DELAY_MS);
+
+    return {
+      notation: normalized,
+      total,
+      values,
+      animatedTotal: total,
+      animatedValues: faceTargets,
+      rawPayload: "{}"
     };
-    this.activeOverlays.add(activeOverlay);
-
-    return new Promise<DiceRollResult>((resolve) => {
-      let settled = false;
-      let timeoutId: number | null = null;
-
-      const finalizeResult = (result: DiceRollResult): void => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        if (timeoutId != null) {
-          window.clearTimeout(timeoutId);
-        }
-
-        resolve(result);
-        activeOverlay.hideTimer = window.setTimeout(() => {
-          this.cleanupOverlay(activeOverlay);
-        }, HIDE_DELAY_MS);
-      };
-
-      const forcedRollNotation =
-        options?.resolvedResult?.values != null
-          ? buildForcedRollNotation(normalizedNotation, options.resolvedResult.values)
-          : null;
-
-      logDiceDebug(
-        `[diceController.roll] notation=${normalizedNotation} forced=${forcedRollNotation != null} expectedTotal=${options?.resolvedResult?.total ?? "n/a"} expectedValues=${options?.resolvedResult?.values?.join(",") ?? "n/a"} payload=${forcedRollNotation != null ? stringifyRawPayload(forcedRollNotation) : "\"string-notation\""}`
-      );
-
-      timeoutId = window.setTimeout(() => {
-        const total = options?.resolvedResult?.total ?? 0;
-        const values = options?.resolvedResult?.values ?? [];
-        const timeoutPayload = stringifyRawPayload({
-          timeout: true,
-          expectedTotal: total,
-          expectedValues: values
-        });
-
-        logDiceDebug(
-          `[diceController.roll] timeout notation=${normalizedNotation} expectedTotal=${total} expectedValues=${values.join(",") || "n/a"}`
-        );
-        this.setStatus(overlay, `Total ${total}`);
-        finalizeResult({
-          notation: normalizedNotation,
-          total,
-          values,
-          animatedTotal: total,
-          animatedValues: values,
-          rawPayload: timeoutPayload
-        });
-      }, ROLL_TIMEOUT_MS);
-
-      void box.roll(forcedRollNotation ?? normalizedNotation)
-        .then((results: unknown) => {
-          const normalizedResults = normalizeResolvedResults(results);
-          const animatedTotal = readTotal(normalizedResults);
-          const animatedValues = readValues(normalizedResults);
-          const rawPayload = stringifyRawPayload(results);
-          const total = options?.resolvedResult?.total ?? animatedTotal;
-          const values = options?.resolvedResult?.values ?? animatedValues;
-
-          window.setTimeout(() => {
-            this.setStatus(overlay, `Total ${total}`);
-            finalizeResult({
-              notation: normalizedNotation,
-              total,
-              values,
-              animatedTotal,
-              animatedValues,
-              rawPayload
-            });
-          }, RESULT_DELAY_MS);
-        })
-        .catch((error: unknown) => {
-          const total = options?.resolvedResult?.total ?? 0;
-          const values = options?.resolvedResult?.values ?? [];
-          const rawPayload = stringifyRawPayload({
-            error: error instanceof Error ? error.message : String(error)
-          });
-
-          this.setStatus(overlay, `Total ${total}`);
-          finalizeResult({
-            notation: normalizedNotation,
-            total,
-            values,
-            animatedTotal: total,
-            animatedValues: values,
-            rawPayload
-          });
-        });
-    });
   }
 }
 

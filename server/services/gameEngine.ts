@@ -1144,7 +1144,9 @@ function applyEffect(
       break;
     }
     case "modify_resistance":
-      if (effect.duration === "until_removed") {
+      // O-category cards stay in play as objects; computeResistanceThreshold already
+      // reads the modifier from storedSeat.objects, so no separate status entry is needed.
+      if (effect.duration === "until_removed" && definition.category.code !== "O") {
         for (const targetSeatNumber of targetSeatNumbers) {
           getStoredSeat(game, targetSeatNumber).statuses.push({
             instanceId: randomUUID(),
@@ -1192,12 +1194,31 @@ function applyEffect(
       game.deck = shuffle([...game.deck, ...game.discardPile, ...recycled]);
       game.discardPile = [];
       actorSeat.hp += effect.attackerHpBonus;
+      if (effect.attackerHpBonus > 0) {
+        pushPresentationEvent(match, {
+          boxId,
+          type: "hp_gain",
+          seatNumber: actorSeatNumber,
+          cardName: definition.name,
+          amount: effect.attackerHpBonus
+        });
+      }
       break;
     }
     case "grant_attack_immunity":
       actorState.attackImmunityTurns = Math.max(actorState.attackImmunityTurns, effect.durationTurns);
       if (effect.bonusHeal != null) {
-        actorSeat.hp += evaluateRoll(match, effect.bonusHeal, actorSeat, actorSeat, actorSeatNumber, boxId);
+        const bonusHealAmount = evaluateRoll(match, effect.bonusHeal, actorSeat, actorSeat, actorSeatNumber, boxId);
+        actorSeat.hp += bonusHealAmount;
+        if (bonusHealAmount > 0) {
+          pushPresentationEvent(match, {
+            boxId,
+            type: "hp_gain",
+            seatNumber: actorSeatNumber,
+            cardName: definition.name,
+            amount: bonusHealAmount
+          });
+        }
       }
       break;
     case "power_modifier":
@@ -2043,7 +2064,7 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
 
   const responderSeatNumbers = getResponderSeatNumbers(game, actorSeat.seatNumber, definition, targetSeatNumbers);
   if (
-    (definition.rules.requiresDefenseWindow || definition.rules.requiresResistanceCheck) &&
+    (definition.rules.requiresDefenseWindow || definition.rules.requiresResistanceCheck || definition.defenseBand?.annulationAllowed === true) &&
     responderSeatNumbers.length > 0 &&
     definition.defenseBand != null
   ) {

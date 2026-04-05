@@ -1,4 +1,5 @@
 import {
+  devDrawCard,
   disconnectFromMatch,
   fetchMatch,
   joinMatch,
@@ -62,6 +63,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     activeCardFlight: null,
     activeCombatFx: null,
     activeDamageBurst: null,
+    activeHealBurst: null,
     impactTargetSeatNumber: 0
   };
   let eventReplayChain = Promise.resolve();
@@ -321,6 +323,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       options?: {
         seatNumber?: number;
         damageAmount?: number;
+        healAmount?: number;
         impactTargetSeatNumber?: number;
       }
     ): Promise<void> => {
@@ -333,6 +336,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         options?.damageAmount != null && options?.seatNumber != null
           ? { seatNumber: options.seatNumber, amount: options.damageAmount }
           : null;
+      state.activeHealBurst =
+        options?.healAmount != null && options?.seatNumber != null
+          ? { seatNumber: options.seatNumber, amount: options.healAmount }
+          : null;
       state.impactTargetSeatNumber = options?.impactTargetSeatNumber ?? 0;
       render();
       await delay(durationMs);
@@ -344,6 +351,12 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.activeDamageBurst?.amount === options?.damageAmount
       ) {
         state.activeDamageBurst = null;
+      }
+      if (
+        state.activeHealBurst?.seatNumber === options?.seatNumber &&
+        state.activeHealBurst?.amount === options?.healAmount
+      ) {
+        state.activeHealBurst = null;
       }
       if (state.impactTargetSeatNumber === (options?.impactTargetSeatNumber ?? 0)) {
         state.impactTargetSeatNumber = 0;
@@ -599,7 +612,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           `${getSeatDisplayName(event.seatNumber)} gains ${event.amount} HP`,
           "success",
           1600,
-          { seatNumber: event.seatNumber }
+          { seatNumber: event.seatNumber, healAmount: event.amount }
         );
       }
     };
@@ -890,6 +903,36 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     void handleDraggedCardDrop();
   };
 
+  let sseEventSource: EventSource | null = null;
+  let sseFallbackPollInterval: number | null = null;
+
+  const connectSSE = (instanceId: string): void => {
+    sseEventSource?.close();
+    sseEventSource = new EventSource(`/api/matches/${instanceId}/events`);
+
+    sseEventSource.addEventListener("message", () => {
+      void syncMatch();
+    });
+
+    sseEventSource.addEventListener("open", () => {
+      logClient("sse", "SSE connected");
+      if (sseFallbackPollInterval != null) {
+        window.clearInterval(sseFallbackPollInterval);
+        sseFallbackPollInterval = null;
+      }
+    });
+
+    sseEventSource.addEventListener("error", () => {
+      if (sseEventSource?.readyState === EventSource.CLOSED) {
+        sseEventSource = null;
+        if (sseFallbackPollInterval == null) {
+          logClient("sse", "SSE closed, falling back to polling");
+          sseFallbackPollInterval = window.setInterval(() => void syncMatch(), 4000);
+        }
+      }
+    });
+  };
+
   const leaveCurrentMatch = async (): Promise<void> => {
     try {
       await disconnectFromMatch(state.instanceId, state.playerSessionToken);
@@ -908,6 +951,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.seenGameEventIds = freshJoin.match.game?.eventLog.map((event) => event.id) ?? [];
         state.clientDebugLog = [];
         logClient("session", "Started fresh browser session after leaving match");
+        connectSSE(state.instanceId);
       } else {
         applyMatchState(null);
         state.leftMessage = "Your seat was replaced by a bot. Start a new Activity session to enter a new lobby.";
@@ -1087,6 +1131,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             eventLogMarkup,
             activeCombatFx: state.activeCombatFx,
             activeDamageBurst: state.activeDamageBurst,
+            activeHealBurst: state.activeHealBurst,
             impactTargetSeatNumber: state.impactTargetSeatNumber
           });
     const kickTarget = state.match.seats.find((seat) => seat.seatNumber === state.confirmingKickSeatNumber);
@@ -1222,6 +1267,23 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       downloadTextFile(`emerlaus-client-log-${state.instanceId}.log`, state.clientDebugLog.join("\n"));
     });
 
+    rootElement.querySelector<HTMLSelectElement>("[data-action='dev-draw-card']")?.addEventListener("change", async (event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      const cardId = select.value;
+      if (cardId === "") {
+        return;
+      }
+      select.value = "";
+      try {
+        const nextMatch = await devDrawCard(state.instanceId, state.playerSessionToken, cardId);
+        applyMatchState(nextMatch);
+        render();
+      } catch (err) {
+        state.errorMessage = err instanceof Error ? err.message : "Failed to draw card";
+        render();
+      }
+    });
+
     rootElement.querySelector<HTMLButtonElement>("[data-action='leave-match']")?.addEventListener("click", () => {
       state.confirmingLeave = true;
       render();
@@ -1320,16 +1382,17 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   document.addEventListener("pointermove", handleDocumentPointerMove);
   document.addEventListener("pointerup", handleDocumentPointerUp);
 
-  const pollInterval = window.setInterval(() => {
-    void syncMatch();
-  }, 3000);
+  connectSSE(state.instanceId);
 
   const unsubscribe = session.subscribeToParticipantUpdates(() => {
     void syncMatch();
   });
 
   window.addEventListener("beforeunload", () => {
-    window.clearInterval(pollInterval);
+    sseEventSource?.close();
+    if (sseFallbackPollInterval != null) {
+      window.clearInterval(sseFallbackPollInterval);
+    }
     unsubscribe();
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("pointermove", handleDocumentPointerMove);

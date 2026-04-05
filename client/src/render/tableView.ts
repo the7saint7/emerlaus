@@ -1,5 +1,6 @@
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { CardView, MatchState, PendingActionResponderState, SeatState } from "../../../shared/types";
+import { baseCardDefinitions } from "../../../shared/cards";
 import type { DragHoverTarget } from "../app/state";
 import type { OpponentAnchor } from "./opponentLayout";
 import { getOpponentAnchorsForPlayerCount } from "./opponentLayout";
@@ -42,6 +43,10 @@ interface TableViewParams {
     seatNumber?: number;
   } | null;
   activeDamageBurst: {
+    seatNumber: number;
+    amount: number;
+  } | null;
+  activeHealBurst: {
     seatNumber: number;
     amount: number;
   } | null;
@@ -211,7 +216,8 @@ function renderOpponentSeat(
   currentTurnSeatNumber?: number,
   pendingResponder?: PendingActionResponderState,
   damageBurstAmount?: number,
-  impactActive?: boolean
+  impactActive?: boolean,
+  healBurstActive?: boolean
 ): string {
   const targetable = isSeatTargetable(draggedCard, seat, localSeatNumber);
   const inspectable = draggedCard == null && seat.controllerType === "human";
@@ -243,6 +249,7 @@ function renderOpponentSeat(
         ${renderSeatInlineObjects(seat, draggedCard, hoverTarget)}
       </div>
       ${damageBurstAmount != null ? `<div class="seat-damage-burst">-${damageBurstAmount}</div>` : ""}
+      ${healBurstActive ? renderHealBurst() : ""}
       ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget)}
       ${inspectable ? `<button class="action-button action-button--secondary seat-inspect-button" data-action="inspect-seat" data-seat-number="${seat.seatNumber}">${inspectedSeatNumber === seat.seatNumber ? "Close" : "Player"}</button>` : ""}
       ${showKickButton ? `<button class="action-button action-button--danger seat-kick-button" data-action="kick-seat" data-seat-number="${seat.seatNumber}">Kick Player</button>` : ""}
@@ -322,11 +329,11 @@ function renderCenterPlayArea(
   const options = presentationLockActive ? [] : match.game?.pendingResponseOptions ?? [];
   const playSlotCompatible = isPlaySlotCompatible(draggedCard);
   const responseSlotCompatible = displayedAction != null && draggedCard?.categoryCode === "CA" && draggedCard.canPlay;
-  const visibleOptions = options.filter((option) => option.choice === "pass" || option.choice === "resist");
+  const visibleOptions = options.filter((option) => option.choice === "pass" || option.choice === "resist" || option.choice === "annulation");
 
   return `
     <section class="center-play-area">
-      ${activeCombatFx != null ? `<div class="combat-fx-banner combat-fx-banner--${activeCombatFx.tone}">${escapeHtml(activeCombatFx.message)}</div>` : ""}
+      <div class="combat-fx-banner ${activeCombatFx != null ? `combat-fx-banner--${activeCombatFx.tone}` : "combat-fx-banner--idle"}">${activeCombatFx != null ? escapeHtml(activeCombatFx.message) : "\u00a0"}</div>
       <div class="center-play-slots">
         <article
           class="center-play-slot center-play-slot--action ${stackedCards.length > 0 ? "center-play-slot--filled" : ""} ${impactActive ? "center-play-slot--impact" : ""} ${(playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : ""} ${(isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : ""}"
@@ -379,6 +386,98 @@ function renderDragPreview(card: CardView | undefined, x: number, y: number): st
   `;
 }
 
+const HEAL_PARTICLES = [
+  // big/slow/near (foreground)
+  { x: "10%",  delay: "0ms",   size: "1.5em",  dist: "44px",  dur: "1700ms" },
+  { x: "42%",  delay: "120ms", size: "1.4em",  dist: "50px",  dur: "1650ms" },
+  { x: "74%",  delay: "55ms",  size: "1.3em",  dist: "46px",  dur: "1750ms" },
+  { x: "26%",  delay: "280ms", size: "1.45em", dist: "42px",  dur: "1800ms" },
+  { x: "60%",  delay: "190ms", size: "1.35em", dist: "48px",  dur: "1600ms" },
+  // mid
+  { x: "18%",  delay: "80ms",  size: "1.0em",  dist: "65px",  dur: "1350ms" },
+  { x: "50%",  delay: "210ms", size: "0.95em", dist: "70px",  dur: "1300ms" },
+  { x: "82%",  delay: "340ms", size: "1.05em", dist: "62px",  dur: "1400ms" },
+  { x: "34%",  delay: "150ms", size: "0.9em",  dist: "68px",  dur: "1250ms" },
+  { x: "66%",  delay: "30ms",  size: "1.1em",  dist: "60px",  dur: "1450ms" },
+  // small/fast/far (background)
+  { x: "6%",   delay: "250ms", size: "0.65em", dist: "95px",  dur: "950ms"  },
+  { x: "30%",  delay: "370ms", size: "0.6em",  dist: "105px", dur: "900ms"  },
+  { x: "55%",  delay: "100ms", size: "0.7em",  dist: "90px",  dur: "1000ms" },
+  { x: "78%",  delay: "430ms", size: "0.62em", dist: "100px", dur: "920ms"  },
+  { x: "46%",  delay: "310ms", size: "0.68em", dist: "98px",  dur: "970ms"  },
+  { x: "88%",  delay: "160ms", size: "0.72em", dist: "88px",  dur: "1050ms" },
+];
+
+const HEAL_PARTICLES_LOCAL = [
+  // foreground
+  { x: "3%",  delay: "0ms",   size: "1.5em",  dist: "44px",  dur: "1700ms" },
+  { x: "11%", delay: "140ms", size: "1.4em",  dist: "50px",  dur: "1650ms" },
+  { x: "19%", delay: "55ms",  size: "1.3em",  dist: "46px",  dur: "1750ms" },
+  { x: "27%", delay: "280ms", size: "1.45em", dist: "42px",  dur: "1800ms" },
+  { x: "35%", delay: "190ms", size: "1.35em", dist: "48px",  dur: "1600ms" },
+  { x: "43%", delay: "70ms",  size: "1.5em",  dist: "44px",  dur: "1720ms" },
+  { x: "51%", delay: "220ms", size: "1.4em",  dist: "52px",  dur: "1680ms" },
+  { x: "59%", delay: "330ms", size: "1.3em",  dist: "45px",  dur: "1760ms" },
+  { x: "67%", delay: "40ms",  size: "1.45em", dist: "43px",  dur: "1810ms" },
+  { x: "75%", delay: "170ms", size: "1.35em", dist: "49px",  dur: "1630ms" },
+  { x: "83%", delay: "260ms", size: "1.4em",  dist: "47px",  dur: "1700ms" },
+  { x: "91%", delay: "100ms", size: "1.3em",  dist: "51px",  dur: "1670ms" },
+  // mid
+  { x: "6%",  delay: "310ms", size: "1.0em",  dist: "65px",  dur: "1350ms" },
+  { x: "14%", delay: "80ms",  size: "0.95em", dist: "70px",  dur: "1300ms" },
+  { x: "22%", delay: "380ms", size: "1.05em", dist: "62px",  dur: "1400ms" },
+  { x: "30%", delay: "150ms", size: "0.9em",  dist: "68px",  dur: "1250ms" },
+  { x: "38%", delay: "480ms", size: "1.1em",  dist: "60px",  dur: "1450ms" },
+  { x: "46%", delay: "30ms",  size: "1.0em",  dist: "66px",  dur: "1380ms" },
+  { x: "54%", delay: "270ms", size: "0.95em", dist: "72px",  dur: "1310ms" },
+  { x: "62%", delay: "420ms", size: "1.05em", dist: "63px",  dur: "1420ms" },
+  { x: "70%", delay: "110ms", size: "0.9em",  dist: "69px",  dur: "1270ms" },
+  { x: "78%", delay: "350ms", size: "1.1em",  dist: "61px",  dur: "1460ms" },
+  { x: "86%", delay: "200ms", size: "1.0em",  dist: "67px",  dur: "1360ms" },
+  { x: "94%", delay: "460ms", size: "0.95em", dist: "71px",  dur: "1320ms" },
+  // background
+  { x: "2%",  delay: "230ms", size: "0.65em", dist: "95px",  dur: "950ms"  },
+  { x: "9%",  delay: "400ms", size: "0.6em",  dist: "105px", dur: "900ms"  },
+  { x: "17%", delay: "120ms", size: "0.7em",  dist: "90px",  dur: "1000ms" },
+  { x: "25%", delay: "490ms", size: "0.62em", dist: "100px", dur: "920ms"  },
+  { x: "33%", delay: "60ms",  size: "0.68em", dist: "98px",  dur: "970ms"  },
+  { x: "41%", delay: "340ms", size: "0.72em", dist: "88px",  dur: "1050ms" },
+  { x: "49%", delay: "180ms", size: "0.65em", dist: "96px",  dur: "940ms"  },
+  { x: "57%", delay: "440ms", size: "0.6em",  dist: "106px", dur: "890ms"  },
+  { x: "65%", delay: "90ms",  size: "0.7em",  dist: "91px",  dur: "1010ms" },
+  { x: "73%", delay: "370ms", size: "0.62em", dist: "101px", dur: "930ms"  },
+  { x: "81%", delay: "250ms", size: "0.68em", dist: "99px",  dur: "960ms"  },
+  { x: "89%", delay: "520ms", size: "0.72em", dist: "89px",  dur: "1040ms" },
+  { x: "97%", delay: "130ms", size: "0.65em", dist: "97px",  dur: "945ms"  },
+];
+
+function renderHealBurst(large = false): string {
+  const particles = large ? HEAL_PARTICLES_LOCAL : HEAL_PARTICLES;
+  return `
+    <div class="seat-heal-burst" aria-hidden="true">
+      ${particles.map(({ x, delay, size, dist, dur }) =>
+        `<span class="heal-particle" style="--hx:${x};--hdelay:${delay};--hsize:${size};--hdist:${dist};--hdur:${dur}">+</span>`
+      ).join("")}
+    </div>
+  `;
+}
+
+const DEV_CARD_OPTIONS = [...baseCardDefinitions]
+  .sort((a, b) => a.name.localeCompare(b.name))
+  .map((card) => `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(card.name)}</option>`)
+  .join("");
+
+function renderDevDrawPanel(): string {
+  return `
+    <div class="dev-draw-panel">
+      <select class="dev-draw-select" data-action="dev-draw-card" title="Dev: draw card into hand">
+        <option value="">+ Draw card</option>
+        ${DEV_CARD_OPTIONS}
+      </select>
+    </div>
+  `;
+}
+
 export function renderTableView({
   match,
   localSeatNumber,
@@ -397,6 +496,7 @@ export function renderTableView({
   eventLogMarkup,
   activeCombatFx,
   activeDamageBurst,
+  activeHealBurst,
   impactTargetSeatNumber
 }: TableViewParams): string {
   const localSeat = getLocalSeat(match, localSeatNumber);
@@ -426,7 +526,8 @@ export function renderTableView({
       visibleCurrentTurnSeatNumber,
       pendingAction?.responders.find((responder) => responder.seatNumber === seat.seatNumber),
       activeDamageBurst?.seatNumber === seat.seatNumber ? activeDamageBurst.amount : undefined,
-      impactTargetSeatNumber === seat.seatNumber
+      impactTargetSeatNumber === seat.seatNumber,
+      activeHealBurst?.seatNumber === seat.seatNumber
     );
   }).join("");
 
@@ -474,11 +575,13 @@ export function renderTableView({
           ` : ""}
 
           <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumber === localSeatNumber ? "local-hand-panel--impact" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+            ${activeHealBurst?.seatNumber === localSeatNumber ? renderHealBurst(true) : ""}
             <div class="local-seat-summary">
               <strong>${escapeHtml(localSeat?.displayName ?? "You")}</strong>
               <span>Seat ${localSeat?.seatNumber ?? "-"}</span>
               <span>Power ${localSeat?.powerLevel ?? 1}</span>
               <span>${visibleCurrentTurnSeatNumber === localSeat?.seatNumber ? "Active turn" : "Waiting"}</span>
+              ${renderDevDrawPanel()}
             </div>
             ${renderLocalObjects(localSeat?.objects ?? [], draggedCard, dragHoverTarget, localSeatNumber)}
             <div class="hand-row">

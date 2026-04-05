@@ -5,6 +5,7 @@ import {
   getSeatByUserId,
   seedSkeletonStats
 } from "../../shared/matchRules";
+import { baseCardDefinitionById } from "../../shared/cards";
 import type {
   AddBotRequest,
   AnnounceDiceRollRequest,
@@ -314,7 +315,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
 export function getMatchState(instanceId: string, viewerUserId?: string): MatchState {
   const match = getOrCreateMatch(instanceId);
   cleanupReconnectedBotSeats(match);
-  saveMatch(match);
+  saveMatch(match, true);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, viewerUserId);
 }
@@ -491,6 +492,26 @@ export function playMatchCard(instanceId: string, userId: string, request: PlayC
   playCardFromHand(match, userId, request);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function devDrawCard(instanceId: string, userId: string, cardId: string): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+  if (baseCardDefinitionById[cardId] == null) {
+    throw new Error(`Unknown card: ${cardId}`);
+  }
+
+  const seat = requireHumanSeat(match, userId);
+  const seatState = match.internalGame?.seatStates.find((s) => s.seatNumber === seat.seatNumber);
+  if (seatState == null) {
+    throw new Error("Seat state not found");
+  }
+
+  seatState.hand.push({ instanceId: randomUUID(), cardId });
+  saveMatch(match);
   return buildPublicMatchState(match, userId);
 }
 

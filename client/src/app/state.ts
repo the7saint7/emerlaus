@@ -57,5 +57,9 @@ export interface AppState {
     seatNumber: number;
     amount: number;
   } | null;
+  activeHealBurst: {
+    seatNumber: number;
+    amount: number;
+  } | null;
   impactTargetSeatNumber: number;
 }

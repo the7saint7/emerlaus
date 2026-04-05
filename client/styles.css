@@ -528,6 +528,10 @@ h2 {
   background: rgba(150, 52, 52, 0.94);
 }
 
+.combat-fx-banner--idle {
+  visibility: hidden;
+}
+
 .center-play-slots {
   display: flex;
   align-items: center;
@@ -1146,6 +1150,66 @@ h2 {
   font-size: 0.92rem;
 }
 
+.seat-heal-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 7;
+}
+
+.heal-particle {
+  position: absolute;
+  bottom: 20%;
+  left: var(--hx, 50%);
+  font-size: var(--hsize, 1em);
+  font-weight: 700;
+  color: #4ade80;
+  text-shadow: 0 0 8px rgba(74, 222, 128, 0.8), 0 0 18px rgba(74, 222, 128, 0.4);
+  line-height: 1;
+  animation: heal-particle-rise var(--hdur, 1400ms) ease forwards;
+  animation-delay: var(--hdelay, 0ms);
+  opacity: 0;
+}
+
+@keyframes heal-particle-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(calc(var(--hdist, 60px) * -0.15)) scale(1);
+  }
+  70% {
+    opacity: 0.9;
+    transform: translateY(calc(var(--hdist, 60px) * -0.75)) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(var(--hdist, 60px) * -1)) scale(0.9);
+  }
+}
+
+.dev-draw-panel {
+  margin-left: auto;
+}
+
+.dev-draw-select {
+  background: rgba(10, 22, 12, 0.88);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  border-radius: 8px;
+  color: rgba(74, 222, 128, 0.9);
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  max-width: 180px;
+}
+
+.dev-draw-select:hover {
+  border-color: rgba(74, 222, 128, 0.7);
+}
+
 .drag-card-preview {
   position: fixed;
   width: 190px;
@@ -1260,11 +1324,13 @@ h2 {
   box-shadow: 0 18px 40px var(--shadow);
 }
 
+/* ── Dice roll overlay ── */
 .dice-roll-overlay {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 14;
+  transition: opacity 0.3s ease;
 }
 
 .dice-roll-overlay--hidden {
@@ -1273,21 +1339,21 @@ h2 {
 
 .dice-roll-stage {
   position: fixed;
-  width: 260px;
-  height: 180px;
+  width: 300px;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
-.dice-roll-canvas-host {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.dice-roll-canvas-host .dice-box-canvas {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
+.dice-roll-die-area {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  perspective: 700px;
+  padding: 10px;
 }
 
 .dice-roll-status {
@@ -1302,7 +1368,356 @@ h2 {
   color: var(--ink);
   background: rgba(11, 22, 13, 0.9);
   box-shadow: 0 18px 40px var(--shadow);
+  white-space: nowrap;
 }
+
+/* ── CSS Dice shared ── */
+@keyframes css-die-roll {
+  10%  { transform: rotateX(0deg)    rotateY(0deg)   rotateZ(0deg); }
+  30%  { transform: rotateX(120deg)  rotateY(240deg) rotateZ(0deg) translateX(16px) translateY(16px); }
+  50%  { transform: rotateX(240deg)  rotateY(480deg) rotateZ(0deg) translateX(-16px) translateY(-16px); }
+  70%  { transform: rotateX(360deg)  rotateY(720deg) rotateZ(0deg); }
+  90%  { transform: rotateX(480deg)  rotateY(960deg) rotateZ(0deg); }
+}
+
+.css-die {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.5s ease-out;
+  counter-reset: steps;
+}
+
+.css-die.rolling {
+  animation: css-die-roll 2.5s linear;
+}
+
+.css-die figure {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  backface-visibility: hidden;
+  counter-increment: steps 1;
+}
+
+/* ── D6 — cube ── */
+.css-die--d6 {
+  width: 60px;
+  height: 60px;
+}
+
+.css-die--d6 figure {
+  width: 60px;
+  height: 60px;
+  left: 0;
+  top: 0;
+  background: var(--die-color, #4b2a6f);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.css-die--d6 figure::before { content: counter(steps); }
+
+.css-die--d6 figure:nth-child(1) { transform: translateZ(30px); }
+.css-die--d6 figure:nth-child(2) { transform: rotateY(180deg) translateZ(30px); }
+.css-die--d6 figure:nth-child(3) { transform: rotateY(90deg) translateZ(30px); }
+.css-die--d6 figure:nth-child(4) { transform: rotateY(-90deg) translateZ(30px); }
+.css-die--d6 figure:nth-child(5) { transform: rotateX(-90deg) translateZ(30px); }
+.css-die--d6 figure:nth-child(6) { transform: rotateX(90deg) translateZ(30px); }
+
+.css-die--d6[data-face="1"] { transform: rotateY(0deg); }
+.css-die--d6[data-face="2"] { transform: rotateY(180deg); }
+.css-die--d6[data-face="3"] { transform: rotateY(-90deg); }
+.css-die--d6[data-face="4"] { transform: rotateY(90deg); }
+.css-die--d6[data-face="5"] { transform: rotateX(90deg); }
+.css-die--d6[data-face="6"] { transform: rotateX(-90deg); }
+
+/* ── D20 — icosahedron (from CodePen vicentemundim/nXNvBw, scaled 0.6×) ── */
+.css-die--d20 {
+  width: 120px;
+  height: 120px;
+  transform: rotateX(-53deg);
+}
+
+.css-die--d20 figure {
+  left: 50%;
+  top: 0;
+  margin: 0 -30px;
+  border-left: 30px solid transparent;
+  border-right: 30px solid transparent;
+  border-bottom: 52px solid var(--die-color, #4b2a6f);
+  width: 0;
+  height: 0;
+}
+
+.css-die--d20 figure::before {
+  content: counter(steps);
+  position: absolute;
+  top: 13px;
+  left: -60px;
+  color: #fff;
+  text-shadow: 1px 1px 3px #000;
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 46px;
+  width: 120px;
+  height: 52px;
+}
+
+.css-die--d20 figure:nth-child(1)  { transform: rotateY(0deg)    translateZ(20px) translateY(-8px) rotateX(53deg); }
+.css-die--d20 figure:nth-child(2)  { transform: rotateY(-72deg)  translateZ(20px) translateY(-8px) rotateX(53deg); }
+.css-die--d20 figure:nth-child(3)  { transform: rotateY(-144deg) translateZ(20px) translateY(-8px) rotateX(53deg); }
+.css-die--d20 figure:nth-child(4)  { transform: rotateY(-216deg) translateZ(20px) translateY(-8px) rotateX(53deg); }
+.css-die--d20 figure:nth-child(5)  { transform: rotateY(-288deg) translateZ(20px) translateY(-8px) rotateX(53deg); }
+.css-die--d20 figure:nth-child(6)  { transform: rotateY(360deg)  translateZ(45px) translateY(33px) rotateZ(180deg) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(7)  { transform: rotateY(288deg)  translateZ(45px) translateY(33px) rotateZ(180deg) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(8)  { transform: rotateY(216deg)  translateZ(45px) translateY(33px) rotateZ(180deg) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(9)  { transform: rotateY(144deg)  translateZ(45px) translateY(33px) rotateZ(180deg) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(10) { transform: rotateY(72deg)   translateZ(45px) translateY(33px) rotateZ(180deg) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(11) { transform: rotateY(252deg)  translateZ(45px) translateY(33px) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(12) { transform: rotateY(324deg)  translateZ(45px) translateY(33px) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(13) { transform: rotateY(396deg)  translateZ(45px) translateY(33px) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(14) { transform: rotateY(468deg)  translateZ(45px) translateY(33px) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(15) { transform: rotateY(540deg)  translateZ(45px) translateY(33px) rotateX(-11deg); }
+.css-die--d20 figure:nth-child(16) { transform: rotateY(-108deg) translateZ(20px) translateY(73px) rotateZ(180deg) rotateX(53deg); }
+.css-die--d20 figure:nth-child(17) { transform: rotateY(-36deg)  translateZ(20px) translateY(73px) rotateZ(180deg) rotateX(53deg); }
+.css-die--d20 figure:nth-child(18) { transform: rotateY(36deg)   translateZ(20px) translateY(73px) rotateZ(180deg) rotateX(53deg); }
+.css-die--d20 figure:nth-child(19) { transform: rotateY(108deg)  translateZ(20px) translateY(73px) rotateZ(180deg) rotateX(53deg); }
+.css-die--d20 figure:nth-child(20) { transform: rotateY(180deg)  translateZ(20px) translateY(73px) rotateZ(180deg) rotateX(53deg); }
+
+.css-die--d20[data-face="1"]  { transform: rotateX(-53deg) rotateY(0deg); }
+.css-die--d20[data-face="2"]  { transform: rotateX(-53deg) rotateY(72deg); }
+.css-die--d20[data-face="3"]  { transform: rotateX(-53deg) rotateY(144deg); }
+.css-die--d20[data-face="4"]  { transform: rotateX(-53deg) rotateY(216deg); }
+.css-die--d20[data-face="5"]  { transform: rotateX(-53deg) rotateY(288deg); }
+.css-die--d20[data-face="6"]  { transform: rotateX(11deg) rotateZ(180deg) rotateY(0deg); }
+.css-die--d20[data-face="7"]  { transform: rotateX(11deg) rotateZ(180deg) rotateY(72deg); }
+.css-die--d20[data-face="8"]  { transform: rotateX(11deg) rotateZ(180deg) rotateY(144deg); }
+.css-die--d20[data-face="9"]  { transform: rotateX(11deg) rotateZ(180deg) rotateY(216deg); }
+.css-die--d20[data-face="10"] { transform: rotateX(11deg) rotateZ(180deg) rotateY(288deg); }
+.css-die--d20[data-face="11"] { transform: rotateX(11deg) rotateY(-252deg); }
+.css-die--d20[data-face="12"] { transform: rotateX(11deg) rotateY(-324deg); }
+.css-die--d20[data-face="13"] { transform: rotateX(11deg) rotateY(-396deg); }
+.css-die--d20[data-face="14"] { transform: rotateX(11deg) rotateY(-468deg); }
+.css-die--d20[data-face="15"] { transform: rotateX(11deg) rotateY(-540deg); }
+.css-die--d20[data-face="16"] { transform: rotateX(127deg) rotateY(-72deg); }
+.css-die--d20[data-face="17"] { transform: rotateX(127deg) rotateY(-144deg); }
+.css-die--d20[data-face="18"] { transform: rotateX(127deg) rotateY(-216deg); }
+.css-die--d20[data-face="19"] { transform: rotateX(127deg) rotateY(-288deg); }
+.css-die--d20[data-face="20"] { transform: rotateX(127deg) rotateY(-360deg); }
+
+/* ── D8 — octahedron (2 rings of 4, 90° apart, offset 45°) ── */
+.css-die--d8 {
+  width: 90px;
+  height: 90px;
+  transform: rotateX(-35deg);
+}
+
+.css-die--d8 figure {
+  left: 50%;
+  top: 0;
+  margin: 0 -24px;
+  border-left: 24px solid transparent;
+  border-right: 24px solid transparent;
+  border-bottom: 42px solid var(--die-color, #4b2a6f);
+  width: 0;
+  height: 0;
+}
+
+.css-die--d8 figure::before {
+  content: counter(steps);
+  position: absolute;
+  top: 10px;
+  left: -48px;
+  color: #fff;
+  text-shadow: 1px 1px 3px #000;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 38px;
+  width: 96px;
+  height: 42px;
+}
+
+/* Top ring: 4 faces at azimuths 0, 90, 180, 270 */
+.css-die--d8 figure:nth-child(1) { transform: rotateY(0deg)    translateZ(16px) translateY(-6px) rotateX(55deg); }
+.css-die--d8 figure:nth-child(2) { transform: rotateY(-90deg)  translateZ(16px) translateY(-6px) rotateX(55deg); }
+.css-die--d8 figure:nth-child(3) { transform: rotateY(-180deg) translateZ(16px) translateY(-6px) rotateX(55deg); }
+.css-die--d8 figure:nth-child(4) { transform: rotateY(-270deg) translateZ(16px) translateY(-6px) rotateX(55deg); }
+/* Bottom ring: offset 45°, flipped */
+.css-die--d8 figure:nth-child(5) { transform: rotateY(45deg)   translateZ(16px) translateY(52px) rotateZ(180deg) rotateX(55deg); }
+.css-die--d8 figure:nth-child(6) { transform: rotateY(-45deg)  translateZ(16px) translateY(52px) rotateZ(180deg) rotateX(55deg); }
+.css-die--d8 figure:nth-child(7) { transform: rotateY(-135deg) translateZ(16px) translateY(52px) rotateZ(180deg) rotateX(55deg); }
+.css-die--d8 figure:nth-child(8) { transform: rotateY(-225deg) translateZ(16px) translateY(52px) rotateZ(180deg) rotateX(55deg); }
+
+.css-die--d8[data-face="1"] { transform: rotateX(-55deg) rotateY(0deg); }
+.css-die--d8[data-face="2"] { transform: rotateX(-55deg) rotateY(90deg); }
+.css-die--d8[data-face="3"] { transform: rotateX(-55deg) rotateY(180deg); }
+.css-die--d8[data-face="4"] { transform: rotateX(-55deg) rotateY(270deg); }
+.css-die--d8[data-face="5"] { transform: rotateX(125deg) rotateY(-45deg); }
+.css-die--d8[data-face="6"] { transform: rotateX(125deg) rotateY(45deg); }
+.css-die--d8[data-face="7"] { transform: rotateX(125deg) rotateY(135deg); }
+.css-die--d8[data-face="8"] { transform: rotateX(125deg) rotateY(225deg); }
+
+/* ── D12 — dodecahedron (2 rings of 5 + 2 poles, 72° apart) ── */
+.css-die--d12 {
+  width: 110px;
+  height: 110px;
+  transform: rotateX(-26deg);
+}
+
+.css-die--d12 figure {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  margin-left: -22px;
+  width: 44px;
+  height: 38px;
+  background: var(--die-color, #4b2a6f);
+  clip-path: polygon(50% 0%, 100% 38%, 81% 100%, 19% 100%, 0% 38%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.css-die--d12 figure::before { content: counter(steps); }
+
+/* Top pole */
+.css-die--d12 figure:nth-child(1)  { transform: rotateX(90deg) translateZ(30px) translateY(-19px); }
+/* Upper ring of 5 */
+.css-die--d12 figure:nth-child(2)  { transform: rotateY(0deg)    translateZ(34px) translateY(-10px) rotateX(26deg); }
+.css-die--d12 figure:nth-child(3)  { transform: rotateY(-72deg)  translateZ(34px) translateY(-10px) rotateX(26deg); }
+.css-die--d12 figure:nth-child(4)  { transform: rotateY(-144deg) translateZ(34px) translateY(-10px) rotateX(26deg); }
+.css-die--d12 figure:nth-child(5)  { transform: rotateY(-216deg) translateZ(34px) translateY(-10px) rotateX(26deg); }
+.css-die--d12 figure:nth-child(6)  { transform: rotateY(-288deg) translateZ(34px) translateY(-10px) rotateX(26deg); }
+/* Lower ring of 5 (offset 36°, flipped) */
+.css-die--d12 figure:nth-child(7)  { transform: rotateY(-36deg)  translateZ(34px) translateY(68px) rotateZ(180deg) rotateX(26deg); }
+.css-die--d12 figure:nth-child(8)  { transform: rotateY(-108deg) translateZ(34px) translateY(68px) rotateZ(180deg) rotateX(26deg); }
+.css-die--d12 figure:nth-child(9)  { transform: rotateY(-180deg) translateZ(34px) translateY(68px) rotateZ(180deg) rotateX(26deg); }
+.css-die--d12 figure:nth-child(10) { transform: rotateY(-252deg) translateZ(34px) translateY(68px) rotateZ(180deg) rotateX(26deg); }
+.css-die--d12 figure:nth-child(11) { transform: rotateY(-324deg) translateZ(34px) translateY(68px) rotateZ(180deg) rotateX(26deg); }
+/* Bottom pole */
+.css-die--d12 figure:nth-child(12) { transform: rotateX(-90deg) translateZ(30px) translateY(-77px); }
+
+.css-die--d12[data-face="1"]  { transform: rotateX(-90deg); }
+.css-die--d12[data-face="2"]  { transform: rotateX(-26deg) rotateY(0deg); }
+.css-die--d12[data-face="3"]  { transform: rotateX(-26deg) rotateY(72deg); }
+.css-die--d12[data-face="4"]  { transform: rotateX(-26deg) rotateY(144deg); }
+.css-die--d12[data-face="5"]  { transform: rotateX(-26deg) rotateY(216deg); }
+.css-die--d12[data-face="6"]  { transform: rotateX(-26deg) rotateY(288deg); }
+.css-die--d12[data-face="7"]  { transform: rotateX(154deg) rotateY(36deg); }
+.css-die--d12[data-face="8"]  { transform: rotateX(154deg) rotateY(108deg); }
+.css-die--d12[data-face="9"]  { transform: rotateX(154deg) rotateY(180deg); }
+.css-die--d12[data-face="10"] { transform: rotateX(154deg) rotateY(252deg); }
+.css-die--d12[data-face="11"] { transform: rotateX(154deg) rotateY(324deg); }
+.css-die--d12[data-face="12"] { transform: rotateX(90deg); }
+
+/* ── D10 — pentagonal trapezohedron (2 rings of 5, 72° apart, offset 36°) ── */
+.css-die--d10 {
+  width: 100px;
+  height: 100px;
+  transform: rotateX(-20deg);
+}
+
+.css-die--d10 figure {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  margin-left: -18px;
+  width: 36px;
+  height: 52px;
+  background: var(--die-color, #4b2a6f);
+  clip-path: polygon(50% 0%, 100% 35%, 50% 100%, 0% 35%);
+  display: flex;
+  align-items: 40%;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  padding-top: 10px;
+}
+
+.css-die--d10 figure::before { content: counter(steps); }
+
+/* Upper ring of 5 (faces 1-5) */
+.css-die--d10 figure:nth-child(1)  { transform: rotateY(0deg)    translateZ(30px) translateY(0px)  rotateX(20deg); }
+.css-die--d10 figure:nth-child(2)  { transform: rotateY(-72deg)  translateZ(30px) translateY(0px)  rotateX(20deg); }
+.css-die--d10 figure:nth-child(3)  { transform: rotateY(-144deg) translateZ(30px) translateY(0px)  rotateX(20deg); }
+.css-die--d10 figure:nth-child(4)  { transform: rotateY(-216deg) translateZ(30px) translateY(0px)  rotateX(20deg); }
+.css-die--d10 figure:nth-child(5)  { transform: rotateY(-288deg) translateZ(30px) translateY(0px)  rotateX(20deg); }
+/* Lower ring of 5 (faces 6-10, offset 36°, flipped) */
+.css-die--d10 figure:nth-child(6)  { transform: rotateY(-36deg)  translateZ(30px) translateY(48px) rotateZ(180deg) rotateX(20deg); }
+.css-die--d10 figure:nth-child(7)  { transform: rotateY(-108deg) translateZ(30px) translateY(48px) rotateZ(180deg) rotateX(20deg); }
+.css-die--d10 figure:nth-child(8)  { transform: rotateY(-180deg) translateZ(30px) translateY(48px) rotateZ(180deg) rotateX(20deg); }
+.css-die--d10 figure:nth-child(9)  { transform: rotateY(-252deg) translateZ(30px) translateY(48px) rotateZ(180deg) rotateX(20deg); }
+.css-die--d10 figure:nth-child(10) { transform: rotateY(-324deg) translateZ(30px) translateY(48px) rotateZ(180deg) rotateX(20deg); }
+
+.css-die--d10[data-face="1"]  { transform: rotateX(-20deg) rotateY(0deg); }
+.css-die--d10[data-face="2"]  { transform: rotateX(-20deg) rotateY(72deg); }
+.css-die--d10[data-face="3"]  { transform: rotateX(-20deg) rotateY(144deg); }
+.css-die--d10[data-face="4"]  { transform: rotateX(-20deg) rotateY(216deg); }
+.css-die--d10[data-face="5"]  { transform: rotateX(-20deg) rotateY(288deg); }
+.css-die--d10[data-face="6"]  { transform: rotateX(160deg) rotateY(36deg); }
+.css-die--d10[data-face="7"]  { transform: rotateX(160deg) rotateY(108deg); }
+.css-die--d10[data-face="8"]  { transform: rotateX(160deg) rotateY(180deg); }
+.css-die--d10[data-face="9"]  { transform: rotateX(160deg) rotateY(252deg); }
+.css-die--d10[data-face="10"] { transform: rotateX(160deg) rotateY(324deg); }
+
+/* ── D4 — tetrahedron (3 side faces + 1 bottom, 120° apart) ── */
+.css-die--d4 {
+  width: 80px;
+  height: 80px;
+  transform: rotateX(-20deg);
+}
+
+.css-die--d4 figure {
+  left: 50%;
+  top: 0;
+  margin: 0 -26px;
+  border-left: 26px solid transparent;
+  border-right: 26px solid transparent;
+  border-bottom: 45px solid var(--die-color, #4b2a6f);
+  width: 0;
+  height: 0;
+}
+
+.css-die--d4 figure::before {
+  content: counter(steps);
+  position: absolute;
+  top: 12px;
+  left: -52px;
+  color: #fff;
+  text-shadow: 1px 1px 3px #000;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  width: 104px;
+  height: 45px;
+}
+
+/* 3 side faces */
+.css-die--d4 figure:nth-child(1) { transform: rotateY(0deg)    translateZ(14px) translateY(-4px) rotateX(54deg); }
+.css-die--d4 figure:nth-child(2) { transform: rotateY(-120deg) translateZ(14px) translateY(-4px) rotateX(54deg); }
+.css-die--d4 figure:nth-child(3) { transform: rotateY(-240deg) translateZ(14px) translateY(-4px) rotateX(54deg); }
+/* Bottom face (inverted) */
+.css-die--d4 figure:nth-child(4) { transform: rotateY(-60deg)  translateZ(14px) translateY(52px) rotateZ(180deg) rotateX(54deg); }
+
+.css-die--d4[data-face="1"] { transform: rotateX(-54deg) rotateY(0deg); }
+.css-die--d4[data-face="2"] { transform: rotateX(-54deg) rotateY(120deg); }
+.css-die--d4[data-face="3"] { transform: rotateX(-54deg) rotateY(240deg); }
+.css-die--d4[data-face="4"] { transform: rotateX(126deg) rotateY(60deg); }
 
 @keyframes table-impact-shake {
   0% { transform: translateX(0); }

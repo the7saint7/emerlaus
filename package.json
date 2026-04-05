@@ -7,17 +7,13 @@
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "postinstall": "node scripts/apply_dice_box_patch.mjs",
-    "patch:dice-box": "node scripts/apply_dice_box_patch.mjs",
     "import:base-cards": "py scripts/import_base_cards.py",
-    "sync:dice-assets": "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path client/public/assets/dice-box | Out-Null; Copy-Item -Path node_modules/@3d-dice/dice-box/dist/assets/* -Destination client/public/assets/dice-box -Recurse -Force\"",
     "build": "npm run build:server && npm run build:client",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "dependencies": {
-    "@3d-dice/dice-box": "^1.1.4",
     "@discord/embedded-app-sdk": "^1.6.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0"
