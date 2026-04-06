@@ -1255,6 +1255,42 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     }
   };
 
+  // Returns a point at parameter t on a cubic bezier curve.
+  const bezierAt = (t: number, p0x: number, p0y: number, p1x: number, p1y: number, p2x: number, p2y: number, p3x: number, p3y: number): [number, number] => {
+    const u = 1 - t;
+    return [
+      u*u*u*p0x + 3*u*u*t*p1x + 3*u*t*t*p2x + t*t*t*p3x,
+      u*u*u*p0y + 3*u*u*t*p1y + 3*u*t*t*p2y + t*t*t*p3y,
+    ];
+  };
+
+  // Returns the point at the base of the arrowhead — use this as the line endpoint
+  // so the line ends where the arrowhead begins rather than at the tip.
+  const arrowBase = (tipX: number, tipY: number, fromX: number, fromY: number, size: number): [number, number] => {
+    const dx = tipX - fromX;
+    const dy = tipY - fromY;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return [tipX, tipY];
+    return [tipX - (dx / len) * size, tipY - (dy / len) * size];
+  };
+
+  const buildArrowhead = (tipX: number, tipY: number, fromX: number, fromY: number, size: number, cssClass: string): string => {
+    const dx = tipX - fromX;
+    const dy = tipY - fromY;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return "";
+    const ux = dx / len;
+    const uy = dy / len;
+    const px = -uy;
+    const py = ux;
+    const half = size * 0.5;
+    const b1x = tipX - ux * size + px * half;
+    const b1y = tipY - uy * size + py * half;
+    const b2x = tipX - ux * size - px * half;
+    const b2y = tipY - uy * size - py * half;
+    return `<polygon class="${cssClass}" points="${tipX.toFixed(1)},${tipY.toFixed(1)} ${b1x.toFixed(1)},${b1y.toFixed(1)} ${b2x.toFixed(1)},${b2y.toFixed(1)}" />`;
+  };
+
   const drawPendingActionTargetOverlay = (presentationLockActive: boolean): void => {
     const overlay = rootElement.querySelector<SVGSVGElement>("[data-action-target-overlay='true']");
     if (overlay == null || state.match?.status !== "in_progress" || (presentationLockActive && state.activeActionVisual == null)) {
@@ -1286,8 +1322,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       const actorX = actorRect.left - tableRect.left + (actorRect.width / 2);
       const actorY = actorRect.top - tableRect.top + (actorRect.height / 2);
       const controlOffset = Math.max(40, Math.abs(actorY - originY) * 0.28);
-      const actorPath = `M ${actorX} ${actorY} C ${actorX} ${actorY - controlOffset}, ${originX} ${originY + controlOffset}, ${originX} ${originY}`;
+      const [aBaseX, aBaseY] = arrowBase(originX, originY, actorX, actorY, 60);
+      const actorPath = `M ${actorX} ${actorY} C ${actorX} ${actorY - controlOffset}, ${aBaseX} ${aBaseY + controlOffset}, ${aBaseX} ${aBaseY}`;
       pathMarkup.push(`<path class="action-target-overlay__attacker" d="${actorPath}" />`);
+      pathMarkup.push(buildArrowhead(originX, originY, actorX, actorY, 60, "action-target-overlay__attacker"));
     }
 
     const targetElements: HTMLElement[] = [];
@@ -1321,14 +1359,37 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       }
     }
 
+    // Returns the point where the line from (fromX,fromY) to the rect center
+    // intersects the rect's boundary (table-relative coords).
+    const rectEdgePoint = (fromX: number, fromY: number, cx: number, cy: number, rect: DOMRect): [number, number] => {
+      const l = rect.left - tableRect.left;
+      const t = rect.top  - tableRect.top;
+      const r = l + rect.width;
+      const b = t + rect.height;
+      const dx = cx - fromX;
+      const dy = cy - fromY;
+      let bestT = 1;
+      const test = (t2: number, x: number, y: number) => {
+        if (t2 > 0 && t2 < bestT && x >= l - 1 && x <= r + 1 && y >= t - 1 && y <= b + 1) bestT = t2;
+      };
+      if (Math.abs(dx) > 0.1) { test((l - fromX) / dx, l, fromY + (l - fromX) / dx * dy); test((r - fromX) / dx, r, fromY + (r - fromX) / dx * dy); }
+      if (Math.abs(dy) > 0.1) { test((t - fromY) / dy, fromX + (t - fromY) / dy * dx, t); test((b - fromY) / dy, fromX + (b - fromY) / dy * dx, b); }
+      return [fromX + bestT * dx, fromY + bestT * dy];
+    };
+
     overlay.setAttribute("viewBox", `0 0 ${Math.max(1, tableRect.width)} ${Math.max(1, tableRect.height)}`);
     pathMarkup.push(...targetElements.map((targetElement) => {
       const targetRect = targetElement.getBoundingClientRect();
-      const targetX = targetRect.left - tableRect.left + (targetRect.width / 2);
-      const targetY = targetRect.top - tableRect.top + (targetRect.height / 2);
-      const controlOffset = Math.max(40, Math.abs(targetY - originY) * 0.32);
-      const path = `M ${originX} ${originY} C ${originX} ${originY + controlOffset}, ${targetX} ${targetY - controlOffset}, ${targetX} ${targetY}`;
-      return `<path class="action-target-overlay__target" d="${path}" />`;
+      const targetCX = targetRect.left - tableRect.left + (targetRect.width / 2);
+      const targetCY = targetRect.top  - tableRect.top  + (targetRect.height / 2);
+      const [edgeX, edgeY] = rectEdgePoint(originX, originY, targetCX, targetCY, targetRect);
+      const [tBaseX, tBaseY] = arrowBase(edgeX, edgeY, originX, originY, 60);
+      const controlOffset = Math.max(40, Math.abs(tBaseY - originY) * 0.32);
+      const path = `M ${originX} ${originY} C ${originX} ${originY + controlOffset}, ${tBaseX} ${tBaseY - controlOffset}, ${tBaseX} ${tBaseY}`;
+      return [
+        `<path class="action-target-overlay__target" d="${path}" />`,
+        buildArrowhead(edgeX, edgeY, originX, originY, 60, "action-target-overlay__target"),
+      ].join("");
     }));
     overlay.innerHTML = pathMarkup.join("");
   };
@@ -1638,28 +1699,6 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = err instanceof Error ? err.message : "Failed to draw card";
         render();
       }
-    });
-
-    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='dev-random-dice']").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const seatNumber = Number(btn.dataset.seatNumber);
-        btn.disabled = true;
-        try {
-          const result = await devRandomDiceRoll(state.instanceId, state.playerSessionToken, seatNumber);
-          // Show what the server expects so you can compare with the visual
-          logClient("dev-dice", `Server rolled ${result.notation} → expected ${result.total} [${result.values.join(", ")}]`);
-          await diceController.roll(result.notation, {
-            resolvedResult: { total: result.total, values: result.values },
-            themeColor: getSeatDiceColor(seatNumber),
-            placement: getDiceStagePlacement(seatNumber)
-          });
-        } catch (err) {
-          state.errorMessage = err instanceof Error ? err.message : "Dice roll failed";
-          render();
-        } finally {
-          btn.disabled = false;
-        }
-      });
     });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='leave-match']")?.addEventListener("click", () => {

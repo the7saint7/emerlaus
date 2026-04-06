@@ -5,6 +5,12 @@ import type { ArrowDragState, DragHoverTarget } from "../app/state";
 import type { OpponentAnchor } from "./opponentLayout";
 import { getOpponentAnchorsForPlayerCount } from "./opponentLayout";
 
+// Track which hand cards have been seen so newly dealt cards can be animated in.
+const _knownHandCardIds = new Set<string>();
+const _dealAnimatingUntil = new Map<string, number>(); // instanceId → epoch ms when animation ends
+const DEAL_ANIMATION_MS = 950; // slightly longer than the CSS duration
+let _handInitialized = false;
+
 interface TableViewParams {
   match: MatchState;
   localSeatNumber: number;
@@ -249,7 +255,6 @@ function renderOpponentSeat(
         </div>
         ${renderSeatInlineObjects(seat, draggedCard, hoverTarget)}
       </div>
-      <button class="dev-dice-button" data-action="dev-random-dice" data-seat-number="${seat.seatNumber}" title="Dev: roll random dice for this seat">🎲</button>
       ${damageBurstAmount != null ? `<div class="seat-damage-burst">-${damageBurstAmount}</div>` : ""}
       ${healBurstActive ? renderHealBurst() : ""}
       ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget)}
@@ -264,6 +269,26 @@ function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrow
   const FAN_RADIUS = 700;
   const FAN_SPREAD_DEG = total <= 1 ? 0 : Math.min(34, 8 + (total - 2) * 4);
   const CUT_OFF_PX = 80; // hides the defense band at card bottom
+
+  // Detect newly dealt cards and keep the animation class alive for the full duration,
+  // even if the component re-renders multiple times before the animation finishes.
+  const now = Date.now();
+  const currentIds = new Set(hand.map(c => c.instanceId));
+
+  if (_handInitialized) {
+    for (const card of hand) {
+      if (!_knownHandCardIds.has(card.instanceId)) {
+        _dealAnimatingUntil.set(card.instanceId, now + DEAL_ANIMATION_MS);
+      }
+    }
+  }
+  _handInitialized = true;
+
+  for (const id of [..._knownHandCardIds]) { if (!currentIds.has(id)) _knownHandCardIds.delete(id); }
+  for (const id of currentIds) _knownHandCardIds.add(id);
+  for (const [id, until] of [..._dealAnimatingUntil]) {
+    if (now > until || !currentIds.has(id)) _dealAnimatingUntil.delete(id);
+  }
 
   return hand.map((card, i) => {
     // Ghost effect only for normal drag, not for arrow-drag (arrow is the visual indicator)
@@ -281,13 +306,18 @@ function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrow
     const fanX = Math.sin(angleRad) * FAN_RADIUS;
     const fanY = (1 - Math.cos(angleRad)) * FAN_RADIUS + CUT_OFF_PX;
     const fanRotate = angleRad * 180 / Math.PI;
-    // Center cards have higher z-index so they overlap edge cards naturally
-    const fanZ = Math.round(20 - Math.abs((i + 0.5) - total / 2) * 2);
+    // Rightmost card (dealt last) sits on top
+    const fanZ = i + 1;
+    const animUntil = _dealAnimatingUntil.get(card.instanceId);
+    const isNew = animUntil !== undefined;
+    // Negative delay resumes the animation at the correct point on re-renders,
+    // preventing the animation from restarting from scratch each time.
+    const dealElapsed = isNew ? Math.min(now - (animUntil! - DEAL_ANIMATION_MS), DEAL_ANIMATION_MS) : 0;
 
     return `
       <article
-        class="hand-card ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""}"
-        style="--fan-x:${fanX.toFixed(1)}px;--fan-y:${fanY.toFixed(1)}px;--fan-rotate:${fanRotate.toFixed(2)}deg;--fan-z:${fanZ};"
+        class="hand-card ${isNew ? "hand-card--new" : ""} ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""}"
+        style="--fan-x:${fanX.toFixed(1)}px;--fan-y:${fanY.toFixed(1)}px;--fan-rotate:${fanRotate.toFixed(2)}deg;--fan-z:${fanZ};${isNew ? `--deal-elapsed:${dealElapsed.toFixed(0)}ms;` : ""}"
         data-card-instance-id="${card.instanceId}"
         data-base-fan-x="${fanX.toFixed(1)}"
       >
@@ -304,7 +334,7 @@ function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrow
   }).join("");
 }
 
-function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, localSeatNumber: number): string {
+function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, localSeatNumber: number, stripClass: string): string {
   if (objects.length === 0) {
     return "";
   }
@@ -312,7 +342,7 @@ function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefin
   const objectTargetable = isObjectTargetable(draggedCard);
 
   return `
-    <div class="local-object-strip">
+    <div class="${stripClass}">
       ${objects.map((card) => `
         <article
           class="local-object-card ${objectTargetable ? "local-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", localSeatNumber, card.instanceId) ? "local-object-card--hovered" : ""}"
@@ -607,12 +637,12 @@ export function renderTableView({
           ` : ""}
 
           <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumber === localSeatNumber ? "local-hand-panel--impact" : ""} ${activeHealBurst?.seatNumber === localSeatNumber ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
-            <button class="dev-dice-button dev-dice-button--local" data-action="dev-random-dice" data-seat-number="${localSeatNumber}" title="Dev: roll random dice for this seat">🎲</button>
             ${activeHealBurst?.seatNumber === localSeatNumber ? renderHealBurst(true) : ""}
-            ${renderLocalObjects(localSeat?.objects ?? [], draggedCard, dragHoverTarget, localSeatNumber)}
+            ${renderLocalObjects((localSeat?.objects ?? []).filter(c => c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-rings-strip")}
             <div class="hand-fan">
               ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", pendingAction != null, isLocalTurn)}
             </div>
+            ${renderLocalObjects((localSeat?.objects ?? []).filter(c => !c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-equipment-strip")}
             ${draggingCardInstanceId ? `
               <div
                 class="hand-discard-zone ${isHoverTarget(dragHoverTarget, "discard") ? "hand-discard-zone--hovered" : ""}"

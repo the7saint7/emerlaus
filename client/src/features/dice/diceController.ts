@@ -35,28 +35,28 @@ const SUPPORTED_SIDES = new Set([4, 6, 8, 10, 12, 20]);
 // x/y get extra 360° multiples added for the spin animation; z stays fixed.
 const diceFaceRotations: Record<number, FaceRotation[]> = {
   4: [
-    { x:   5, y:   0, z:   0 },
-    { x: 115, y:   0, z: -60 },
-    { x: 245, y:   0, z:   0 },
-    { x: 115, y:   0, z:  60 },
+    { x:   5, y:   0, z:    0 },  // face 1 ✓
+    { x:   5, y:   0, z: -120 },  // face 2 (derived from 120° tetrahedron symmetry — verify)
+    { x:   5, y:   0, z:  120 },  // face 3 (derived from 120° tetrahedron symmetry — verify)
+    { x: 115, y:   0, z:   60 },  // face 4 ✓
   ],
   6: [
-    { x: 180, y:   0, z:   0 },
-    { x:   0, y:  90, z:  90 },
-    { x: 270, y:   0, z: 180 },
-    { x:  90, y:   0, z:   0 },
-    { x: 180, y: 270, z:  90 },
-    { x:   0, y:   0, z:   0 },
+    { x:  90, y:   0, z:   0 },   // face 1
+    { x: 270, y:   0, z: 180 },   // face 2
+    { x: 180, y: 270, z:  90 },   // face 3
+    { x:   0, y:  90, z:  90 },   // face 4
+    { x: 180, y:   0, z:   0 },   // face 5
+    { x:   0, y:   0, z:   0 },   // face 6 ✓
   ],
   8: [
-    { x:  45, y: 180, z:   0 },
-    { x:  45, y:  90, z: 180 },
-    { x:  45, y: 270, z:   0 },
-    { x:  45, y: 270, z: 180 },
-    { x:  45, y:   0, z:   0 },
-    { x:  45, y: 180, z: 180 },
-    { x:  45, y:  90, z:   0 },
-    { x:  45, y:   0, z: 180 },
+    { x:  45, y: 180, z:   0 },   // face 1 ✓
+    { x:  45, y:   0, z:   0 },   // face 2
+    { x:  45, y:  90, z:   0 },   // face 3
+    { x:  45, y: 270, z:   0 },   // face 4
+    { x:  45, y: 180, z: 180 },   // face 5
+    { x:  45, y:   0, z: 180 },   // face 6
+    { x:  45, y: 270, z: 180 },   // face 7
+    { x:  45, y:  90, z: 180 },   // face 8
   ],
   10: [
     { x:   5, y:  -36, z:   0 },
@@ -71,18 +71,18 @@ const diceFaceRotations: Record<number, FaceRotation[]> = {
     { x:   5, y:  144, z:  36 },
   ],
   12: [
-    { x:    0,   y:   0, z: 180 },
-    { x: 121.72, y:   0, z:   0 },
-    { x: 121.72, y: 288, z:   0 },
-    { x: 121.72, y: 216, z:   0 },
-    { x: 121.72, y: 144, z:   0 },
-    { x: 121.72, y:  72, z:   0 },
-    { x: -58.28, y: 216, z:   0 },
-    { x: -58.28, y:   0, z:   0 },
-    { x: -58.28, y:  72, z:   0 },
-    { x: -58.28, y: 144, z:   0 },
-    { x: -58.28, y: 288, z:   0 },
-    { x:    0,   y: 180, z:   0 },
+    { x:    0,   y:   0, z: 180 },  // face 1  ✓
+    { x: 121.72, y:   0, z:   0 },  // face 2  ✓
+    { x: 121.72, y: 288, z:   0 },  // face 3  ✓
+    { x: 121.72, y: 216, z:   0 },  // face 4  ✓
+    { x: 121.72, y: 144, z:   0 },  // face 5  ✓
+    { x: 121.72, y:  72, z:   0 },  // face 6  ✓
+    { x:    0,   y: 180, z:   0 },  // face 7  (was face 12)
+    { x: -58.28, y:   0, z:   0 },  // face 8  ✓
+    { x: -58.28, y:  72, z:   0 },  // face 9  ✓
+    { x: -58.28, y: 144, z:   0 },  // face 10 ✓
+    { x: -58.28, y: 288, z:   0 },  // face 11 ✓
+    { x: -58.28, y: 216, z:   0 },  // face 12 (was face 7)
   ],
   20: [
     { x:  100, y:    0, z:   30 },

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dice Face Debug</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { background: #0f1a10; color: #ccc; font-family: sans-serif; padding: 24px; }
+    h1 { color: #fff; margin-bottom: 4px; }
+    p.hint { color: #888; font-size: 13px; margin: 0 0 24px; }
+    h2 { color: #9c6; margin: 32px 0 10px; border-bottom: 1px solid #2a3a2a; padding-bottom: 4px; }
+    .face-grid { display: flex; flex-wrap: wrap; gap: 28px 20px; align-items: center; }
+    .face-item { display: flex; align-items: center; gap: 10px; }
+    .face-label { font-size: 13px; color: #aaa; min-width: 28px; text-align: right; flex-shrink: 0; }
+    .face-label strong { color: #fff; font-size: 18px; display: block; }
+    /* freeze transitions and shrink dice for debug view */
+    .die-solid { transition: none !important; }
+    .die-shell { transform-origin: top left; scale: 0.45; }
+  </style>
+</head>
+<body>
+  <h1>Dice Face Rotation Debug</h1>
+  <p class="hint">Each die is frozen at the rotation claimed by <code>diceFaceRotations</code>. The label beneath shows which face number the code expects to be visible. If the number on top doesn't match the label — that entry is wrong.</p>
+
+  <script>
+    // Copied verbatim from diceController.ts
+    const diceFaceRotations = {
+      4: [
+        { x:   5, y:   0, z:    0 },
+        { x:   5, y:   0, z: -120 },
+        { x:   5, y:   0, z:  120 },
+        { x: 115, y:   0, z:   60 },
+      ],
+      6: [
+        { x:  90, y:   0, z:   0 },
+        { x: 270, y:   0, z: 180 },
+        { x: 180, y: 270, z:  90 },
+        { x:   0, y:  90, z:  90 },
+        { x: 180, y:   0, z:   0 },
+        { x:   0, y:   0, z:   0 },
+      ],
+      8: [
+        { x:  45, y: 180, z:   0 },
+        { x:  45, y:   0, z:   0 },
+        { x:  45, y:  90, z:   0 },
+        { x:  45, y: 270, z:   0 },
+        { x:  45, y: 180, z: 180 },
+        { x:  45, y:   0, z: 180 },
+        { x:  45, y: 270, z: 180 },
+        { x:  45, y:  90, z: 180 },
+      ],
+      10: [
+        { x:   5, y:  -36, z:   0 },
+        { x:   5, y:  -36, z: 288 },
+        { x:   5, y:  -36, z: 216 },
+        { x:   5, y:  -36, z: 144 },
+        { x:   5, y:  -36, z:  72 },
+        { x:   5, y:  144, z: 324 },
+        { x:   5, y:  144, z: 252 },
+        { x:   5, y:  144, z: 180 },
+        { x:   5, y:  144, z: 108 },
+        { x:   5, y:  144, z:  36 },
+      ],
+      12: [
+        { x:    0,   y:   0, z: 180 },
+        { x: 121.72, y:   0, z:   0 },
+        { x: 121.72, y: 288, z:   0 },
+        { x: 121.72, y: 216, z:   0 },
+        { x: 121.72, y: 144, z:   0 },
+        { x: 121.72, y:  72, z:   0 },
+        { x:    0,   y: 180, z:   0 },
+        { x: -58.28, y:   0, z:   0 },
+        { x: -58.28, y:  72, z:   0 },
+        { x: -58.28, y: 144, z:   0 },
+        { x: -58.28, y: 288, z:   0 },
+        { x: -58.28, y: 216, z:   0 },
+      ],
+      20: [
+        { x:  100, y:    0, z:   30 },
+        { x:  100, y:    0, z:  -42 },
+        { x:  100, y:    0, z:  244 },
+        { x:  100, y:    0, z:  172 },
+        { x:  100, y:    0, z:  102 },
+        { x:  -15, y:  -25, z:  168 },
+        { x:  -15, y:  160, z: -130 },
+        { x:  -15, y:  -25, z: -120 },
+        { x:  -15, y:  160, z:  -60 },
+        { x:  -15, y:  -25, z:  -50 },
+        { x:  -15, y:  160, z:   10 },
+        { x:  -15, y:  -25, z:   25 },
+        { x:  -15, y:  160, z:   85 },
+        { x:  -15, y:  -25, z:   95 },
+        { x:  -15, y:  160, z:  155 },
+        { x:  -85, y:    0, z:  180 },
+        { x:  -85, y:    0, z:  252 },
+        { x:  -85, y:    0, z:  -33 },
+        { x:  -85, y:    0, z:   39 },
+        { x:  -85, y:    0, z:  111 },
+      ],
+    };
+
+    for (const [sides, rots] of Object.entries(diceFaceRotations)) {
+      const n = Number(sides);
+
+      const h2 = document.createElement('h2');
+      h2.textContent = `D${n}`;
+      document.body.appendChild(h2);
+
+      const grid = document.createElement('div');
+      grid.className = 'face-grid';
+      document.body.appendChild(grid);
+
+      rots.forEach((rot, fi) => {
+        const item = document.createElement('div');
+        item.className = 'face-item';
+
+        const shell = document.createElement('div');
+        shell.className = `die-shell die-shell--d${n}`;
+        shell.style.setProperty('--die-color', '#4b2a6f');
+
+        const solid = document.createElement('div');
+        solid.className = `die-solid die-solid--d${n}`;
+        solid.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg) rotateZ(${rot.z}deg)`;
+
+        for (let i = 0; i < n; i++) {
+          const face = document.createElement('div');
+          face.className = `die-face die-face--d${n}`;
+          const label = document.createElement('span');
+          label.className = `die-label die-label--d${n}`;
+          label.textContent = String(i + 1);
+          face.appendChild(label);
+          solid.appendChild(face);
+        }
+
+        shell.appendChild(solid);
+
+        const lbl = document.createElement('div');
+        lbl.className = 'face-label';
+        lbl.innerHTML = `<strong>${fi + 1}</strong>`;
+        item.appendChild(lbl);
+        item.appendChild(shell);
+
+        grid.appendChild(item);
+      });
+    }
+  </script>
+</body>
+</html>
