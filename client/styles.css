@@ -536,7 +536,6 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 28px;
   flex-wrap: nowrap;
 }
 
@@ -585,12 +584,9 @@ h2 {
   filter: drop-shadow(0 14px 20px rgba(8, 14, 8, 0.28));
 }
 
-.center-play-slot--action {
-  transform: translateX(-8px);
-}
-
-.center-play-slot--discard {
-  transform: translateX(8px);
+.center-play-slot--inactive {
+  opacity: 0.55;
+  filter: saturate(0.5) brightness(0.85);
 }
 
 .center-play-slot--targetable {
@@ -742,6 +738,29 @@ h2 {
   flex-wrap: wrap;
 }
 
+.dev-dice-button {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 30;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 3px 5px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.dev-dice-button:hover { opacity: 1; }
+.dev-dice-button:disabled { opacity: 0.3; cursor: wait; }
+
+.dev-dice-button--local {
+  top: 6px;
+  left: 6px;
+}
+
 .table-seat {
   position: absolute;
   width: 190px;
@@ -750,6 +769,14 @@ h2 {
   justify-items: center;
   gap: 8px;
   z-index: 2;
+}
+
+.table-seat--heal-active {
+  z-index: 20;
+}
+
+.local-hand-panel--heal-active {
+  z-index: 20;
 }
 
 .table-seat--targetable {
@@ -947,12 +974,12 @@ h2 {
 .local-hand-panel {
   position: absolute;
   left: 50%;
-  bottom: 52px;
+  bottom: -10px;
   transform: translateX(-50%);
   width: min(1080px, calc(100% - 72px));
-  padding: 18px 24px 24px;
+  padding: 0 24px 8px;
   border-radius: 30px 30px 22px 22px;
-  background: linear-gradient(180deg, rgba(7, 19, 9, 0.2), rgba(5, 11, 5, 0.38));
+  background: transparent;
   z-index: 7;
   transition: box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
 }
@@ -969,20 +996,6 @@ h2 {
   animation: local-panel-hit-burst 520ms ease;
 }
 
-.local-seat-summary {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-  color: rgba(247, 238, 213, 0.92);
-}
-
-.local-seat-summary span {
-  color: rgba(233, 222, 196, 0.72);
-  font-size: 0.9rem;
-}
 
 .local-object-strip {
   display: flex;
@@ -1032,20 +1045,39 @@ h2 {
     0 0 36px rgba(245, 212, 106, 0.42);
 }
 
-.hand-row {
-  display: flex;
-  justify-content: center;
-  gap: 18px;
-  min-height: 220px;
-  align-items: flex-end;
-  flex-wrap: wrap;
+.hand-fan {
+  position: relative;
+  width: 100%;
+  height: 310px;
+  overflow: visible;
+}
+
+/* Gradient at the bottom of the fan creates the "cards fading into table" cut-off effect */
+.hand-fan::after {
+  content: '';
+  position: absolute;
+  bottom: -28px;
+  left: -32px;
+  right: -32px;
+  height: 110px;
+  background: linear-gradient(to top, rgba(5, 11, 5, 1) 30%, transparent);
+  pointer-events: none;
+  z-index: 8;
+}
+
+.local-hand-panel--current-turn .hand-fan::after {
+  background: linear-gradient(to top, rgba(9, 19, 10, 1) 30%, transparent);
 }
 
 .hand-card {
-  width: 152px;
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 230px;
   transform-origin: bottom center;
-  display: grid;
-  gap: 8px;
+  transform: translateX(calc(-50% + var(--fan-x, 0px))) translateY(var(--fan-y, 80px)) rotate(var(--fan-rotate, 0deg));
+  z-index: var(--fan-z, 10);
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease;
 }
 
 .hand-card-button {
@@ -1056,7 +1088,7 @@ h2 {
   gap: 8px;
   border-radius: 18px;
   overflow: visible;
-  border: 2px solid rgba(246, 232, 204, 0.24);
+  border: none;
   background:
     linear-gradient(160deg, rgba(255, 255, 255, 0.2), transparent 35%),
     linear-gradient(180deg, rgba(17, 36, 20, 0.75), rgba(11, 20, 12, 0.94));
@@ -1066,27 +1098,46 @@ h2 {
 
 .hand-card-button img {
   width: 100%;
-  height: 210px;
+  height: 320px;
   object-fit: cover;
   display: block;
   border-radius: 16px;
+  /* Sharp 1px outline that follows the actual card art edge (respects transparency) */
+  filter: drop-shadow(1px 0 0 black) drop-shadow(-1px 0 0 black) drop-shadow(0 1px 0 black) drop-shadow(0 -1px 0 black);
 }
 
-.hand-card--playable .hand-card-button:hover {
-  transform: translateY(-10px) scale(1.03);
+/* While arrow-targeting is active, freeze non-source cards so they don't interfere. */
+.hand-fan:has(.hand-card--arrow-active) .hand-card:not(.hand-card--arrow-active) {
+  pointer-events: none;
+}
+
+/* Phase 2 & 3: stable zoom state driven by JS class (no CSS :hover flicker).
+   Rise is enough to clear the cut-off and show the full card; scale matches the video reference. */
+.hand-card--js-hovered,
+.hand-card--arrow-active {
+  transform: translateX(calc(-50% + var(--fan-x, 0px))) translateY(calc(var(--fan-y, 0px) - 130px)) rotate(0deg) scale(1.35);
+  z-index: 100;
+  transition: transform 150ms ease;
+}
+
+.hand-card--js-hovered .hand-card-button,
+.hand-card--arrow-active .hand-card-button {
   border-color: rgba(245, 212, 106, 0.75);
-  box-shadow: 0 20px 36px rgba(8, 14, 8, 0.4), 0 0 0 2px rgba(245, 212, 106, 0.35);
+  box-shadow: 0 32px 56px rgba(8, 14, 8, 0.52), 0 0 0 2px rgba(245, 212, 106, 0.5), 0 0 48px rgba(245, 212, 106, 0.22);
 }
 
-.hand-card--selected .hand-card-button {
-  transform: translateY(-12px) scale(1.04);
-  border-color: rgba(245, 212, 106, 0.9);
-  box-shadow: 0 22px 42px rgba(8, 14, 8, 0.42), 0 0 0 2px rgba(245, 212, 106, 0.42);
+/* Selected (being dragged): ghost in place, drag-card-preview follows cursor */
+.hand-card--selected {
+  opacity: 0.35;
+  filter: grayscale(0.5);
+  pointer-events: none;
+  transition: none;
 }
 
+/* Response-playable: slightly lifted, golden glow, uses fan geometry */
 .hand-card--response-playable {
-  transform: translateY(-12px) scale(1.06);
-  z-index: 2;
+  transform: translateX(calc(-50% + var(--fan-x, 0px))) translateY(calc(var(--fan-y, 0px) - 20px)) rotate(var(--fan-rotate, 0deg)) scale(1.06);
+  z-index: 12;
 }
 
 .hand-card--response-playable .hand-card-button {
@@ -1103,26 +1154,26 @@ h2 {
 
 .local-hp-panel {
   position: absolute;
-  right: 28px;
-  bottom: 36px;
-  display: grid;
+  right: 18px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
   gap: 6px;
-  min-width: 132px;
-  padding: 16px 18px;
-  border-radius: 20px;
+  padding: 8px 12px;
+  border-radius: 14px;
   text-align: right;
   z-index: 5;
 }
 
 .local-hp-panel span {
-  color: rgba(248, 233, 199, 0.72);
-  letter-spacing: 0.08em;
+  color: rgba(248, 233, 199, 0.6);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 0.82rem;
+  font-size: 0.7rem;
 }
 
 .local-hp-panel strong {
-  font-size: 2rem;
+  font-size: 1.3rem;
   color: #ff6b6b;
 }
 
@@ -1192,7 +1243,7 @@ h2 {
 }
 
 .dev-draw-panel {
-  margin-left: auto;
+  /* now lives in table-actions top-left, no extra margin needed */
 }
 
 .dev-draw-select {
@@ -1225,6 +1276,42 @@ h2 {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* Phase 3: Full-screen fixed SVG for the targeting arrow overlay */
+.arrow-drag-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+  overflow: visible;
+}
+
+/* Discard zone shown inside hand panel while dragging a card */
+.hand-discard-zone {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(120, 40, 40, 0.5);
+  border: 1px solid rgba(200, 80, 80, 0.4);
+  color: rgba(248, 200, 200, 0.8);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  pointer-events: auto;
+  z-index: 20;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  cursor: pointer;
+}
+
+.hand-discard-zone--hovered {
+  background: rgba(180, 50, 50, 0.7);
+  border-color: rgba(220, 100, 100, 0.7);
+  box-shadow: 0 0 0 2px rgba(200, 80, 80, 0.5), 0 0 24px rgba(200, 80, 80, 0.3);
+  color: #fff2f2;
 }
 
 .card-tooltip {
@@ -1291,13 +1378,25 @@ h2 {
   background: rgba(69, 128, 88, 0.56);
 }
 
-.hand-card-button:hover .card-tooltip,
+.hand-card--js-hovered .card-tooltip,
+.hand-card--arrow-active .card-tooltip,
 .seat-object-card:hover .card-tooltip,
 .seat-inline-object:hover .card-tooltip,
 .seat-status-card:hover .card-tooltip,
 .local-object-card:hover .card-tooltip,
 .center-play-slot:hover .card-tooltip {
   display: block;
+}
+
+/* Hand card tooltip: appears to the right of the card, vertically centred */
+.hand-card--js-hovered .card-tooltip,
+.hand-card--arrow-active .card-tooltip {
+  left: calc(100% + 14px);
+  right: auto;
+  bottom: auto;
+  top: 20%;
+  transform: none;
+  width: 220px;
 }
 
 .local-object-card .card-tooltip {
@@ -1786,9 +1885,8 @@ h2 {
     height: 72px;
   }
 
-  .hand-row {
-    gap: 12px;
-    min-height: 170px;
+  .hand-fan {
+    height: 170px;
   }
 
   .local-object-card {
@@ -1800,11 +1898,11 @@ h2 {
   }
 
   .hand-card {
-    width: 110px;
+    width: 140px;
   }
 
   .hand-card-button img {
-    height: 160px;
+    height: 195px;
   }
 }
 
@@ -1837,10 +1935,6 @@ h2 {
     top: 40%;
   }
 
-  .center-play-slots {
-    gap: 16px;
-  }
-
   .center-play-slot {
     width: 90px;
     height: 126px;
@@ -1852,8 +1946,8 @@ h2 {
     padding: 14px;
   }
 
-  .hand-row {
-    gap: 8px;
+  .hand-fan {
+    height: 160px;
   }
 
   .local-object-strip {
@@ -1870,11 +1964,11 @@ h2 {
   }
 
   .hand-card {
-    width: 78px;
+    width: 100px;
   }
 
   .hand-card-button img {
-    height: 118px;
+    height: 148px;
   }
 
   .local-hp-panel {

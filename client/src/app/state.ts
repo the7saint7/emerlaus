@@ -6,6 +6,18 @@ export interface DragHoverTarget {
   objectInstanceId?: string;
 }
 
+export interface ArrowDragState {
+  cardInstanceId: string;
+  /** Viewport coordinates of the arrow origin (card center) */
+  originX: number;
+  originY: number;
+  /** Current pointer viewport coordinates */
+  pointerX: number;
+  pointerY: number;
+  /** Seat number of nearest valid target, null if none close enough */
+  nearestSeatNumber: number | null;
+}
+
 export interface AppState {
   instanceId: string;
   playerSessionToken: string;
@@ -16,6 +28,10 @@ export interface AppState {
   dragPointerX: number;
   dragPointerY: number;
   dragHoverTarget: DragHoverTarget | null;
+  /** Arrow drag state for single-target cards (Phase 3) */
+  arrowDrag: ArrowDragState | null;
+  /** Instance ID of the card currently showing the zoom hover state (empty = none) */
+  hoveredCardInstanceId: string;
   inspectedSeatNumber: number;
   seenGameEventIds: string[];
   seenEventMessageIds: string[];
@@ -62,4 +78,6 @@ export interface AppState {
     amount: number;
   } | null;
   impactTargetSeatNumber: number;
+  /** Confirmed target seat for opponents currently doing an arrow drag */
+  opponentCursors: Record<number, { targetSeatNumber: number | null; ts: number }>;
 }

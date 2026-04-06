@@ -23,6 +23,7 @@ import {
   addBot,
   announceDiceRoll,
   devDrawCard,
+  devRandomDiceRoll,
   disconnectPlayer,
   getMatchState,
   joinMatch,
@@ -33,7 +34,7 @@ import {
   startMatch
 } from "./services/matchService";
 import { getPlayerSessionUserId } from "./store/playerSessionStore";
-import { addSseConnection } from "./store/sseStore";
+import { addSseConnection, broadcastCursorMove } from "./store/sseStore";
 
 const app = express();
 
@@ -188,6 +189,18 @@ app.post("/api/matches/:instanceId/dev/draw-card", (request, response) => {
   }
 });
 
+app.post("/api/matches/:instanceId/dev/random-dice", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const { seatNumber } = request.body as { seatNumber: number };
+    response.json(devRandomDiceRoll(request.params.instanceId, userId, seatNumber));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to roll dice"
+    });
+  }
+});
+
 app.post("/api/matches/:instanceId/disconnect", (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
@@ -209,6 +222,16 @@ app.post("/api/matches/:instanceId/chat", (request, response) => {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to send chat message"
     });
+  }
+});
+
+app.post("/api/matches/:instanceId/cursor", (request, response) => {
+  try {
+    const { seatNumber, targetSeatNumber } = request.body as { seatNumber: number; targetSeatNumber: number | null };
+    broadcastCursorMove(request.params.instanceId, seatNumber, targetSeatNumber);
+    response.status(204).end();
+  } catch {
+    response.status(400).end();
   }
 });
 

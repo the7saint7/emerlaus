@@ -1,7 +1,7 @@
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { CardView, MatchState, PendingActionResponderState, SeatState } from "../../../shared/types";
 import { baseCardDefinitions } from "../../../shared/cards";
-import type { DragHoverTarget } from "../app/state";
+import type { ArrowDragState, DragHoverTarget } from "../app/state";
 import type { OpponentAnchor } from "./opponentLayout";
 import { getOpponentAnchorsForPlayerCount } from "./opponentLayout";
 
@@ -33,6 +33,7 @@ interface TableViewParams {
   dragPointerX: number;
   dragPointerY: number;
   dragHoverTarget: DragHoverTarget | null;
+  arrowDrag: ArrowDragState | null;
   inspectedSeatNumber: number;
   errorMessage: string;
   chatMarkup: string;
@@ -226,7 +227,7 @@ function renderOpponentSeat(
   const hpBarPercent = Math.max(0, Math.min(100, (displayedHp / 50) * 100));
   return `
     <article
-      class="table-seat ${targetable ? "table-seat--targetable" : ""} ${currentTurn ? "table-seat--current-turn" : ""} ${impactActive ? "table-seat--impact" : ""} ${isHoverTarget(hoverTarget, "seat", seat.seatNumber) ? "table-seat--hovered" : ""}"
+      class="table-seat ${targetable ? "table-seat--targetable" : ""} ${currentTurn ? "table-seat--current-turn" : ""} ${impactActive ? "table-seat--impact" : ""} ${isHoverTarget(hoverTarget, "seat", seat.seatNumber) ? "table-seat--hovered" : ""} ${healBurstActive ? "table-seat--heal-active" : ""}"
       style="left:${anchor.x}%; top:${anchor.y}%;"
       data-seat-area="true"
       data-seat-number="${seat.seatNumber}"
@@ -248,6 +249,7 @@ function renderOpponentSeat(
         </div>
         ${renderSeatInlineObjects(seat, draggedCard, hoverTarget)}
       </div>
+      <button class="dev-dice-button" data-action="dev-random-dice" data-seat-number="${seat.seatNumber}" title="Dev: roll random dice for this seat">🎲</button>
       ${damageBurstAmount != null ? `<div class="seat-damage-burst">-${damageBurstAmount}</div>` : ""}
       ${healBurstActive ? renderHealBurst() : ""}
       ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget)}
@@ -257,16 +259,38 @@ function renderOpponentSeat(
   `;
 }
 
-function renderHandCards(hand: CardView[], draggingCardInstanceId: string, pendingActionActive: boolean, isLocalTurn: boolean): string {
-  return hand.map((card) => {
-    const selected = card.instanceId === draggingCardInstanceId;
+function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrowDragCardInstanceId: string, pendingActionActive: boolean, isLocalTurn: boolean): string {
+  const total = hand.length;
+  const FAN_RADIUS = 700;
+  const FAN_SPREAD_DEG = total <= 1 ? 0 : Math.min(34, 8 + (total - 2) * 4);
+  const CUT_OFF_PX = 80; // hides the defense band at card bottom
+
+  return hand.map((card, i) => {
+    // Ghost effect only for normal drag, not for arrow-drag (arrow is the visual indicator)
+    const selected = card.instanceId === draggingCardInstanceId && arrowDragCardInstanceId === "";
+    // Keep the arrow-source card in its zoomed hover state while aiming
+    const arrowActive = card.instanceId === arrowDragCardInstanceId;
     // During a pending action only response cards (canPlay) are draggable.
     // On your own turn, ALL cards can be dragged so reaction-only cards (e.g.
     // annulation, resistance-accrue) can at least be discarded.
     const disableSelection = pendingActionActive ? !card.canPlay : !isLocalTurn;
     const responsePlayable = pendingActionActive && card.canPlay;
+
+    // Fan geometry: cards arc along a large imaginary circle below the hand panel
+    const angleRad = total <= 1 ? 0 : (-FAN_SPREAD_DEG / 2 + (i / (total - 1)) * FAN_SPREAD_DEG) * (Math.PI / 180);
+    const fanX = Math.sin(angleRad) * FAN_RADIUS;
+    const fanY = (1 - Math.cos(angleRad)) * FAN_RADIUS + CUT_OFF_PX;
+    const fanRotate = angleRad * 180 / Math.PI;
+    // Center cards have higher z-index so they overlap edge cards naturally
+    const fanZ = Math.round(20 - Math.abs((i + 0.5) - total / 2) * 2);
+
     return `
-      <article class="hand-card ${card.canPlay ? "hand-card--playable" : "hand-card--disabled"} ${selected ? "hand-card--selected" : ""} ${responsePlayable ? "hand-card--response-playable" : ""}">
+      <article
+        class="hand-card ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""}"
+        style="--fan-x:${fanX.toFixed(1)}px;--fan-y:${fanY.toFixed(1)}px;--fan-rotate:${fanRotate.toFixed(2)}deg;--fan-z:${fanZ};"
+        data-card-instance-id="${card.instanceId}"
+        data-base-fan-x="${fanX.toFixed(1)}"
+      >
         <button
           class="hand-card-button"
           ${disableSelection ? "" : `data-action="drag-card" data-card-instance-id="${card.instanceId}"`}
@@ -334,12 +358,14 @@ function renderCenterPlayArea(
   const responseSlotCompatible = displayedAction != null && draggedCard?.categoryCode === "CA" && draggedCard.canPlay;
   const visibleOptions = options.filter((option) => option.choice === "pass" || option.choice === "resist" || option.choice === "annulation");
 
+  const isShowingLastPlayed = stackedCards.length > 0 && displayedAction == null;
+
   return `
     <section class="center-play-area">
       <div class="combat-fx-banner ${activeCombatFx != null ? `combat-fx-banner--${activeCombatFx.tone}` : "combat-fx-banner--idle"}">${activeCombatFx != null ? escapeHtml(activeCombatFx.message) : "\u00a0"}</div>
       <div class="center-play-slots">
         <article
-          class="center-play-slot center-play-slot--action ${stackedCards.length > 0 ? "center-play-slot--filled" : ""} ${impactActive ? "center-play-slot--impact" : ""} ${(playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : ""} ${(isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : ""}"
+          class="center-play-slot ${stackedCards.length > 0 ? "center-play-slot--filled" : ""} ${isShowingLastPlayed ? "center-play-slot--inactive" : ""} ${impactActive ? "center-play-slot--impact" : ""} ${(playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : ""} ${(isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : ""}"
           data-center-card-stack="true"
           ${displayedAction != null ? `data-pending-card-center="true"` : ""}
           ${(responseSlotCompatible || playSlotCompatible) ? `data-drop-target="${responseSlotCompatible ? "response-slot" : "play-slot"}"` : ""}
@@ -356,12 +382,6 @@ function renderCenterPlayArea(
               </div>
             `
             : `<div class="center-play-slot-placeholder"></div>`}
-        </article>
-        <article
-          class="center-play-slot center-play-slot--discard ${draggedCard != null ? "center-play-slot--targetable" : ""} ${isHoverTarget(hoverTarget, "discard") ? "center-play-slot--hovered" : ""}"
-          data-drop-target="discard"
-        >
-          <img src="/assets/cards/back.png" alt="Discard pile" />
         </article>
       </div>
       ${visibleOptions.length > 0 ? `
@@ -493,6 +513,7 @@ export function renderTableView({
   dragPointerX,
   dragPointerY,
   dragHoverTarget,
+  arrowDrag,
   inspectedSeatNumber,
   errorMessage,
   chatMarkup,
@@ -508,7 +529,14 @@ export function renderTableView({
   const isLocalTurn = visibleCurrentTurnSeatNumber === localSeat?.seatNumber;
   const opponents = getOpponentSeats(match, localSeatNumber);
   const anchors = getOpponentAnchorsForPlayerCount(match.seats.length);
-  const draggedCard = localSeat?.hand?.find((card) => card.instanceId === draggingCardInstanceId);
+  // The "active" dragging card: either the arrow-drag card (shown as ghost) or a normal drag
+  const effectiveDraggingId = arrowDrag?.cardInstanceId ?? draggingCardInstanceId;
+  // draggedCard drives seat targetability and drag preview; use effectiveDraggingId so arrow-drag cards
+  // also highlight valid target seats. For normal drag, the preview card follows the cursor.
+  const draggedCard = localSeat?.hand?.find((card) => card.instanceId === effectiveDraggingId);
+  const normalDragPreviewCard = arrowDrag == null
+    ? draggedCard
+    : undefined; // no drag preview when arrow is active
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
   const localDisplayedHp = localSeat == null ? 0 : displayedHpBySeat[localSeat.seatNumber] ?? localSeat.hp ?? 0;
   const seatMarkup = anchors.map((anchor, index) => {
@@ -540,6 +568,7 @@ export function renderTableView({
 
       <section class="table-shell">
         <div class="table-actions">
+          ${renderDevDrawPanel()}
           ${localIsHost ? `
             <button
               data-action="download-server-log"
@@ -577,19 +606,19 @@ export function renderTableView({
             </div>
           ` : ""}
 
-          <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumber === localSeatNumber ? "local-hand-panel--impact" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+          <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumber === localSeatNumber ? "local-hand-panel--impact" : ""} ${activeHealBurst?.seatNumber === localSeatNumber ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+            <button class="dev-dice-button dev-dice-button--local" data-action="dev-random-dice" data-seat-number="${localSeatNumber}" title="Dev: roll random dice for this seat">🎲</button>
             ${activeHealBurst?.seatNumber === localSeatNumber ? renderHealBurst(true) : ""}
-            <div class="local-seat-summary">
-              <strong>${escapeHtml(localSeat?.displayName ?? "You")}</strong>
-              <span>Seat ${localSeat?.seatNumber ?? "-"}</span>
-              <span>Power ${localSeat?.powerLevel ?? 1}</span>
-              <span>${visibleCurrentTurnSeatNumber === localSeat?.seatNumber ? "Active turn" : "Waiting"}</span>
-              ${renderDevDrawPanel()}
-            </div>
             ${renderLocalObjects(localSeat?.objects ?? [], draggedCard, dragHoverTarget, localSeatNumber)}
-            <div class="hand-row">
-              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, pendingAction != null, isLocalTurn)}
+            <div class="hand-fan">
+              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", pendingAction != null, isLocalTurn)}
             </div>
+            ${draggingCardInstanceId ? `
+              <div
+                class="hand-discard-zone ${isHoverTarget(dragHoverTarget, "discard") ? "hand-discard-zone--hovered" : ""}"
+                data-drop-target="discard"
+              >✕ Discard</div>
+            ` : ""}
           </section>
         </div>
 
@@ -599,7 +628,8 @@ export function renderTableView({
         </aside>
 
         ${chatMarkup}
-        ${renderDragPreview(draggedCard, dragPointerX, dragPointerY)}
+        ${renderDragPreview(normalDragPreviewCard, dragPointerX, dragPointerY)}
+        <svg class="arrow-drag-overlay" aria-hidden="true"></svg>
       </section>
     </main>
   `;

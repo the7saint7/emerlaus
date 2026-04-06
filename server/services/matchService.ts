@@ -33,6 +33,7 @@ import {
 import type { StoredMatchState } from "./gameEngineTypes";
 import { getMatch, getOrCreateMatch, saveMatch } from "../store/matchStore";
 import { issuePlayerSession, revokePlayerSession } from "../store/playerSessionStore";
+import { notifyMatchUpdated } from "../store/sseStore";
 
 const MAX_CHAT_MESSAGES = 100;
 const botTurnTimers = new Map<string, NodeJS.Timeout>();
@@ -422,6 +423,57 @@ export function announceDiceRoll(instanceId: string, userId: string, request: An
 
   saveMatch(match);
   return buildPublicMatchState(match, userId);
+}
+
+const DEV_DICE_SIDES = [4, 6, 8, 10, 12, 20] as const;
+
+export interface DevRandomDiceResult {
+  notation: string;
+  total: number;
+  values: number[];
+  seatNumber: number;
+}
+
+export function devRandomDiceRoll(instanceId: string, userId: string, targetSeatNumber: number): DevRandomDiceResult {
+  const match = requireMatch(instanceId);
+  requireHumanSeat(match, userId);
+
+  const sides = DEV_DICE_SIDES[Math.floor(Math.random() * DEV_DICE_SIDES.length)];
+  const notation = `1D${sides}`;
+  const values = [Math.floor(Math.random() * sides) + 1];
+  const total = values.reduce((a, b) => a + b, 0);
+
+  match.chatMessages.push({
+    id: randomUUID(),
+    userId: "dealer",
+    displayName: "Dealer",
+    avatarUrl: "",
+    content: `[DEV] Seat ${targetSeatNumber} rolls ${notation} → expected ${total} (${values.join(" + ")})`,
+    createdAt: new Date().toISOString()
+  });
+
+  if (match.internalGame != null) {
+    match.internalGame.diceRolls.push({
+      id: randomUUID(),
+      seatNumber: targetSeatNumber,
+      notation,
+      total,
+      values,
+      rolledAt: new Date().toISOString()
+    });
+    if (match.internalGame.diceRolls.length > 20) {
+      match.internalGame.diceRolls = match.internalGame.diceRolls.slice(-20);
+    }
+  }
+
+  if (match.chatMessages.length > MAX_CHAT_MESSAGES) {
+    match.chatMessages = match.chatMessages.slice(-MAX_CHAT_MESSAGES);
+  }
+
+  saveMatch(match);
+  notifyMatchUpdated(instanceId);
+
+  return { notation, total, values, seatNumber: targetSeatNumber };
 }
 
 export function disconnectPlayer(instanceId: string, userId: string, _request: DisconnectRequest): MatchState {

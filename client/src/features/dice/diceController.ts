@@ -280,6 +280,10 @@ class DiceController {
         dieArea.appendChild(el);
       }
 
+      // Guarantee the browser paints the die in its initial state before applying
+      // the transform, otherwise the CSS transition has nothing to animate from.
+      await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
+
       await Promise.all(shellEls.map(async (shellEl, i) => {
         const stagger = i === 0 ? 0 : randomInt(60, MAX_STAGGER_MS);
         await delay(stagger);

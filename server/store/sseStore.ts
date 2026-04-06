@@ -34,3 +34,19 @@ export function notifyMatchUpdated(instanceId: string): void {
     }
   }
 }
+
+export function broadcastCursorMove(instanceId: string, seatNumber: number, targetSeatNumber: number | null): void {
+  const set = connections.get(instanceId);
+  if (set == null || set.size === 0) {
+    return;
+  }
+
+  const payload = `data: ${JSON.stringify({ type: "cursor_move", seatNumber, targetSeatNumber })}\n\n`;
+  for (const res of set) {
+    try {
+      res.write(payload);
+    } catch {
+      // Connection already closed
+    }
+  }
+}

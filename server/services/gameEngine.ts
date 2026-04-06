@@ -969,6 +969,26 @@ function consumeHandCardsById(source: StoredCardInstance[], cardId: string, coun
   return removed.reverse();
 }
 
+/** Derives the equipment slot from a card name (first French noun of the card name). */
+function getObjectSlot(cardName: string): string {
+  const lower = cardName.toLowerCase();
+  if (lower.startsWith("anneau")) return "anneau";
+  if (lower.startsWith("amulette")) return "amulette";
+  if (lower.startsWith("bâton") || lower.startsWith("baton")) return "baton";
+  if (lower.startsWith("ceinture")) return "ceinture";
+  if (lower.startsWith("robe")) return "robe";
+  return "other";
+}
+
+const OBJECT_SLOT_LIMITS: Record<string, number> = {
+  anneau: 2,
+  amulette: 1,
+  baton: 1,
+  ceinture: 1,
+  robe: 1,
+  other: 1
+};
+
 function movePersistentCard(match: StoredMatchState, actorSeatNumber: number, targetSeatNumbers: number[], card: StoredCardInstance, definition: BaseCardDefinition): void {
   const game = match.internalGame;
   if (game == null) {
@@ -976,7 +996,21 @@ function movePersistentCard(match: StoredMatchState, actorSeatNumber: number, ta
   }
 
   if (definition.category.code === "O") {
-    getStoredSeat(game, actorSeatNumber).objects.push(card);
+    const seat = getStoredSeat(game, actorSeatNumber);
+    const slot = getObjectSlot(definition.name);
+    const limit = OBJECT_SLOT_LIMITS[slot] ?? 1;
+    const existing = seat.objects.filter((o) => getObjectSlot(requireDefinition(o.cardId).name) === slot);
+
+    if (existing.length >= limit) {
+      // Replace the oldest object of the same slot (discard it)
+      const replaced = existing[0];
+      const idx = seat.objects.indexOf(replaced);
+      seat.objects.splice(idx, 1);
+      game.discardPile.push(replaced);
+      appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} replaced ${requireDefinition(replaced.cardId).name} with ${definition.name}`);
+    }
+
+    seat.objects.push(card);
     appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} equipped ${definition.name}`);
     return;
   }

@@ -1,5 +1,6 @@
 import {
   devDrawCard,
+  devRandomDiceRoll,
   disconnectFromMatch,
   fetchMatch,
   joinMatch,
@@ -45,6 +46,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     dragPointerX: 0,
     dragPointerY: 0,
     dragHoverTarget: null,
+    arrowDrag: null,
+    hoveredCardInstanceId: "",
     inspectedSeatNumber: 0,
     seenGameEventIds: joined.match.game?.eventLog.map((event) => event.id) ?? [],
     seenEventMessageIds: [],
@@ -64,7 +67,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     activeCombatFx: null,
     activeDamageBurst: null,
     activeHealBurst: null,
-    impactTargetSeatNumber: 0
+    impactTargetSeatNumber: 0,
+    opponentCursors: {}
   };
   let eventReplayChain = Promise.resolve();
   let activeReplayBatchCount = 0;
@@ -288,6 +292,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   const applyMatchState = (nextMatch: MatchState | null): void => {
     state.match = nextMatch;
+    // Clear ghost arrows whenever game state resolves (action is done)
+    state.opponentCursors = {};
     if (nextMatch == null) {
       state.displayedHpBySeat = {};
       state.centerResponseCards = [];
@@ -755,6 +761,130 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const clearDragState = (): void => {
     state.draggingCardInstanceId = "";
     state.dragHoverTarget = null;
+    state.arrowDrag = null;
+    state.hoveredCardInstanceId = "";
+  };
+
+  /** Returns true if the card's targets require aiming at a specific opponent. */
+  const cardNeedsArrow = (card: CardView): boolean =>
+    card.canPlay && (card.targets === "single_opponent");
+
+  /** Returns true if the card can be played by a "lift out of hand" gesture. */
+  const cardIsLiftPlayable = (card: CardView): boolean =>
+    card.canPlay && (
+      card.categoryCode === "O" ||
+      card.targets === "self" ||
+      card.targets === "all_opponents" ||
+      card.targets === "none" ||
+      card.selectionMode === "confirm"
+    );
+
+  /**
+   * Updates the fixed arrow SVG overlay for arrow-drag (Phase 3) and
+   * for the "lift to play" indicator (Phase 4). Called after renders
+   * and directly during pointermove for smooth updates.
+   */
+  const updateArrowOverlay = (): void => {
+    const svg = rootElement.querySelector<SVGSVGElement>(".arrow-drag-overlay");
+    if (svg == null) {
+      return;
+    }
+
+    const GHOST_TIMEOUT_MS = 500;
+    const now = Date.now();
+
+    /** Builds SVG markup for one arrow (local red or ghost grey). */
+    const buildArrow = (
+      originX: number, originY: number,
+      tipX: number, tipY: number,
+      color: string, width: number, glowAttr: string
+    ): string => {
+      const angle = Math.atan2(tipY - originY, tipX - originX);
+      const head = 208;
+      const spread = 0.42;
+      // Line ends at the base of the arrowhead triangle (head * cos(spread) = triangle height)
+      const lineEndX = tipX - head * Math.cos(spread) * Math.cos(angle);
+      const lineEndY = tipY - head * Math.cos(spread) * Math.sin(angle);
+      // Stem curve: cp1 straight up from origin, cp2 straight up from lineEnd.
+      // The horizontal gap between origin and lineEnd bends the curve naturally left/right.
+      const dist = Math.hypot(lineEndX - originX, lineEndY - originY);
+      const lift = Math.max(120, dist * 0.45);
+      const cp1x = originX;
+      const cp1y = originY - lift;
+      const cp2x = lineEndX;
+      const cp2y = lineEndY - lift * 0.4;
+      const pathD = `M ${originX} ${originY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lineEndX} ${lineEndY}`;
+      const ax1 = tipX - head * Math.cos(angle - spread);
+      const ay1 = tipY - head * Math.sin(angle - spread);
+      const ax2 = tipX - head * Math.cos(angle + spread);
+      const ay2 = tipY - head * Math.sin(angle + spread);
+      return `
+        <path d="${pathD}" stroke="${color}" stroke-width="${width}" stroke-linecap="round" fill="none" ${glowAttr}/>
+        <polygon points="${tipX},${tipY} ${ax1},${ay1} ${ax2},${ay2}" fill="${color}" ${glowAttr}/>
+      `;
+    };
+
+    const parts: string[] = [];
+
+    // Ghost arrows for opponents currently dragging (received via SSE cursor_move).
+    // Origin = actor's seat as seen on THIS player's screen.
+    // Tip = snapped to target seat when confirmed, otherwise direction vector applied to origin.
+    for (const [rawSeat, cursor] of Object.entries(state.opponentCursors)) {
+      if (now - cursor.ts > GHOST_TIMEOUT_MS) {
+        continue; // stale
+      }
+      const actorSeat = Number(rawSeat);
+      const actorEl = rootElement.querySelector<HTMLElement>(`[data-seat-number='${actorSeat}']`);
+      if (actorEl == null) {
+        continue;
+      }
+      const or = actorEl.getBoundingClientRect();
+      const ox = or.left + or.width / 2;
+      const oy = or.top + or.height / 2;
+
+      if (cursor.targetSeatNumber == null) continue;
+      const targetEl = rootElement.querySelector<HTMLElement>(`[data-seat-number='${cursor.targetSeatNumber}']`);
+      if (targetEl == null) continue;
+      const tr = targetEl.getBoundingClientRect();
+      const tipX = tr.left + tr.width / 2;
+      const tipY = tr.top + tr.height / 2;
+
+      parts.push(buildArrow(ox, oy, tipX, tipY, "rgba(180,180,180,0.5)", 12, ""));
+    }
+
+    // Local player's red targeting arrow
+    if (state.arrowDrag != null) {
+      const { originX, originY, pointerX, pointerY, nearestSeatNumber } = state.arrowDrag;
+      const confirmed = nearestSeatNumber != null;
+      let tipX = pointerX;
+      let tipY = pointerY;
+      if (confirmed) {
+        const seatEl = rootElement.querySelector<HTMLElement>(`[data-drop-target='seat'][data-seat-number='${nearestSeatNumber}']`);
+        if (seatEl != null) {
+          const r = seatEl.getBoundingClientRect();
+          tipX = r.left + r.width / 2;
+          tipY = r.top + r.height / 2;
+        }
+      }
+      const color = confirmed ? "#cc2222" : "rgba(180, 50, 50, 0.55)";
+      const glowAttr = confirmed ? `filter="url(#arrow-glow)"` : "";
+      parts.push(buildArrow(originX, originY, tipX, tipY, color, 18, glowAttr));
+    }
+
+    if (parts.length === 0) {
+      svg.innerHTML = "";
+      return;
+    }
+
+    svg.innerHTML = `
+      <defs>
+        <filter id="arrow-glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      ${parts.join("")}
+    `;
   };
 
   const parseHoverTarget = (element: Element | null): DragHoverTarget | null => {
@@ -891,14 +1021,71 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     }
   };
 
+  let cursorSendAt = 0;
+  const CURSOR_THROTTLE_MS = 50;
+
   const handleDocumentPointerMove = (event: PointerEvent): void => {
+    // Phase 3: arrow drag for targeting cards
+    if (state.arrowDrag != null) {
+      state.arrowDrag.pointerX = event.clientX;
+      state.arrowDrag.pointerY = event.clientY;
+
+      // Find nearest targetable seat
+      const seatElements = Array.from(rootElement.querySelectorAll<HTMLElement>("[data-drop-target='seat']"));
+      let nearestSeat: number | null = null;
+      let nearestDist = Infinity;
+      for (const el of seatElements) {
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dist = Math.hypot(event.clientX - cx, event.clientY - cy);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestSeat = Number(el.dataset.seatNumber);
+        }
+      }
+      // Confirm only when pointer is within 80px of the seat centre
+      state.arrowDrag.nearestSeatNumber = nearestDist < 80 ? nearestSeat : null;
+      updateArrowOverlay();
+
+      // Broadcast cursor position to opponents (throttled to ~20 fps)
+      const now = Date.now();
+      if (now - cursorSendAt >= CURSOR_THROTTLE_MS) {
+        cursorSendAt = now;
+        void fetch(`/api/matches/${state.instanceId}/cursor`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            seatNumber: state.localSeatNumber,
+            targetSeatNumber: state.arrowDrag?.nearestSeatNumber ?? null
+          })
+        });
+      }
+      return;
+    }
+
     if (state.draggingCardInstanceId === "") {
       return;
     }
 
     state.dragPointerX = event.clientX;
     state.dragPointerY = event.clientY;
-    const hoverTarget = parseHoverTarget(document.elementFromPoint(event.clientX, event.clientY));
+
+    // Phase 4: detect "lift above hand panel" for self/mass cards
+    const draggedCard = getDraggedCard();
+    let hoverTarget: DragHoverTarget | null;
+    if (draggedCard != null && cardIsLiftPlayable(draggedCard)) {
+      const handPanel = rootElement.querySelector<HTMLElement>(".local-hand-panel");
+      const panelTop = handPanel?.getBoundingClientRect().top ?? Infinity;
+      if (event.clientY < panelTop - 10) {
+        hoverTarget = { kind: "play-slot" };
+      } else {
+        hoverTarget = parseHoverTarget(document.elementFromPoint(event.clientX, event.clientY));
+      }
+    } else {
+      hoverTarget = parseHoverTarget(document.elementFromPoint(event.clientX, event.clientY));
+    }
+
     const sameTarget =
       hoverTarget?.kind === state.dragHoverTarget?.kind &&
       hoverTarget?.seatNumber === state.dragHoverTarget?.seatNumber &&
@@ -918,13 +1105,50 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   };
 
   const handleDocumentPointerUp = (event: PointerEvent): void => {
-    if (event.button !== 0 || state.draggingCardInstanceId === "") {
+    if (event.button !== 0) {
+      return;
+    }
+
+    // Phase 3: arrow drag release
+    if (state.arrowDrag != null) {
+      const { cardInstanceId, nearestSeatNumber } = state.arrowDrag;
+      clearDragState();
+      if (nearestSeatNumber != null) {
+        void (async () => {
+          try {
+            await executePlayRequest({
+              cardInstanceId,
+              mode: "active",
+              targetSeatNumber: nearestSeatNumber
+            });
+          } catch (error) {
+            state.errorMessage = error instanceof Error ? error.message : "Unable to play card";
+          }
+          render();
+        })();
+      } else {
+        render();
+      }
+      return;
+    }
+
+    if (state.draggingCardInstanceId === "") {
       return;
     }
 
     state.dragPointerX = event.clientX;
     state.dragPointerY = event.clientY;
-    state.dragHoverTarget = parseHoverTarget(document.elementFromPoint(event.clientX, event.clientY));
+    // Phase 4: re-evaluate lift target at release moment
+    const draggedCard = getDraggedCard();
+    if (draggedCard != null && cardIsLiftPlayable(draggedCard)) {
+      const handPanel = rootElement.querySelector<HTMLElement>(".local-hand-panel");
+      const panelTop = handPanel?.getBoundingClientRect().top ?? Infinity;
+      state.dragHoverTarget = event.clientY < panelTop - 10
+        ? { kind: "play-slot" }
+        : parseHoverTarget(document.elementFromPoint(event.clientX, event.clientY));
+    } else {
+      state.dragHoverTarget = parseHoverTarget(document.elementFromPoint(event.clientX, event.clientY));
+    }
     void handleDraggedCardDrop();
   };
 
@@ -935,7 +1159,20 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     sseEventSource?.close();
     sseEventSource = new EventSource(`/api/matches/${instanceId}/events`);
 
-    sseEventSource.addEventListener("message", () => {
+    sseEventSource.addEventListener("message", (event) => {
+      try {
+        const msg = JSON.parse(event.data as string) as { type: string; seatNumber?: number; targetSeatNumber?: number | null };
+        if (msg.type === "cursor_move" && msg.seatNumber != null) {
+          // Ignore our own seat (we already have arrowDrag state)
+          if (msg.seatNumber !== state.localSeatNumber) {
+            state.opponentCursors[msg.seatNumber] = { targetSeatNumber: msg.targetSeatNumber ?? null, ts: Date.now() };
+            updateArrowOverlay();
+          }
+          return;
+        }
+      } catch {
+        // Not JSON or unknown shape — fall through to state sync
+      }
       void syncMatch();
     });
 
@@ -1096,6 +1333,43 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     overlay.innerHTML = pathMarkup.join("");
   };
 
+  /** Applies/removes the stable zoom class based on state.hoveredCardInstanceId. */
+  const applyHoverClass = (): void => {
+    rootElement.querySelectorAll<HTMLElement>(".hand-card--js-hovered").forEach((el) => {
+      el.classList.remove("hand-card--js-hovered");
+    });
+    if (state.hoveredCardInstanceId !== "") {
+      rootElement.querySelector<HTMLElement>(
+        `[data-card-instance-id='${state.hoveredCardInstanceId}']`
+      )?.classList.add("hand-card--js-hovered");
+    }
+  };
+
+  /**
+   * Directly mutates --fan-x on each .hand-card so adjacent cards spread away
+   * from the hovered card without a full DOM re-render (preserving CSS transitions).
+   * SPREAD_PX: how many pixels each neighbouring card is pushed outward.
+   */
+  const applyHoverSpread = (): void => {
+    const SPREAD_PX = 110;
+    const cards = Array.from(rootElement.querySelectorAll<HTMLElement>(".hand-card"));
+    const hoveredIndex = cards.findIndex(
+      (el) => el.dataset.cardInstanceId === state.hoveredCardInstanceId
+    );
+    cards.forEach((el, i) => {
+      const base = parseFloat(el.dataset.baseFanX ?? "0");
+      let offset = 0;
+      if (hoveredIndex >= 0 && state.hoveredCardInstanceId !== "") {
+        const dist = i - hoveredIndex;
+        if (dist !== 0) {
+          // All cards on each side shift by the same flat amount — preserves inter-card spacing
+          offset = Math.sign(dist) * SPREAD_PX;
+        }
+      }
+      el.style.setProperty("--fan-x", `${(base + offset).toFixed(1)}px`);
+    });
+  };
+
   const render = (): void => {
     const chatSnapshot = captureChatDomSnapshot(rootElement);
 
@@ -1150,6 +1424,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             dragPointerX: state.dragPointerX,
             dragPointerY: state.dragPointerY,
             dragHoverTarget: state.dragHoverTarget,
+            arrowDrag: state.arrowDrag,
             inspectedSeatNumber: state.inspectedSeatNumber,
             errorMessage: state.errorMessage,
             chatMarkup,
@@ -1162,6 +1437,33 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     const kickTarget = state.match.seats.find((seat) => seat.seatNumber === state.confirmingKickSeatNumber);
     rootElement.innerHTML = `${baseView}${renderLeaveConfirmationModal(state.confirmingLeave)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "")}`;
     drawPendingActionTargetOverlay(presentationLockActive);
+    updateArrowOverlay();
+
+    // Restore the stable hover class and spread positions after every DOM rebuild.
+    applyHoverClass();
+    applyHoverSpread();
+
+    // Hand-card hover: mutate DOM directly without re-render so CSS transitions animate.
+    rootElement.querySelectorAll<HTMLElement>(".hand-card").forEach((el) => {
+      el.addEventListener("pointerenter", () => {
+        const id = el.dataset.cardInstanceId ?? "";
+        if (id === "" || id === state.hoveredCardInstanceId) {
+          return;
+        }
+        state.hoveredCardInstanceId = id;
+        applyHoverClass();
+        applyHoverSpread();
+      });
+    });
+
+    rootElement.querySelector<HTMLElement>(".hand-fan")?.addEventListener("pointerleave", () => {
+      if (state.hoveredCardInstanceId === "") {
+        return;
+      }
+      state.hoveredCardInstanceId = "";
+      applyHoverClass();
+      applyHoverSpread();
+    });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='add-bot']")?.addEventListener("click", async () => {
       try {
@@ -1187,12 +1489,41 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         }
 
         event.preventDefault();
-        state.draggingCardInstanceId = cardInstanceId;
-        state.dragPointerX = event.clientX;
-        state.dragPointerY = event.clientY;
-        state.dragHoverTarget = null;
         state.inspectedSeatNumber = 0;
-        render();
+
+        const card = getLocalHand().find((c) => c.instanceId === cardInstanceId);
+
+        if (card != null && cardNeedsArrow(card)) {
+          // Phase 3: targeting card → arrow drag mode
+          // Set a placeholder origin first so render() can show the zoomed card
+          state.arrowDrag = {
+            cardInstanceId,
+            originX: event.clientX,
+            originY: event.clientY,
+            pointerX: event.clientX,
+            pointerY: event.clientY,
+            nearestSeatNumber: null
+          };
+          state.draggingCardInstanceId = "";
+          state.dragHoverTarget = null;
+          render();
+          // After render the card is in zoomed position — read its actual centre
+          const zoomedEl = rootElement.querySelector<HTMLElement>(`[data-card-instance-id='${cardInstanceId}']`);
+          if (zoomedEl != null) {
+            const r = zoomedEl.getBoundingClientRect();
+            state.arrowDrag.originX = r.left + r.width / 2;
+            state.arrowDrag.originY = r.top + r.height / 2;
+          }
+          updateArrowOverlay();
+        } else {
+          // Normal drag
+          state.draggingCardInstanceId = cardInstanceId;
+          state.dragPointerX = event.clientX;
+          state.dragPointerY = event.clientY;
+          state.dragHoverTarget = null;
+          state.arrowDrag = null;
+          render();
+        }
       });
     });
 
@@ -1307,6 +1638,28 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = err instanceof Error ? err.message : "Failed to draw card";
         render();
       }
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='dev-random-dice']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const seatNumber = Number(btn.dataset.seatNumber);
+        btn.disabled = true;
+        try {
+          const result = await devRandomDiceRoll(state.instanceId, state.playerSessionToken, seatNumber);
+          // Show what the server expects so you can compare with the visual
+          logClient("dev-dice", `Server rolled ${result.notation} → expected ${result.total} [${result.values.join(", ")}]`);
+          await diceController.roll(result.notation, {
+            resolvedResult: { total: result.total, values: result.values },
+            themeColor: getSeatDiceColor(seatNumber),
+            placement: getDiceStagePlacement(seatNumber)
+          });
+        } catch (err) {
+          state.errorMessage = err instanceof Error ? err.message : "Dice roll failed";
+          render();
+        } finally {
+          btn.disabled = false;
+        }
+      });
     });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='leave-match']")?.addEventListener("click", () => {

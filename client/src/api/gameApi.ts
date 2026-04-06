@@ -153,6 +153,26 @@ export async function devDrawCard(
   return parseJson<MatchState>(response);
 }
 
+export interface DevRandomDiceResult {
+  notation: string;
+  total: number;
+  values: number[];
+  seatNumber: number;
+}
+
+export async function devRandomDiceRoll(
+  instanceId: string,
+  playerSessionToken: string,
+  seatNumber: number
+): Promise<DevRandomDiceResult> {
+  const response = await fetch(`/api/matches/${instanceId}/dev/random-dice`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify({ seatNumber })
+  });
+  return parseJson<DevRandomDiceResult>(response);
+}
+
 export async function respondToPendingAction(
   instanceId: string,
   playerSessionToken: string,
