@@ -1,0 +1,9 @@
+revamp of the main UI for Emmerlaus. It is heavily inspired from Slay the Spire 1 & 2
+- hand display.png: is an example of how we want to display the playerès hand. at the bottom of the screen, a bit cut off, in a semi circle shape
+- mouseover focus.png: is how the mouse over looks, the card gets a little bigger, goes up so its fully visible and the tool tip text appear next to it (this tooltip might change in the future but lets keep it for now)
+- targeting someone.png: this is how the targeting works. The player click a card and drag it up. the card transform into a curved red arrow pointing to the nearest possible target. the player has to bring the tip of the arrow over the target, if release before reaching the target the arrow cancels/disappear and they have to try again. releasing the arrow on a valid target will play the card selected on their initial click and hold
+- card_that_target_self or everyone.png: to play a card like Object or mass attack or healing, the player drags the card up, out of their hand zone and once released will activate. A player can also drag any card this way to discard a card their turn, a confirmation will be required for discarding.
+
+- the middle of the table will still contain a center card/placeholder but only one, not the placholder and the discard pile. just the placeholder. This placeholder will always display the last card played by any player/bot
+
+-when a opponent/bot plays a card that targets someone, can we draw a grey/ghost arrow to all the other players showing where they are dragging the arrow in the most accurate/live update possible as if we could see in real time where they are pointing the arrow to? once the target has been choosen, the attacking card appear in the placeholder

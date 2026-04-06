@@ -553,11 +553,14 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           context.rollContextBySeat.delete(event.seatNumber);
         }
         const failed = event.success === false;
+        const resultText = failed
+          ? `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, failed resistance${event.fatalFailure ? " critically (double damage!)" : ""}`
+          : event.criticalSuccess
+            ? `${getSeatDisplayName(event.seatNumber)} threw 1, critical resistance! No damage!`
+            : `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, spell resisted`;
         await showCombatFx(
           event,
-          failed
-            ? `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, failed resistance${event.fatalFailure ? " critically" : ""}`
-            : `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, spell resisted`,
+          resultText,
           failed ? "failure" : "success",
           1800,
           { seatNumber: event.seatNumber }
@@ -690,21 +693,43 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               ? batch
               : batch.filter((event) => event.id !== actionStartEvent.id);
 
-            const replayQueues = new Map<string, Promise<void>>();
-            for (const event of remainingEvents) {
-              const queueKey = getReplayQueueKey(event);
-              const previous = replayQueues.get(queueKey) ?? Promise.resolve();
-              replayQueues.set(
-                queueKey,
-                previous
-                  .catch(() => undefined)
-                  .then(async () => {
-                    await replaySingleEvent(event, replayContext);
-                  })
-              );
-            }
+            const runEventsInParallelQueues = async (events: GameEvent[]): Promise<void> => {
+              const queues = new Map<string, Promise<void>>();
+              for (const event of events) {
+                const queueKey = getReplayQueueKey(event);
+                const previous = queues.get(queueKey) ?? Promise.resolve();
+                queues.set(
+                  queueKey,
+                  previous
+                    .catch(() => undefined)
+                    .then(async () => {
+                      await replaySingleEvent(event, replayContext);
+                    })
+                );
+              }
+              await Promise.all([...queues.values()]);
+            };
 
-            await Promise.all([...replayQueues.values()]);
+            // Three-phase playback to preserve correct animation order:
+            //   Phase 1: response choices + resistance rolls (up to last resistance_result)
+            //   Phase 2: attacker's damage dice rolls (server emits these before attack_impact)
+            //   Phase 3: attack impacts (shake/zoom) + hp changes
+            const lastResistanceResultIndex = remainingEvents.reduce(
+              (lastIndex, event, index) => event.type === "resistance_result" ? index : lastIndex,
+              -1
+            );
+            const firstImpactIndex = remainingEvents.findIndex((event) => event.type === "attack_impact");
+
+            const resistanceBoundary = lastResistanceResultIndex + 1; // 0 when no resistance
+            const impactBoundary = firstImpactIndex === -1 ? remainingEvents.length : firstImpactIndex;
+
+            const phase1Events = remainingEvents.slice(0, resistanceBoundary);
+            const phase2Events = remainingEvents.slice(resistanceBoundary, impactBoundary);
+            const phase3Events = remainingEvents.slice(impactBoundary);
+
+            await runEventsInParallelQueues(phase1Events);
+            await runEventsInParallelQueues(phase2Events);
+            await runEventsInParallelQueues(phase3Events);
             logClient("box", `Replay box ${batchBoxId} end`);
           } finally {
             activeReplayBatchCount = Math.max(0, activeReplayBatchCount - 1);

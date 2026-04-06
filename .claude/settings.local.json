@@ -16,7 +16,18 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:paulrhayes.com)",
-      "WebFetch(domain:cdpn.io)"
+      "WebFetch(domain:cdpn.io)",
+      "WebFetch(domain:aqandrew.com)",
+      "WebFetch(domain:fofr.github.io)",
+      "WebFetch(domain:magnars.com)",
+      "WebFetch(domain:web.archive.org)",
+      "WebFetch(domain:www.echojs.com)",
+      "WebFetch(domain:searchcode.com)",
+      "WebFetch(domain:belonginc.dev)",
+      "WebFetch(domain:www.deltacalculator.com)",
+      "Bash(python3:*)",
+      "Bash(ls /tmp/css_part*.txt)",
+      "Read(//c/Users/Work/AppData/Local/Temp/**)"
     ]
   }
 }

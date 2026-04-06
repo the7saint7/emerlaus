@@ -257,10 +257,13 @@ function renderOpponentSeat(
   `;
 }
 
-function renderHandCards(hand: CardView[], draggingCardInstanceId: string, pendingActionActive: boolean): string {
+function renderHandCards(hand: CardView[], draggingCardInstanceId: string, pendingActionActive: boolean, isLocalTurn: boolean): string {
   return hand.map((card) => {
     const selected = card.instanceId === draggingCardInstanceId;
-    const disableSelection = !card.canPlay;
+    // During a pending action only response cards (canPlay) are draggable.
+    // On your own turn, ALL cards can be dragged so reaction-only cards (e.g.
+    // annulation, resistance-accrue) can at least be discarded.
+    const disableSelection = pendingActionActive ? !card.canPlay : !isLocalTurn;
     const responsePlayable = pendingActionActive && card.canPlay;
     return `
       <article class="hand-card ${card.canPlay ? "hand-card--playable" : "hand-card--disabled"} ${selected ? "hand-card--selected" : ""} ${responsePlayable ? "hand-card--response-playable" : ""}">
@@ -585,7 +588,7 @@ export function renderTableView({
             </div>
             ${renderLocalObjects(localSeat?.objects ?? [], draggedCard, dragHoverTarget, localSeatNumber)}
             <div class="hand-row">
-              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, pendingAction != null)}
+              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, pendingAction != null, isLocalTurn)}
             </div>
           </section>
         </div>

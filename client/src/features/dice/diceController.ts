@@ -1,8 +1,7 @@
 import type { DiceRollResult } from "./diceTypes";
 
-const ROLL_ANIM_MS = 2500;
-const FACE_SETTLE_MS = 500;
-const RESULT_DELAY_MS = 500;
+const SPIN_MS = 900;
+const RESULT_DELAY_MS = 200;
 const HIDE_DELAY_MS = 2000;
 const HIDE_FADE_MS = 300;
 const MAX_STAGGER_MS = 400;
@@ -27,7 +26,87 @@ interface ActiveRollOverlay {
   hideTimer: number | null;
 }
 
+interface FaceRotation { x: number; y: number; z: number }
+
 const SUPPORTED_SIDES = new Set([4, 6, 8, 10, 12, 20]);
+
+// Face rotations from deltacalculator.com — calibrated for their geometry and
+// the per-type wrapper viewing angles (.die-shell--dN).
+// x/y get extra 360° multiples added for the spin animation; z stays fixed.
+const diceFaceRotations: Record<number, FaceRotation[]> = {
+  4: [
+    { x:   5, y:   0, z:   0 },
+    { x: 115, y:   0, z: -60 },
+    { x: 245, y:   0, z:   0 },
+    { x: 115, y:   0, z:  60 },
+  ],
+  6: [
+    { x: 180, y:   0, z:   0 },
+    { x:   0, y:  90, z:  90 },
+    { x: 270, y:   0, z: 180 },
+    { x:  90, y:   0, z:   0 },
+    { x: 180, y: 270, z:  90 },
+    { x:   0, y:   0, z:   0 },
+  ],
+  8: [
+    { x:  45, y: 180, z:   0 },
+    { x:  45, y:  90, z: 180 },
+    { x:  45, y: 270, z:   0 },
+    { x:  45, y: 270, z: 180 },
+    { x:  45, y:   0, z:   0 },
+    { x:  45, y: 180, z: 180 },
+    { x:  45, y:  90, z:   0 },
+    { x:  45, y:   0, z: 180 },
+  ],
+  10: [
+    { x:   5, y:  -36, z:   0 },
+    { x:   5, y:  -36, z: 288 },
+    { x:   5, y:  -36, z: 216 },
+    { x:   5, y:  -36, z: 144 },
+    { x:   5, y:  -36, z:  72 },
+    { x:   5, y:  144, z: 324 },
+    { x:   5, y:  144, z: 252 },
+    { x:   5, y:  144, z: 180 },
+    { x:   5, y:  144, z: 108 },
+    { x:   5, y:  144, z:  36 },
+  ],
+  12: [
+    { x:    0,   y:   0, z: 180 },
+    { x: 121.72, y:   0, z:   0 },
+    { x: 121.72, y: 288, z:   0 },
+    { x: 121.72, y: 216, z:   0 },
+    { x: 121.72, y: 144, z:   0 },
+    { x: 121.72, y:  72, z:   0 },
+    { x: -58.28, y: 216, z:   0 },
+    { x: -58.28, y:   0, z:   0 },
+    { x: -58.28, y:  72, z:   0 },
+    { x: -58.28, y: 144, z:   0 },
+    { x: -58.28, y: 288, z:   0 },
+    { x:    0,   y: 180, z:   0 },
+  ],
+  20: [
+    { x:  100, y:    0, z:   30 },
+    { x:  100, y:    0, z:  -42 },
+    { x:  100, y:    0, z:  244 },
+    { x:  100, y:    0, z:  172 },
+    { x:  100, y:    0, z:  102 },
+    { x:  -15, y:  -25, z:  168 },
+    { x:  -15, y:  160, z: -130 },
+    { x:  -15, y:  -25, z: -120 },
+    { x:  -15, y:  160, z:  -60 },
+    { x:  -15, y:  -25, z:  -50 },
+    { x:  -15, y:  160, z:   10 },
+    { x:  -15, y:  -25, z:   25 },
+    { x:  -15, y:  160, z:   85 },
+    { x:  -15, y:  -25, z:   95 },
+    { x:  -15, y:  160, z:  155 },
+    { x:  -85, y:    0, z:  180 },
+    { x:  -85, y:    0, z:  252 },
+    { x:  -85, y:    0, z:  -33 },
+    { x:  -85, y:    0, z:   39 },
+    { x:  -85, y:    0, z:  111 },
+  ],
+};
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -57,7 +136,6 @@ function parseNotation(raw: string): { qty: number; sides: number; isD100: boole
 }
 
 // For D100: total 1-100 → [tens die face (1-10), units die face (1-10)]
-// Face 10 represents "0" on a D10
 function d100Faces(total: number): [number, number] {
   const clamped = Math.max(1, Math.min(100, total));
   const tens = Math.floor(clamped / 10) % 10;
@@ -70,15 +148,28 @@ function computeScale(dieCount: number, stageWidth: number): number {
   return needed <= stageWidth ? 1 : stageWidth / needed;
 }
 
+// Creates a shell > solid > faces structure matching the CSS geometry.
+// The shell provides the fixed viewing angle; the solid is what gets animated.
 function createDieEl(sides: number, color: string): HTMLDivElement {
-  const die = document.createElement("div");
-  die.className = `css-die css-die--d${sides}`;
-  die.style.setProperty("--die-color", color);
+  const shell = document.createElement("div");
+  shell.className = `die-shell die-shell--d${sides}`;
+  shell.style.setProperty("--die-color", color);
+
+  const solid = document.createElement("div");
+  solid.className = `die-solid die-solid--d${sides}`;
+
   for (let i = 0; i < sides; i++) {
-    die.appendChild(document.createElement("figure"));
+    const face = document.createElement("div");
+    face.className = `die-face die-face--d${sides}`;
+    const label = document.createElement("span");
+    label.className = `die-label die-label--d${sides}`;
+    label.textContent = String(i + 1);
+    face.appendChild(label);
+    solid.appendChild(face);
   }
 
-  return die;
+  shell.appendChild(solid);
+  return shell;
 }
 
 function buildOverlay(idSuffix: string): HTMLDivElement {
@@ -184,19 +275,30 @@ class DiceController {
         dieArea.style.transform = `scale(${scale.toFixed(3)})`;
       }
 
-      const dieEls = faceTargets.map(() => createDieEl(parsed.sides, color));
-      for (const el of dieEls) {
+      const shellEls = faceTargets.map(() => createDieEl(parsed.sides, color));
+      for (const el of shellEls) {
         dieArea.appendChild(el);
       }
 
-      await Promise.all(dieEls.map(async (dieEl, i) => {
+      await Promise.all(shellEls.map(async (shellEl, i) => {
         const stagger = i === 0 ? 0 : randomInt(60, MAX_STAGGER_MS);
         await delay(stagger);
-        dieEl.classList.add("rolling");
-        await delay(ROLL_ANIM_MS);
-        dieEl.classList.remove("rolling");
-        dieEl.setAttribute("data-face", String(faceTargets[i]));
-        await delay(FACE_SETTLE_MS);
+
+        const faceIndex = faceTargets[i] - 1;
+        const rotTable = diceFaceRotations[parsed.sides];
+        const solid = shellEl.querySelector<HTMLElement>(".die-solid");
+
+        if (solid && rotTable?.[faceIndex]) {
+          const rot = rotTable[faceIndex];
+          // Add 1–2 extra full rotations on X and Y so the die visibly spins
+          // before decelerating onto the target face (Z stays fixed per DeltaCalculator).
+          const extraX = 360 * randomInt(1, 2);
+          const extraY = 360 * randomInt(1, 2);
+          solid.style.transform =
+            `rotateX(${rot.x + extraX}deg) rotateY(${rot.y + extraY}deg) rotateZ(${rot.z}deg)`;
+        }
+
+        await delay(SPIN_MS);
       }));
     }
 

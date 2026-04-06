@@ -1530,6 +1530,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
   let resisted = false;
   let fatalFailure = false;
+  let criticalSuccess = false;
   if (definition.rules.requiresResistanceCheck && definition.defenseBand != null && definition.defenseBand.resistance.color !== "red") {
     const attemptedResistance = responder.choice === "resist" || responder.choice === "resistance_accrue";
     if (attemptedResistance) {
@@ -1556,7 +1557,9 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         }
 
         if (roll.total === 1) {
-          continue;
+          // Critical success: resist is guaranteed, no damage even on yellow sphere
+          criticalSuccess = true;
+          break;
         }
 
         if (roll.total > threshold) {
@@ -1571,10 +1574,14 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         seatNumber: targetSeatNumber,
         cardName: definition.name,
         success: resisted,
-        fatalFailure
+        fatalFailure,
+        criticalSuccess
       });
 
-      if (resisted) {
+      if (criticalSuccess) {
+        appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} critically resisted ${definition.name}!`);
+        appendServerDebugLog(match, "resolve", `Seat ${targetSeatNumber} critically resisted ${definition.name}`);
+      } else if (resisted) {
         appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} resisted ${definition.name}.`);
         appendServerDebugLog(match, "resolve", `Seat ${targetSeatNumber} resisted ${definition.name}`);
       } else if (fatalFailure) {
@@ -1611,7 +1618,10 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId);
 
       if (resisted) {
-        if (definition.defenseBand?.resistance.color === "yellow" || effect.grantsHalfDamageOnResistance) {
+        if (criticalSuccess) {
+          // Roll of 1: complete success, no damage regardless of sphere color
+          amount = 0;
+        } else if (definition.defenseBand?.resistance.color === "yellow" || effect.grantsHalfDamageOnResistance) {
           amount = Math.max(1, Math.ceil(amount / 2));
         } else {
           amount = 0;
@@ -1740,6 +1750,7 @@ function resolvePendingAction(match: StoredMatchState): void {
 
   const resistedTargets = new Set<number>();
   const fatalResistanceTargets = new Set<number>();
+  const criticalSuccessTargets = new Set<number>();
   if (definition.rules.requiresResistanceCheck && definition.defenseBand != null && definition.defenseBand.resistance.color !== "red") {
     const rollsRequired = Math.max(1, definition.defenseBand.resistance.rollsRequired || 1);
     for (const targetSeatNumber of pendingAction.targetSeatNumbers) {
@@ -1765,6 +1776,7 @@ function resolvePendingAction(match: StoredMatchState): void {
 
       let success = true;
       let fatalFailure = false;
+      let criticalSuccess = false;
 
       for (let rollIndex = 0; rollIndex < rollsRequired; rollIndex += 1) {
         const roll = rollDiceNotationDetailed("1D20");
@@ -1776,7 +1788,9 @@ function resolvePendingAction(match: StoredMatchState): void {
         }
 
         if (roll.total === 1) {
-          continue;
+          // Critical success: resist is guaranteed, no damage even on yellow sphere
+          criticalSuccess = true;
+          break;
         }
 
         if (roll.total > threshold) {
@@ -1791,10 +1805,15 @@ function resolvePendingAction(match: StoredMatchState): void {
         seatNumber: targetSeatNumber,
         cardName: definition.name,
         success,
-        fatalFailure
+        fatalFailure,
+        criticalSuccess
       });
 
-      if (success) {
+      if (criticalSuccess) {
+        resistedTargets.add(targetSeatNumber);
+        criticalSuccessTargets.add(targetSeatNumber);
+        appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} critically resisted ${definition.name}!`);
+      } else if (success) {
         resistedTargets.add(targetSeatNumber);
         appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} resisted ${definition.name}.`);
       }
@@ -1890,7 +1909,10 @@ function resolvePendingAction(match: StoredMatchState): void {
         );
 
       if (resistedTargets.has(targetSeatNumber)) {
-        if (definition.defenseBand?.resistance.color === "yellow" || effect.grantsHalfDamageOnResistance) {
+        if (criticalSuccessTargets.has(targetSeatNumber)) {
+          // Roll of 1: complete success, no damage regardless of sphere color
+          amount = 0;
+        } else if (definition.defenseBand?.resistance.color === "yellow" || effect.grantsHalfDamageOnResistance) {
           amount = Math.max(1, Math.ceil(amount / 2));
         } else {
           amount = 0;

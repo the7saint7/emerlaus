@@ -116,6 +116,7 @@ export interface CombatPresentationEvent {
   threshold?: number;
   success?: boolean;
   fatalFailure?: boolean;
+  criticalSuccess?: boolean;
   amount?: number;
 }
 
