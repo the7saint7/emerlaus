@@ -139,7 +139,7 @@ export interface PendingActionResponderState {
 }
 
 export interface PendingActionOption {
-  choice: Exclude<ResponseChoiceType, "pending" | "mirror">;
+  choice: Exclude<ResponseChoiceType, "pending">;
   label: string;
   description: string;
 }
@@ -154,6 +154,8 @@ export interface PendingActionState {
   summary: string;
   responseMode: "per_target" | "collective";
   responders: PendingActionResponderState[];
+  fromMirror?: boolean;
+  mirrorOriginActorSeatNumber?: number;
 }
 
 export interface GameState {
@@ -233,7 +235,7 @@ export interface PlayCardRequest {
 }
 
 export interface PendingActionResponseRequest {
-  choice: Exclude<ResponseChoiceType, "pending" | "mirror">;
+  choice: Exclude<ResponseChoiceType, "pending">;
 }
 
 export interface DiscordAuthTokenRequest {

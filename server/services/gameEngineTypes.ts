@@ -59,6 +59,7 @@ export interface StoredGameState {
   eventLog: GameEvent[];
   debugLog: DebugLogEntry[];
   pendingAction?: StoredPendingActionState;
+  pausedSequentialAction?: StoredPendingActionState;
   forcedPlayCategories?: CardCategoryCode[] | "any";
 }
 

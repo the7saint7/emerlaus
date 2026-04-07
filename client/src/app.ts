@@ -521,6 +521,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           case "annulation":
             message = `${getSeatDisplayName(event.seatNumber)} plays Annulation`;
             break;
+          case "mirror":
+            message = `${getSeatDisplayName(event.seatNumber)} reflects with Mirror!`;
+            break;
           default:
             break;
         }
@@ -771,7 +774,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   /** Returns true if the card can be played by a "lift out of hand" gesture. */
   const cardIsLiftPlayable = (card: CardView): boolean =>
-    card.canPlay && (
+    card.canPlay && card.categoryCode !== "CA" && (
       card.categoryCode === "O" ||
       card.targets === "self" ||
       card.targets === "all_opponents" ||
@@ -949,7 +952,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             ? "annulation"
             : draggedCard.cardId === "resistance-accrue"
               ? "resistance_accrue"
-              : null;
+              : draggedCard.cardId === "miroir"
+                ? "mirror"
+                : null;
         if (choice == null) {
           clearDragState();
           render();
@@ -1760,27 +1765,17 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       }
     });
 
-    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='respond-pending']").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const choice = button.dataset.choice;
-        if (choice !== "pass" && choice !== "resist" && choice !== "annulation" && choice !== "resistance_accrue") {
-          return;
-        }
-
-        button.disabled = true;
-
-        try {
-          logClient("response", `Respond ${choice}`);
-          applyMatchState(await respondToPendingAction(state.instanceId, state.playerSessionToken, {
-            choice
-          }));
-          state.errorMessage = "";
-        } catch (error) {
-          state.errorMessage = error instanceof Error ? error.message : "Unable to respond to the action";
-        }
-
-        render();
-      });
+    rootElement.querySelector<HTMLButtonElement>("[data-action='respond-pending'][data-choice='pass']")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      try {
+        logClient("response", "Respond pass");
+        applyMatchState(await respondToPendingAction(state.instanceId, state.playerSessionToken, { choice: "pass" }));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : "Unable to pass";
+      }
+      render();
     });
 
     restoreChatDomState(rootElement, chatSnapshot, state.chatExpanded);

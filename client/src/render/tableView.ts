@@ -141,7 +141,7 @@ function responseLabel(choice: PendingActionResponderState["choice"]): string {
 }
 
 function isPlaySlotCompatible(card: CardView | undefined): boolean {
-  if (card == null || !card.canPlay) {
+  if (card == null || !card.canPlay || card.categoryCode === "CA") {
     return false;
   }
 
@@ -369,58 +369,95 @@ function renderCenterPlayArea(
 ): string {
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
   const displayedAction = activeActionVisual ?? pendingAction;
-  const fallbackResponseCards = pendingAction?.responders
-    .flatMap((responder) => responder.cards ?? (responder.card != null ? [responder.card] : []))
-    .filter((card) => card.cardId === "annulation" || card.cardId === "resistance-accrue" || card.cardId === "miroir")
-    ?? [];
-  const stackedCards = [
-    ...((displayedAction != null && match.game?.lastPlayedCard?.card.instanceId !== displayedAction.card.instanceId)
+  const activeResponseCards = centerResponseCards.length > 0
+    ? centerResponseCards
+    : (pendingAction?.responders
+        .flatMap((responder) => responder.cards ?? (responder.card != null ? [responder.card] : []))
+        .filter((card) => card.cardId === "annulation" || card.cardId === "resistance-accrue" || card.cardId === "miroir")
+      ?? []);
+
+  // When CA response cards exist alongside the attack card, split into two visible slots:
+  // left = CA response cards, right = attack card (so neither hides the other).
+  // When no CA cards are present, use the single stacked slot as before.
+  const splitView = displayedAction != null && activeResponseCards.length > 0;
+
+  // Single-slot stacked cards (used when not splitting)
+  const attackUnderCards = ((displayedAction != null && match.game?.lastPlayedCard?.card.instanceId !== displayedAction.card.instanceId)
+    ? [match.game?.lastPlayedCard?.card]
+    : displayedAction == null
       ? [match.game?.lastPlayedCard?.card]
-      : displayedAction == null
-        ? [match.game?.lastPlayedCard?.card]
-        : []
-    ).flatMap((card) => card == null ? [] : [card]),
+      : []
+  ).flatMap((card) => card == null ? [] : [card]);
+  const singleStackCards = [
+    ...attackUnderCards,
     ...(displayedAction != null ? [displayedAction.card] : []),
-    ...(centerResponseCards.length > 0 ? centerResponseCards : fallbackResponseCards)
+    ...(!splitView ? activeResponseCards : [])
   ].slice(-4);
-  const options = presentationLockActive ? [] : match.game?.pendingResponseOptions ?? [];
+
   const playSlotCompatible = isPlaySlotCompatible(draggedCard);
   const responseSlotCompatible = displayedAction != null && draggedCard?.categoryCode === "CA" && draggedCard.canPlay;
-  const visibleOptions = options.filter((option) => option.choice === "pass" || option.choice === "resist" || option.choice === "annulation");
+  const isDropReady = responseSlotCompatible && isHoverTarget(hoverTarget, "response-slot");
+  // Show a Pass button only when the player is the current responder and has CA cards to choose from
+  // (auto-pass fires when they have no CA cards; this lets them deliberately pass despite having options)
+  const options = presentationLockActive ? [] : match.game?.pendingResponseOptions ?? [];
+  const showPassButton = options.some((option) => option.choice === "pass");
 
-  const isShowingLastPlayed = stackedCards.length > 0 && displayedAction == null;
+  const isShowingLastPlayed = singleStackCards.length > 0 && displayedAction == null;
+
+  // Attack slot classes (shared between split and single layouts)
+  const attackSlotClass = [
+    "center-play-slot",
+    singleStackCards.length > 0 || splitView ? "center-play-slot--filled" : "",
+    isShowingLastPlayed ? "center-play-slot--inactive" : "",
+    impactActive ? "center-play-slot--impact" : "",
+    (playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : "",
+    (isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : "",
+    isDropReady ? "center-play-slot--drop-ready" : ""
+  ].filter(Boolean).join(" ");
+
+  const renderSingleCard = (card: CardView, isTop: boolean, offset: number, lift: number) => `
+    <div class="center-card-stack__card center-card-stack__card--${isTop ? "top" : "under"}" style="--stack-offset:${offset}px; --stack-lift:${lift}px;">
+      <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+      ${renderCardTooltip(card)}
+    </div>
+  `;
 
   return `
     <section class="center-play-area">
       <div class="combat-fx-banner ${activeCombatFx != null ? `combat-fx-banner--${activeCombatFx.tone}` : "combat-fx-banner--idle"}">${activeCombatFx != null ? escapeHtml(activeCombatFx.message) : "\u00a0"}</div>
-      <div class="center-play-slots">
+      <div class="center-play-slots${splitView ? " center-play-slots--split" : ""}">
+        ${splitView ? `
+          <article class="center-play-slot center-play-slot--filled center-play-slot--response-cards">
+            <div class="center-card-stack">
+              ${activeResponseCards.map((card, i) => renderSingleCard(card, i === activeResponseCards.length - 1, i * 4, i * 4)).join("")}
+            </div>
+          </article>
+        ` : ""}
         <article
-          class="center-play-slot ${stackedCards.length > 0 ? "center-play-slot--filled" : ""} ${isShowingLastPlayed ? "center-play-slot--inactive" : ""} ${impactActive ? "center-play-slot--impact" : ""} ${(playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : ""} ${(isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : ""}"
+          class="${attackSlotClass}"
           data-center-card-stack="true"
           ${displayedAction != null ? `data-pending-card-center="true"` : ""}
           ${(responseSlotCompatible || playSlotCompatible) ? `data-drop-target="${responseSlotCompatible ? "response-slot" : "play-slot"}"` : ""}
         >
-          ${stackedCards.length > 0
+          ${splitView
             ? `
               <div class="center-card-stack">
-                ${stackedCards.map((card, index) => `
-                  <div class="center-card-stack__card center-card-stack__card--${index === stackedCards.length - 1 ? "top" : "under"}" style="--stack-offset:${index * 8}px; --stack-lift:${index * 4}px;">
-                    <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
-                    ${renderCardTooltip(card)}
-                  </div>
-                `).join("")}
+                ${attackUnderCards.map((card, i) => renderSingleCard(card, false, i * 8, i * 4)).join("")}
+                ${renderSingleCard(displayedAction!.card, attackUnderCards.length === 0, attackUnderCards.length * 8, attackUnderCards.length * 4)}
               </div>
             `
-            : `<div class="center-play-slot-placeholder"></div>`}
+            : singleStackCards.length > 0
+              ? `
+                <div class="center-card-stack">
+                  ${singleStackCards.map((card, index) => renderSingleCard(card, index === singleStackCards.length - 1, index * 8, index * 4)).join("")}
+                </div>
+              `
+              : `<div class="center-play-slot-placeholder"></div>`}
         </article>
       </div>
-      ${visibleOptions.length > 0 ? `
+      ${showPassButton ? `
         <div class="center-play-options">
-          ${visibleOptions.map((option) => `
-            <button type="button" class="action-button ${option.choice === "pass" ? "action-button--secondary" : ""}" data-action="respond-pending" data-choice="${option.choice}" title="${escapeHtml(option.description)}">
-              ${escapeHtml(option.label)}
-            </button>
-          `).join("")}
+          <button type="button" class="action-button action-button--secondary" data-action="respond-pending" data-choice="pass">Pass</button>
         </div>
       ` : ""}
     </section>

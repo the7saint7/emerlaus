@@ -539,6 +539,20 @@ h2 {
   align-items: center;
   justify-content: center;
   flex-wrap: nowrap;
+  gap: 0;
+  transition: gap 280ms ease;
+}
+
+/* When CA response cards exist: spread slots apart so both are fully visible */
+.center-play-slots--split {
+  gap: 14px;
+}
+
+.center-play-slot--response-cards {
+  border-color: rgba(180, 140, 60, 0.35);
+  background:
+    linear-gradient(160deg, rgba(255, 220, 100, 0.06), transparent 40%),
+    rgba(8, 18, 10, 0.42);
 }
 
 .center-play-slot {
@@ -602,6 +616,16 @@ h2 {
     0 0 48px rgba(245, 212, 106, 0.42);
 }
 
+.center-play-slot--drop-ready {
+  box-shadow: 0 0 0 3px rgba(255, 210, 60, 0.8), 0 0 30px rgba(255, 210, 60, 0.4);
+  animation: drop-ready-pulse 800ms ease-in-out infinite alternate;
+}
+
+@keyframes drop-ready-pulse {
+  from { box-shadow: 0 0 0 2px rgba(255, 210, 60, 0.6), 0 0 20px rgba(255, 210, 60, 0.3); }
+  to   { box-shadow: 0 0 0 4px rgba(255, 210, 60, 0.9), 0 0 40px rgba(255, 210, 60, 0.5); }
+}
+
 .center-play-slot--filled {
   border-color: rgba(245, 212, 106, 0.55);
   box-shadow:
@@ -655,7 +679,6 @@ h2 {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.02);
 }
-
 .center-play-options {
   position: relative;
   display: flex;

@@ -566,6 +566,19 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
   }
 
   const seatState = getStoredSeat(game, seatNumber);
+  const hasMiroir = seatState.hand.some((card) => card.cardId === "miroir");
+
+  // During a mirror chain: only mirror-back or accept the hit — no other defenses
+  if (pendingAction.fromMirror === true) {
+    const options: PendingActionOption[] = [
+      { choice: "pass", label: "Pass", description: "Accept the reflected damage." }
+    ];
+    if (hasMiroir) {
+      options.push({ choice: "mirror", label: "Mirror", description: "Reflect it back again." });
+    }
+    return options;
+  }
+
   const annulations = seatState.hand.filter((card) => card.cardId === "annulation");
   const options: PendingActionOption[] = [
     {
@@ -612,6 +625,18 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
     }
   }
 
+  if (
+    pendingAction.targetSeatNumbers.includes(seatNumber) &&
+    pendingDefinition.defenseBand?.mirrorAllowed &&
+    hasMiroir
+  ) {
+    options.push({
+      choice: "mirror",
+      label: "Mirror",
+      description: "Reflect this attack back at the attacker."
+    });
+  }
+
   return options;
 }
 
@@ -634,7 +659,9 @@ function canPlayCardAsPendingResponse(match: StoredMatchState, seatNumber: numbe
   }
 
   if (card.cardId === "miroir") {
-    return { canPlay: false, reason: "Mirror resolution is not implemented yet" };
+    return options.some((option) => option.choice === "mirror")
+      ? { canPlay: true }
+      : { canPlay: false, reason: "Mirror is not legal for this action" };
   }
 
   return { canPlay: false, reason: "Only response cards can be used right now" };
@@ -1438,6 +1465,8 @@ function buildPendingActionPublicState(match: StoredMatchState): PendingActionSt
     card: buildCardView(pendingAction.storedCard, requireDefinition(pendingAction.storedCard.cardId), "discard", false),
     summary: pendingAction.summary,
     responseMode: pendingAction.responseMode,
+    fromMirror: pendingAction.fromMirror,
+    mirrorOriginActorSeatNumber: pendingAction.mirrorOriginActorSeatNumber,
     responders: pendingAction.responders.map((responder) => ({
       seatNumber: responder.seatNumber,
       state: responder.state,
@@ -1480,6 +1509,115 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
   }
 
   refreshSeatSummaries(match);
+}
+
+function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActionState, mirrorPlayerSeatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const definition = requireDefinition(pendingAction.storedCard.cardId);
+  // reflectTargetSeatNumber: whoever last sent this at the mirror player (the new victim of the reflect)
+  const reflectTargetSeatNumber = pendingAction.actorSeatNumber;
+  // originActorSeatNumber: the original attacker — preserved throughout the chain for power-level and turn purposes
+  const originActorSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
+  const mirrorPlayerName = getPublicSeat(match, mirrorPlayerSeatNumber).displayName;
+  const reflectTargetName = getPublicSeat(match, reflectTargetSeatNumber).displayName;
+
+  // When a non-chain action is mirrored, pause it so the chain can run first.
+  // A chain bounce (fromMirror) just replaces the current chain link — outer stays paused.
+  if (!pendingAction.fromMirror) {
+    game.pausedSequentialAction = pendingAction;
+  }
+
+  appendDealerMessage(match, `${mirrorPlayerName} reflects ${definition.name} back at ${reflectTargetName}!`);
+  appendServerDebugLog(match, "mirror", `Seat ${mirrorPlayerSeatNumber} mirrored ${definition.name} back to seat ${reflectTargetSeatNumber}`);
+
+  const boxId = randomUUID();
+  const newSummary = `${mirrorPlayerName} reflects ${definition.name} back at ${reflectTargetName}`;
+  const targetAlive = getStoredSeat(game, reflectTargetSeatNumber).alive;
+
+  game.pendingAction = {
+    boxId,
+    actorSeatNumber: mirrorPlayerSeatNumber,
+    targetSeatNumbers: [reflectTargetSeatNumber],
+    responderSeatNumbers: targetAlive ? [reflectTargetSeatNumber] : [],
+    storedCard: pendingAction.storedCard,
+    summary: newSummary,
+    responseMode: "per_target",
+    fromMirror: true,
+    mirrorOriginActorSeatNumber: originActorSeatNumber,
+    responders: targetAlive
+      ? [{ seatNumber: reflectTargetSeatNumber, state: "pending", choice: "pending", consumedCards: [] }]
+      : [],
+    createdAt: new Date().toISOString()
+  };
+
+  pushGameEvent(match, {
+    id: randomUUID(),
+    boxId,
+    type: "action_start",
+    createdAt: new Date().toISOString(),
+    actorSeatNumber: mirrorPlayerSeatNumber,
+    targetSeatNumbers: [reflectTargetSeatNumber],
+    card: buildCardView(pendingAction.storedCard, definition, "discard", false),
+    summary: newSummary
+  });
+
+  if (!targetAlive) {
+    finalizePendingAction(match);
+    return;
+  }
+
+  refreshSeatSummaries(match);
+  autoRespondIfNeeded(match);
+}
+
+function autoRespondIfNeeded(match: StoredMatchState): void {
+  const game = match.internalGame;
+  const pendingAction = game?.pendingAction;
+  if (game == null || pendingAction == null) {
+    return;
+  }
+
+  const currentResponder = getCurrentPendingResponder(pendingAction);
+  if (currentResponder == null) {
+    return;
+  }
+
+  // Bots handle their own responses via buildBotPendingResponse / scheduleBotTurnIfNeeded
+  const responderSeat = match.seats.find((seat) => seat.seatNumber === currentResponder.seatNumber);
+  if (responderSeat == null || responderSeat.controllerType === "bot") {
+    return;
+  }
+
+  // Check if the player has any playable CA cards
+  const seatState = getStoredSeat(game, currentResponder.seatNumber);
+  const hasPlayableCA = seatState.hand.some((card) => {
+    const def = requireDefinition(card.cardId);
+    if (def.category.code !== "CA") {
+      return false;
+    }
+    return canPlayCardAsPendingResponse(match, currentResponder.seatNumber, card).canPlay;
+  });
+
+  if (hasPlayableCA) {
+    return; // Wait for the player to drag a CA card
+  }
+
+  const options = getResponseOptionChoices(match, currentResponder.seatNumber);
+  const playerName = responderSeat.displayName;
+
+  if (options.some((option) => option.choice === "resist")) {
+    appendDealerMessage(match, `${playerName} had no CA card and resisted automatically.`);
+    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-resisted (no CA cards)`);
+    respondToPendingAction(match, responderSeat.userId, { choice: "resist" });
+  } else {
+    appendDealerMessage(match, `${playerName} had no defense — passed automatically.`);
+    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed (no CA cards, no resist)`);
+    respondToPendingAction(match, responderSeat.userId, { choice: "pass" });
+  }
 }
 
 function beginPendingAction(
@@ -1539,6 +1677,8 @@ function beginPendingAction(
     })),
     createdAt: new Date().toISOString()
   };
+
+  autoRespondIfNeeded(match);
 }
 
 function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPendingActionResponderState): void {
@@ -1559,6 +1699,13 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
     discardInstances(game, responder.consumedCards);
     appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} canceled ${definition.name}.`);
     appendServerDebugLog(match, "resolve", `Seat ${targetSeatNumber} canceled ${definition.name}`);
+    return;
+  }
+
+  if (responder.choice === "mirror") {
+    // Damage was dealt during the mirror chain — just discard the consumed miroir card
+    discardInstances(game, responder.consumedCards);
+    appendServerDebugLog(match, "mirror", `Seat ${targetSeatNumber} mirror resolved (chain handled damage)`);
     return;
   }
 
@@ -1702,6 +1849,31 @@ function finalizePendingAction(match: StoredMatchState): void {
 
   const definition = requireDefinition(pendingAction.storedCard.cardId);
   appendServerDebugLog(match, "pending_action", `Finalize ${definition.name} from seat ${pendingAction.actorSeatNumber} [box ${pendingAction.boxId}]`);
+
+  if (pendingAction.fromMirror === true) {
+    // Mirror chain link resolved — resume the paused outer action if there is one
+    game.pendingAction = undefined;
+    if (game.pausedSequentialAction != null) {
+      game.pendingAction = game.pausedSequentialAction;
+      game.pausedSequentialAction = undefined;
+      appendServerDebugLog(match, "mirror", "Mirror chain resolved; resuming outer action");
+      refreshSeatSummaries(match);
+      // If the restored action is per_target with all responders locked, finalize it
+      if (game.pendingAction.responseMode === "per_target" &&
+          game.pendingAction.responders.every((r) => r.state !== "pending")) {
+        finalizePendingAction(match);
+      } else {
+        autoRespondIfNeeded(match);
+      }
+    } else {
+      // Standalone per_target mirror chain (single-target attack was mirrored)
+      // Advance from original attacker so the turn order stays correct
+      const turnOwner = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
+      finalizeResolvedAction(match, turnOwner, pendingAction.boxId);
+    }
+    return;
+  }
+
   if (!definition.rules.staysInPlay) {
     game.discardPile.push(pendingAction.storedCard);
   }
@@ -1782,13 +1954,20 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
   }
 
+  // Collect mirror targets — they dodge the attack and each deal a separate hit back to the actor
+  const mirroredTargets = new Set<number>(
+    pendingAction.responders
+      .filter((responder) => responder.choice === "mirror")
+      .map((responder) => responder.seatNumber)
+  );
+
   const resistedTargets = new Set<number>();
   const fatalResistanceTargets = new Set<number>();
   const criticalSuccessTargets = new Set<number>();
   if (definition.rules.requiresResistanceCheck && definition.defenseBand != null && definition.defenseBand.resistance.color !== "red") {
     const rollsRequired = Math.max(1, definition.defenseBand.resistance.rollsRequired || 1);
     for (const targetSeatNumber of pendingAction.targetSeatNumbers) {
-      if (canceledTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
+      if (canceledTargets.has(targetSeatNumber) || mirroredTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
         continue;
       }
 
@@ -1879,7 +2058,7 @@ function resolvePendingAction(match: StoredMatchState): void {
 
     const actorSeat = getPublicSeat(match, pendingAction.actorSeatNumber);
     const damageTargetSeatNumbers = pendingAction.targetSeatNumbers.filter((targetSeatNumber) => {
-      if (canceledTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
+      if (canceledTargets.has(targetSeatNumber) || mirroredTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
         return false;
       }
 
@@ -1913,7 +2092,7 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
 
     for (const targetSeatNumber of pendingAction.targetSeatNumbers) {
-      if (canceledTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
+      if (canceledTargets.has(targetSeatNumber) || mirroredTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
         continue;
       }
 
@@ -1964,11 +2143,33 @@ function resolvePendingAction(match: StoredMatchState): void {
       actorSeat.hp -= sharedDamageBase;
       handleSeatDeath(match, pendingAction.actorSeatNumber, false);
     }
+
+    // Each mirror player reflects the attack back — separate hit on the actor per mirror
+    if (mirroredTargets.size > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
+      for (const mirrorSeatNumber of mirroredTargets) {
+        const mirrorPlayerName = getPublicSeat(match, mirrorSeatNumber).displayName;
+        appendDealerMessage(match, `${mirrorPlayerName} reflected ${definition.name} back at ${actorSeat.displayName}!`);
+        appendServerDebugLog(match, "mirror", `Seat ${mirrorSeatNumber} mirrored ${definition.name} back to seat ${pendingAction.actorSeatNumber}`);
+        const mirrorTargetSeat = getPublicSeat(match, mirrorSeatNumber);
+        const mirrorAmount = evaluateRoll(match, effect.amount, actorSeat, mirrorTargetSeat, pendingAction.actorSeatNumber, pendingAction.boxId);
+        if (mirrorAmount > 0) {
+          pushPresentationEvent(match, {
+            boxId: pendingAction.boxId,
+            type: "attack_impact",
+            actorSeatNumber: mirrorSeatNumber,
+            targetSeatNumber: pendingAction.actorSeatNumber,
+            cardName: definition.name
+          });
+          appendServerDebugLog(match, "resolve", `Applying mirror ${definition.name} damage ${mirrorAmount} to seat ${pendingAction.actorSeatNumber}`);
+          applyDamage(match, pendingAction.actorSeatNumber, mirrorAmount, definition, false, pendingAction.boxId);
+        }
+      }
+    }
   }
 
   discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
   const resolvedTargetSeatNumbers = pendingAction.targetSeatNumbers.filter(
-    (seatNumber) => !canceledTargets.has(seatNumber) && !resistedTargets.has(seatNumber)
+    (seatNumber) => !canceledTargets.has(seatNumber) && !resistedTargets.has(seatNumber) && !mirroredTargets.has(seatNumber)
   );
 
   if (definition.rules.staysInPlay) {
@@ -2037,8 +2238,16 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
     responder.consumedCards = consumeHandCardsById(seatState.hand, "annulation", requiredCount);
   } else if (request.choice === "resistance_accrue") {
     responder.consumedCards = consumeHandCardsById(seatState.hand, "resistance-accrue", 1);
+  } else if (request.choice === "mirror") {
+    responder.consumedCards = consumeHandCardsById(seatState.hand, "miroir", 1);
   } else {
     responder.consumedCards = [];
+  }
+
+  // Mirror starts a chain immediately for both per_target and collective modes
+  if (request.choice === "mirror") {
+    resolveMirror(match, pendingAction, responderSeat.seatNumber);
+    return;
   }
 
   if (pendingAction.responseMode === "per_target") {
@@ -2047,6 +2256,7 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
       finalizePendingAction(match);
     } else {
       refreshSeatSummaries(match);
+      autoRespondIfNeeded(match);
     }
   } else {
     if (request.choice === "annulation") {
@@ -2055,6 +2265,7 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
       resolvePendingAction(match);
     } else {
       refreshSeatSummaries(match);
+      autoRespondIfNeeded(match);
     }
   }
 }
@@ -2238,15 +2449,14 @@ export function buildBotPendingResponse(match: StoredMatchState, seatNumber: num
     return undefined;
   }
 
+  const pendingAction = match.internalGame?.pendingAction;
   const availableChoices = new Set(options.map((option) => option.choice));
   const preferredChoice =
-    availableChoices.has("annulation")
-      ? "annulation"
-      : availableChoices.has("resistance_accrue")
-        ? "resistance_accrue"
-        : availableChoices.has("resist")
-          ? "resist"
-          : "pass";
+    availableChoices.has("annulation") ? "annulation"
+    : availableChoices.has("mirror") ? "mirror"
+    : availableChoices.has("resistance_accrue") ? "resistance_accrue"
+    : availableChoices.has("resist") ? "resist"
+    : "pass";
 
   appendServerDebugLog(
     match,
