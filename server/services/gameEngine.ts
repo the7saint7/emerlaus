@@ -1529,6 +1529,8 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
   // A chain bounce (fromMirror) just replaces the current chain link — outer stays paused.
   if (!pendingAction.fromMirror) {
     game.pausedSequentialAction = pendingAction;
+  } else {
+    discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
   }
 
   appendDealerMessage(match, `${mirrorPlayerName} reflects ${definition.name} back at ${reflectTargetName}!`);
@@ -1695,6 +1697,16 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
     return;
   }
 
+  if (pendingAction.fromMirror === true && game.pausedSequentialAction?.responseMode === "collective") {
+    appendServerDebugLog(
+      match,
+      "mirror",
+      `Seat ${targetSeatNumber} accepted reflected ${definition.name}; deferring damage to collective resolution`
+    );
+    discardInstances(game, responder.consumedCards);
+    return;
+  }
+
   if (responder.choice === "annulation") {
     discardInstances(game, responder.consumedCards);
     appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} canceled ${definition.name}.`);
@@ -1852,9 +1864,30 @@ function finalizePendingAction(match: StoredMatchState): void {
 
   if (pendingAction.fromMirror === true) {
     // Mirror chain link resolved — resume the paused outer action if there is one
+    const pausedAction = game.pausedSequentialAction;
+    const reflectedTargetSeatNumber = pendingAction.targetSeatNumbers[0];
+    if (
+      pausedAction?.responseMode === "collective" &&
+      reflectedTargetSeatNumber != null &&
+      getStoredSeat(game, reflectedTargetSeatNumber).alive
+    ) {
+      pausedAction.deferredMirrorHits = [
+        ...(pausedAction.deferredMirrorHits ?? []),
+        {
+          sourceSeatNumber: pendingAction.actorSeatNumber,
+          targetSeatNumber: reflectedTargetSeatNumber
+        }
+      ];
+      appendServerDebugLog(
+        match,
+        "mirror",
+        `Deferred reflected ${definition.name} hit from seat ${pendingAction.actorSeatNumber} to seat ${reflectedTargetSeatNumber}`
+      );
+    }
+
     game.pendingAction = undefined;
-    if (game.pausedSequentialAction != null) {
-      game.pendingAction = game.pausedSequentialAction;
+    if (pausedAction != null) {
+      game.pendingAction = pausedAction;
       game.pausedSequentialAction = undefined;
       appendServerDebugLog(match, "mirror", "Mirror chain resolved; resuming outer action");
       refreshSeatSummaries(match);
@@ -1954,11 +1987,15 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
   }
 
-  // Collect mirror targets — they dodge the attack and each deal a separate hit back to the actor
+  // Mirrored targets dodge the original collective action. The reflected copy
+  // is handled immediately as a mirror chain, so do not apply it again here.
   const mirroredTargets = new Set<number>(
     pendingAction.responders
       .filter((responder) => responder.choice === "mirror")
       .map((responder) => responder.seatNumber)
+  );
+  const deferredMirrorHits = (pendingAction.deferredMirrorHits ?? []).filter((hit) =>
+    getStoredSeat(game, hit.targetSeatNumber).alive
   );
 
   const resistedTargets = new Set<number>();
@@ -2041,7 +2078,10 @@ function resolvePendingAction(match: StoredMatchState): void {
   for (const effect of definition.rules.effects) {
     if (effect.type !== "damage") {
       const remainingTargets = pendingAction.targetSeatNumbers.filter(
-        (seatNumber) => !canceledTargets.has(seatNumber) && !resistedTargets.has(seatNumber)
+        (seatNumber) =>
+          !canceledTargets.has(seatNumber) &&
+          !mirroredTargets.has(seatNumber) &&
+          !resistedTargets.has(seatNumber)
       );
       applyEffect(
         match,
@@ -2068,16 +2108,20 @@ function resolvePendingAction(match: StoredMatchState): void {
         || effect.grantsHalfDamageOnResistance
       );
     });
+    const damageApplicationSeatNumbers = [
+      ...damageTargetSeatNumbers,
+      ...deferredMirrorHits.map((hit) => hit.targetSeatNumber)
+    ];
 
     const usesSharedDamageBase =
-      damageTargetSeatNumbers.length > 0
+      damageApplicationSeatNumbers.length > 0
       && !isTargetDependentRollExpression(effect.amount);
     const sharedDamageBase = usesSharedDamageBase
       ? evaluateRoll(
         match,
         effect.amount,
         actorSeat,
-        damageTargetSeatNumbers.length > 0 ? getPublicSeat(match, damageTargetSeatNumbers[0]) : undefined,
+        damageApplicationSeatNumbers.length > 0 ? getPublicSeat(match, damageApplicationSeatNumbers[0]) : undefined,
         pendingAction.actorSeatNumber,
         pendingAction.boxId
       )
@@ -2087,7 +2131,7 @@ function resolvePendingAction(match: StoredMatchState): void {
       appendServerDebugLog(
         match,
         "resolve",
-        `Collected ${definition.name} shared damage ${sharedDamageBase} for targets ${damageTargetSeatNumbers.join(", ")}`
+        `Collected ${definition.name} shared damage ${sharedDamageBase} for targets ${damageApplicationSeatNumbers.join(", ")}`
       );
     }
 
@@ -2139,32 +2183,40 @@ function resolvePendingAction(match: StoredMatchState): void {
       applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId);
     }
 
+    for (const hit of deferredMirrorHits) {
+      const targetSeat = getPublicSeat(match, hit.targetSeatNumber);
+      const amount = sharedDamageBase
+        ?? evaluateRoll(
+          match,
+          effect.amount,
+          actorSeat,
+          targetSeat,
+          pendingAction.actorSeatNumber,
+          pendingAction.boxId
+        );
+
+      if (amount > 0) {
+        pushPresentationEvent(match, {
+          boxId: pendingAction.boxId,
+          type: "attack_impact",
+          actorSeatNumber: hit.sourceSeatNumber,
+          targetSeatNumber: hit.targetSeatNumber,
+          cardName: definition.name
+        });
+        appendServerDebugLog(
+          match,
+          "resolve",
+          `Applying deferred mirror ${definition.name} damage ${amount} to seat ${hit.targetSeatNumber}`
+        );
+        applyDamage(match, hit.targetSeatNumber, amount, definition, false, pendingAction.boxId);
+      }
+    }
+
     if (effect.amount.kind === "sacrifice_amount" && sharedDamageBase != null) {
       actorSeat.hp -= sharedDamageBase;
       handleSeatDeath(match, pendingAction.actorSeatNumber, false);
     }
 
-    // Each mirror player reflects the attack back — separate hit on the actor per mirror
-    if (mirroredTargets.size > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
-      for (const mirrorSeatNumber of mirroredTargets) {
-        const mirrorPlayerName = getPublicSeat(match, mirrorSeatNumber).displayName;
-        appendDealerMessage(match, `${mirrorPlayerName} reflected ${definition.name} back at ${actorSeat.displayName}!`);
-        appendServerDebugLog(match, "mirror", `Seat ${mirrorSeatNumber} mirrored ${definition.name} back to seat ${pendingAction.actorSeatNumber}`);
-        const mirrorTargetSeat = getPublicSeat(match, mirrorSeatNumber);
-        const mirrorAmount = evaluateRoll(match, effect.amount, actorSeat, mirrorTargetSeat, pendingAction.actorSeatNumber, pendingAction.boxId);
-        if (mirrorAmount > 0) {
-          pushPresentationEvent(match, {
-            boxId: pendingAction.boxId,
-            type: "attack_impact",
-            actorSeatNumber: mirrorSeatNumber,
-            targetSeatNumber: pendingAction.actorSeatNumber,
-            cardName: definition.name
-          });
-          appendServerDebugLog(match, "resolve", `Applying mirror ${definition.name} damage ${mirrorAmount} to seat ${pendingAction.actorSeatNumber}`);
-          applyDamage(match, pendingAction.actorSeatNumber, mirrorAmount, definition, false, pendingAction.boxId);
-        }
-      }
-    }
   }
 
   discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));

@@ -43,6 +43,7 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   responders: StoredPendingActionResponderState[];
   createdAt: string;
   sharedSacrificeAmount?: number;
+  deferredMirrorHits?: Array<{ sourceSeatNumber: number; targetSeatNumber: number }>;
 }
 
 export interface StoredGameState {
