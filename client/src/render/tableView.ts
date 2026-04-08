@@ -35,6 +35,16 @@ interface TableViewParams {
     settled: boolean;
     tone: "action" | "response";
   } | null;
+  activeReturnCardFlight: {
+    card: CardView;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    width: number;
+    height: number;
+    settled: boolean;
+  } | null;
   draggingCardInstanceId: string;
   dragPointerX: number;
   dragPointerY: number;
@@ -42,6 +52,8 @@ interface TableViewParams {
   arrowDrag: ArrowDragState | null;
   inspectedSeatNumber: number;
   telepathyPreviewCardInstanceId: string;
+  boardResetKeepPreviewCardInstanceId: string;
+  sacrificeAmountInput: string;
   errorMessage: string;
   chatMarkup: string;
   eventLogMarkup: string;
@@ -50,15 +62,11 @@ interface TableViewParams {
     tone: "info" | "success" | "failure";
     seatNumber?: number;
   } | null;
-  activeDamageBurst: {
-    seatNumber: number;
-    amount: number;
-  } | null;
-  activeHealBurst: {
-    seatNumber: number;
-    amount: number;
-  } | null;
-  impactTargetSeatNumber: number;
+  activeDamageBursts: Record<number, number>;
+  activeHealBursts: Record<number, number>;
+  impactTargetSeatNumbers: number[];
+  returningHandCardInstanceId: string;
+  hiddenHandCardInstanceIds: string[];
 }
 
 function escapeHtml(value: string): string {
@@ -108,12 +116,28 @@ function renderCardTooltip(card: CardView): string {
   `;
 }
 
+function isAttackCard(card: CardView): boolean {
+  return ["AD", "AM", "S", "E", "CO"].includes(card.categoryCode);
+}
+
 function isSeatTargetable(selectedCard: CardView | undefined, seat: SeatState, localSeatNumber: number, forcedTargetSeatNumber?: number): boolean {
   if (selectedCard == null || !selectedCard.canPlay || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
     return false;
   }
 
   if (forcedTargetSeatNumber != null && seat.seatNumber !== forcedTargetSeatNumber) {
+    return false;
+  }
+
+  if (isAttackCard(selectedCard) && (seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")) {
+    return false;
+  }
+
+  if (selectedCard.cardId === "dissipation-dun-anneau" && !(seat.objects ?? []).some((card) => card.cardId.startsWith("anneau"))) {
+    return false;
+  }
+
+  if (selectedCard.cardId === "la-main-qui-vole" && (seat.objects ?? []).length === 0) {
     return false;
   }
 
@@ -126,6 +150,18 @@ function isObjectTargetable(selectedCard: CardView | undefined): boolean {
   }
 
   return selectedCard.targets === "target_object" || selectedCard.targets === "single_player_or_object";
+}
+
+function objectCardMatchesSelectedTargeting(selectedCard: CardView | undefined, objectCard: CardView): boolean {
+  if (!isObjectTargetable(selectedCard) || objectCard.categoryCode !== "O") {
+    return false;
+  }
+
+  if (selectedCard?.cardId === "dissipation-dun-anneau") {
+    return objectCard.cardId.startsWith("anneau");
+  }
+
+  return true;
 }
 
 function responseLabel(choice: PendingActionResponderState["choice"]): string {
@@ -175,17 +211,21 @@ function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hov
     <div class="seat-card-strip">
       ${objects.map((card) => `
         <button
-          class="seat-object-card ${objectTargetable ? "seat-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-object-card--hovered" : ""}"
+          class="seat-object-card ${objectCardMatchesSelectedTargeting(draggedCard, card) ? "seat-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-object-card--hovered" : ""}"
           data-object-instance-id="${card.instanceId}"
-          ${objectTargetable ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
+          ${objectCardMatchesSelectedTargeting(draggedCard, card) ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
         >
-          <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          <div class="seat-object-card__art">
+            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          </div>
           ${renderCardTooltip(card)}
         </button>
       `).join("")}
       ${statuses.map((card) => `
         <div class="seat-status-card">
-          <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          <div class="seat-object-card__art">
+            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          </div>
           ${renderCardTooltip(card)}
         </div>
       `).join("")}
@@ -205,11 +245,13 @@ function renderSeatInlineObjects(seat: SeatState, draggedCard: CardView | undefi
     <div class="seat-inline-objects">
       ${objects.map((card) => `
         <button
-          class="seat-inline-object ${objectTargetable ? "seat-inline-object--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-inline-object--hovered" : ""}"
+          class="seat-inline-object ${objectCardMatchesSelectedTargeting(draggedCard, card) ? "seat-inline-object--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-inline-object--hovered" : ""}"
           data-object-instance-id="${card.instanceId}"
-          ${objectTargetable ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
+          ${objectCardMatchesSelectedTargeting(draggedCard, card) ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
         >
-          <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          <div class="seat-inline-object__art">
+            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          </div>
           ${renderCardTooltip(card)}
         </button>
       `).join("")}
@@ -271,7 +313,15 @@ function renderOpponentSeat(
   `;
 }
 
-function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrowDragCardInstanceId: string, pendingActionActive: boolean, isLocalTurn: boolean): string {
+function renderHandCards(
+  hand: CardView[],
+  draggingCardInstanceId: string,
+  arrowDragCardInstanceId: string,
+  returningHandCardInstanceId: string,
+  hiddenHandCardInstanceIds: string[],
+  pendingActionActive: boolean,
+  isLocalTurn: boolean
+): string {
   const total = hand.length;
   const FAN_RADIUS = 700;
   const FAN_SPREAD_DEG = total <= 1 ? 0 : Math.min(34, 8 + (total - 2) * 4);
@@ -307,6 +357,8 @@ function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrow
     // annulation, resistance-accrue) can at least be discarded.
     const disableSelection = pendingActionActive ? !card.canPlay : !isLocalTurn;
     const responsePlayable = pendingActionActive && card.canPlay;
+    const returning = card.instanceId === returningHandCardInstanceId;
+    const overlayHidden = hiddenHandCardInstanceIds.includes(card.instanceId);
 
     // Fan geometry: cards arc along a large imaginary circle below the hand panel
     const angleRad = total <= 1 ? 0 : (-FAN_SPREAD_DEG / 2 + (i / (total - 1)) * FAN_SPREAD_DEG) * (Math.PI / 180);
@@ -323,7 +375,7 @@ function renderHandCards(hand: CardView[], draggingCardInstanceId: string, arrow
 
     return `
       <article
-        class="hand-card ${isNew ? "hand-card--new" : ""} ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""}"
+        class="hand-card ${isNew ? "hand-card--new" : ""} ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""} ${returning ? "hand-card--returning-target" : ""} ${overlayHidden ? "hand-card--overlay-hidden" : ""}"
         style="--fan-x:${fanX.toFixed(1)}px;--fan-y:${fanY.toFixed(1)}px;--fan-rotate:${fanRotate.toFixed(2)}deg;--fan-z:${fanZ};${isNew ? `--deal-elapsed:${dealElapsed.toFixed(0)}ms;` : ""}"
         data-card-instance-id="${card.instanceId}"
         data-base-fan-x="${fanX.toFixed(1)}"
@@ -352,11 +404,32 @@ function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefin
     <div class="${stripClass}">
       ${objects.map((card) => `
         <article
-          class="local-object-card ${objectTargetable ? "local-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", localSeatNumber, card.instanceId) ? "local-object-card--hovered" : ""}"
+          class="local-object-card ${objectCardMatchesSelectedTargeting(draggedCard, card) ? "local-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", localSeatNumber, card.instanceId) ? "local-object-card--hovered" : ""}"
           data-object-instance-id="${card.instanceId}"
-          ${objectTargetable ? `data-drop-target="object" data-seat-number="${localSeatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
+          ${objectCardMatchesSelectedTargeting(draggedCard, card) ? `data-drop-target="object" data-seat-number="${localSeatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
         >
-          <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          <div class="local-object-card__art">
+            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          </div>
+          ${renderCardTooltip(card)}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderLocalStatuses(statuses: CardView[], stripClass: string): string {
+  if (statuses.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="${stripClass}">
+      ${statuses.map((card) => `
+        <article class="local-object-card local-object-card--status">
+          <div class="local-object-card__art">
+            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          </div>
           ${renderCardTooltip(card)}
         </article>
       `).join("")}
@@ -417,9 +490,14 @@ function renderCenterPlayArea(
   const showForcedPassButton =
     forcedFollowUp?.actorSeatNumber === localSeatNumber &&
     localForcedCards.length === 0;
+  const pendingCurseRelease = presentationLockActive ? undefined : match.game?.pendingCurseRelease;
+  const showCurseReleaseOptions = pendingCurseRelease?.seatNumber === localSeatNumber;
   const forcedPrompt = forcedFollowUp == null
     ? ""
     : `${getLocalSeat(match, forcedFollowUp.actorSeatNumber)?.displayName ?? `Seat ${forcedFollowUp.actorSeatNumber}`} must play ${forcedFollowUp.allowedCategories.join("/")} on ${getLocalSeat(match, forcedFollowUp.targetSeatNumber)?.displayName ?? `Seat ${forcedFollowUp.targetSeatNumber}`} for ${forcedFollowUp.sourceCardName}.`;
+  const cursePrompt = pendingCurseRelease == null
+    ? ""
+    : `${getLocalSeat(match, pendingCurseRelease.seatNumber)?.displayName ?? `Seat ${pendingCurseRelease.seatNumber}`} may discard ${pendingCurseRelease.releaseCardCount} ${pendingCurseRelease.releaseCardName} to remove ${pendingCurseRelease.cardName}.`;
 
   const isShowingLastPlayed = singleStackCards.length > 0 && displayedAction == null;
 
@@ -427,7 +505,6 @@ function renderCenterPlayArea(
   const attackSlotClass = [
     "center-play-slot",
     singleStackCards.length > 0 || splitView ? "center-play-slot--filled" : "",
-    isShowingLastPlayed ? "center-play-slot--inactive" : "",
     impactActive ? "center-play-slot--impact" : "",
     (playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : "",
     (isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : "",
@@ -436,7 +513,9 @@ function renderCenterPlayArea(
 
   const renderSingleCard = (card: CardView, isTop: boolean, offset: number, lift: number) => `
     <div class="center-card-stack__card center-card-stack__card--${isTop ? "top" : "under"}" style="--stack-offset:${offset}px; --stack-lift:${lift}px;">
-      <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+      <div class="center-card-stack__art">
+        <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+      </div>
       ${renderCardTooltip(card)}
     </div>
   `;
@@ -445,6 +524,7 @@ function renderCenterPlayArea(
     <section class="center-play-area">
       <div class="combat-fx-banner ${activeCombatFx != null ? `combat-fx-banner--${activeCombatFx.tone}` : "combat-fx-banner--idle"}">${activeCombatFx != null ? escapeHtml(activeCombatFx.message) : "\u00a0"}</div>
       ${forcedPrompt !== "" ? `<div class="forced-follow-up-banner">${escapeHtml(forcedPrompt)}</div>` : ""}
+      ${cursePrompt !== "" ? `<div class="forced-follow-up-banner">${escapeHtml(cursePrompt)}</div>` : ""}
       <div class="center-play-slots${splitView ? " center-play-slots--split" : ""}">
         ${splitView ? `
           <article class="center-play-slot center-play-slot--filled center-play-slot--response-cards">
@@ -485,6 +565,12 @@ function renderCenterPlayArea(
           <button type="button" class="action-button action-button--secondary" data-action="pass-forced-follow-up">Pass</button>
         </div>
       ` : ""}
+      ${showCurseReleaseOptions ? `
+        <div class="center-play-options">
+          <button type="button" class="action-button action-button--secondary" data-action="resolve-curse-release" data-choice="accept">Accept</button>
+          <button type="button" class="action-button action-button--secondary" data-action="resolve-curse-release" data-choice="pass">Pass</button>
+        </div>
+      ` : ""}
     </section>
   `;
 }
@@ -497,6 +583,24 @@ function renderDragPreview(card: CardView | undefined, x: number, y: number): st
   return `
     <div class="drag-card-preview" data-drag-card-preview style="left:${x}px; top:${y}px;">
       <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+    </div>
+  `;
+}
+
+function renderReturnCardFlight(
+  returnFlight: TableViewParams["activeReturnCardFlight"]
+): string {
+  if (returnFlight == null) {
+    return "";
+  }
+
+  return `
+    <div
+      class="drag-return-flight ${returnFlight.settled ? "drag-return-flight--settled" : ""}"
+      style="left:${returnFlight.fromX}px; top:${returnFlight.fromY}px; width:${returnFlight.width}px; height:${returnFlight.height}px; --drag-return-dx:${returnFlight.toX - returnFlight.fromX}px; --drag-return-dy:${returnFlight.toY - returnFlight.fromY}px;"
+      aria-hidden="true"
+    >
+      <img src="${returnFlight.card.imageUrl}" alt="${escapeHtml(returnFlight.card.name)}" />
     </div>
   `;
 }
@@ -579,7 +683,12 @@ function renderHealBurst(large = false): string {
 
 const DEV_CARD_OPTIONS = [...baseCardDefinitions]
   .sort((a, b) => a.name.localeCompare(b.name))
-  .map((card) => `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(card.name)}</option>`)
+  .map((card) => {
+    const devLabel = card.id === "annulation"
+      ? `${card.name} / Cancel`
+      : card.name;
+    return `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(devLabel)}</option>`;
+  })
   .join("");
 
 function renderDevDrawPanel(): string {
@@ -700,6 +809,142 @@ function renderTelepathyInspectionModal(
   `;
 }
 
+function renderBoardResetKeepModal(
+  match: MatchState,
+  localSeatNumber: number,
+  boardResetKeepPreviewCardInstanceId: string
+): string {
+  const pendingKeep = match.game?.pendingBoardResetKeep;
+  if (pendingKeep == null) {
+    return "";
+  }
+
+  const chooserSeat = match.seats.find((seat) => seat.seatNumber === pendingKeep.chooserSeatNumber);
+  if (chooserSeat == null) {
+    return "";
+  }
+
+  const isLocalChooser = pendingKeep.chooserSeatNumber === localSeatNumber;
+  const keepableCards = isLocalChooser ? pendingKeep.cardOptions : [];
+  const previewCard = !isLocalChooser
+    ? undefined
+    : keepableCards.find((card) => card.instanceId === boardResetKeepPreviewCardInstanceId) ?? keepableCards[0];
+
+  return `
+    <section class="telepathy-overlay">
+      <article class="telepathy-panel">
+        <div class="telepathy-panel__header">
+          <div>
+            <p class="eyebrow">${escapeHtml(pendingKeep.cardName)}</p>
+            <h2>${isLocalChooser ? `Choose ${pendingKeep.keepCardCount} Card${pendingKeep.keepCardCount === 1 ? "" : "s"} To Keep` : "Intervention divine in progress"}</h2>
+            <p>${isLocalChooser ? `Select the ${pendingKeep.keepCardCount === 1 ? "one card" : `${pendingKeep.keepCardCount} cards`} that stay${pendingKeep.keepCardCount === 1 ? "s" : ""} in your hand before the rest of the board is cleared and reshuffled.` : `Waiting for ${escapeHtml(chooserSeat.displayName)} to choose which card to keep.`}</p>
+          </div>
+          ${isLocalChooser ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-board-reset-keep" ${previewCard == null ? "disabled" : ""}>Keep This Card</button>` : ""}
+        </div>
+        <div class="telepathy-grid">
+          ${!isLocalChooser
+            ? `<p class="telepathy-empty">No other actions can continue until the keeper card is chosen.</p>`
+            : keepableCards.length === 0
+            ? `<p class="telepathy-empty">There are no cards left in hand to keep.</p>`
+            : `
+              <div class="telepathy-preview">
+                ${previewCard == null ? "" : `
+                  <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                  <div class="telepathy-preview__meta">
+                    <strong>${escapeHtml(previewCard.name)}</strong>
+                    <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
+                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
+                    ${renderDefenseTooltip(previewCard)}
+                  </div>
+                `}
+              </div>
+              <div class="telepathy-list">
+                ${keepableCards.map((card) => `
+                  <button
+                    type="button"
+                    class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""}"
+                    data-action="preview-board-reset-card"
+                    data-card-instance-id="${card.instanceId}"
+                  >
+                    <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                    <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(card.name)}</strong>
+                      <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                    </div>
+                  </button>
+                `).join("")}
+              </div>
+            `}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderPendingSacrificeChoiceModal(
+  match: MatchState,
+  localSeatNumber: number,
+  sacrificeAmountInput: string
+): string {
+  const pendingSacrificeChoice = match.game?.pendingSacrificeChoice;
+  if (pendingSacrificeChoice == null) {
+    return "";
+  }
+
+  const actorSeat = match.seats.find((seat) => seat.seatNumber === pendingSacrificeChoice.actorSeatNumber);
+  if (actorSeat == null) {
+    return "";
+  }
+
+  const isLocalActor = pendingSacrificeChoice.actorSeatNumber === localSeatNumber;
+  const parsedAmount = Number(sacrificeAmountInput);
+  const isValidAmount =
+    Number.isInteger(parsedAmount)
+    && parsedAmount >= 0
+    && parsedAmount <= pendingSacrificeChoice.maxAmount;
+
+  return `
+    <section class="telepathy-overlay">
+      <article class="telepathy-panel telepathy-panel--compact">
+        <div class="telepathy-panel__header">
+          <div>
+            <p class="eyebrow">${escapeHtml(pendingSacrificeChoice.cardName)}</p>
+            <h2>${isLocalActor ? "Choose Sacrifice Amount" : "Sacrifice in progress"}</h2>
+            <p>${isLocalActor ? `Enter how many HP to sacrifice. Choose a whole number from 0 to ${pendingSacrificeChoice.maxAmount}.` : `Waiting for ${escapeHtml(actorSeat.displayName)} to choose how many HP to sacrifice.`}</p>
+          </div>
+        </div>
+        ${!isLocalActor
+          ? `<p class="telepathy-empty">No other actions can continue until the sacrifice amount is chosen.</p>`
+          : `
+            <div class="sacrifice-choice-form">
+              <label class="sacrifice-choice-form__label" for="sacrifice-amount-input">HP to sacrifice</label>
+              <input
+                id="sacrifice-amount-input"
+                class="sacrifice-choice-form__input"
+                data-action="edit-sacrifice-amount"
+                type="number"
+                min="0"
+                max="${pendingSacrificeChoice.maxAmount}"
+                step="1"
+                inputmode="numeric"
+                value="${escapeHtml(sacrificeAmountInput)}"
+              />
+              <p class="sacrifice-choice-form__hint">Maximum: ${pendingSacrificeChoice.maxAmount} HP. You may reduce yourself to 0.</p>
+              <button
+                type="button"
+                class="action-button action-button--secondary"
+                data-action="confirm-sacrifice-amount"
+                ${isValidAmount ? "" : "disabled"}
+              >
+                Confirm
+              </button>
+            </div>
+          `}
+      </article>
+    </section>
+  `;
+}
+
 export function renderTableView({
   match,
   localSeatNumber,
@@ -708,6 +953,7 @@ export function renderTableView({
   activeActionVisual,
   centerResponseCards,
   activeCardFlight,
+  activeReturnCardFlight,
   draggingCardInstanceId,
   dragPointerX,
   dragPointerY,
@@ -715,13 +961,17 @@ export function renderTableView({
   arrowDrag,
   inspectedSeatNumber,
   telepathyPreviewCardInstanceId,
+  boardResetKeepPreviewCardInstanceId,
+  sacrificeAmountInput,
   errorMessage,
   chatMarkup,
   eventLogMarkup,
   activeCombatFx,
-  activeDamageBurst,
-  activeHealBurst,
-  impactTargetSeatNumber
+  activeDamageBursts,
+  activeHealBursts,
+  impactTargetSeatNumbers,
+  returningHandCardInstanceId,
+  hiddenHandCardInstanceIds
 }: TableViewParams): string {
   const localSeat = getLocalSeat(match, localSeatNumber);
   const localIsHost = localSeat?.isHost === true;
@@ -739,6 +989,15 @@ export function renderTableView({
     : undefined; // no drag preview when arrow is active
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
   const forcedFollowUp = presentationLockActive ? undefined : match.game?.forcedFollowUp;
+  const pendingCurseRelease = presentationLockActive ? undefined : match.game?.pendingCurseRelease;
+  const localPlayableCardCount = localSeat?.hand?.filter((card) => card.canPlay).length ?? 0;
+  const showNoPlayableDiscardPrompt =
+    isLocalTurn
+    && pendingAction == null
+    && forcedFollowUp == null
+    && pendingCurseRelease == null
+    && (localSeat?.hand?.length ?? 0) > 0
+    && localPlayableCardCount === 0;
   const localDisplayedHp = localSeat == null ? 0 : displayedHpBySeat[localSeat.seatNumber] ?? localSeat.hp ?? 0;
   const seatMarkup = anchors.map((anchor, index) => {
     const seat = opponents[index];
@@ -757,9 +1016,9 @@ export function renderTableView({
       inspectedSeatNumber,
       visibleCurrentTurnSeatNumber,
       pendingAction?.responders.find((responder) => responder.seatNumber === seat.seatNumber),
-      activeDamageBurst?.seatNumber === seat.seatNumber ? activeDamageBurst.amount : undefined,
-      impactTargetSeatNumber === seat.seatNumber,
-      activeHealBurst?.seatNumber === seat.seatNumber,
+      activeDamageBursts[seat.seatNumber],
+      impactTargetSeatNumbers.includes(seat.seatNumber),
+      activeHealBursts[seat.seatNumber] != null,
       forcedFollowUp?.actorSeatNumber === localSeatNumber ? forcedFollowUp.targetSeatNumber : undefined
     );
   }).join("");
@@ -793,9 +1052,9 @@ export function renderTableView({
           </button>
         </div>
 
-        <div class="table-surface ${isLocalTurn ? "table-surface--local-turn" : ""} ${impactTargetSeatNumber !== 0 ? "table-surface--impact" : ""}">
+        <div class="table-surface ${isLocalTurn ? "table-surface--local-turn" : ""} ${impactTargetSeatNumbers.length > 0 ? "table-surface--impact" : ""}">
           <svg class="action-target-overlay" data-action-target-overlay="true" aria-hidden="true"></svg>
-          ${renderCenterPlayArea(match, localSeatNumber, draggedCard, dragHoverTarget, activeCombatFx, impactTargetSeatNumber !== 0, presentationLockActive, activeActionVisual, centerResponseCards)}
+          ${renderCenterPlayArea(match, localSeatNumber, draggedCard, dragHoverTarget, activeCombatFx, impactTargetSeatNumbers.length > 0, presentationLockActive, activeActionVisual, centerResponseCards)}
           ${eventLogMarkup}
           ${seatMarkup}
           ${activeCardFlight != null ? `
@@ -808,16 +1067,22 @@ export function renderTableView({
             </div>
           ` : ""}
 
-          <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumber === localSeatNumber ? "local-hand-panel--impact" : ""} ${activeHealBurst?.seatNumber === localSeatNumber ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
-            ${activeHealBurst?.seatNumber === localSeatNumber ? renderHealBurst(true) : ""}
+          <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumbers.includes(localSeatNumber) ? "local-hand-panel--impact" : ""} ${activeHealBursts[localSeatNumber] != null ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+            ${activeHealBursts[localSeatNumber] != null ? renderHealBurst(true) : ""}
+            ${renderLocalStatuses(localSeat?.statuses ?? [], "local-status-strip")}
             ${renderLocalObjects((localSeat?.objects ?? []).filter(c => c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-rings-strip")}
+            ${showNoPlayableDiscardPrompt ? `
+              <div class="local-turn-discard-prompt">
+                You cannot play any card this turn. Choose one card to discard.
+              </div>
+            ` : ""}
             <div class="hand-fan">
-              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", pendingAction != null, isLocalTurn || forcedFollowUp?.actorSeatNumber === localSeatNumber)}
+              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", returningHandCardInstanceId, hiddenHandCardInstanceIds, pendingAction != null, isLocalTurn || forcedFollowUp?.actorSeatNumber === localSeatNumber)}
             </div>
             ${renderLocalObjects((localSeat?.objects ?? []).filter(c => !c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-equipment-strip")}
-            ${draggingCardInstanceId ? `
+            ${(draggingCardInstanceId || showNoPlayableDiscardPrompt) ? `
               <div
-                class="hand-discard-zone ${isHoverTarget(dragHoverTarget, "discard") ? "hand-discard-zone--hovered" : ""}"
+                class="hand-discard-zone ${showNoPlayableDiscardPrompt && !draggingCardInstanceId ? "hand-discard-zone--idle" : ""} ${isHoverTarget(dragHoverTarget, "discard") ? "hand-discard-zone--hovered" : ""}"
                 data-drop-target="discard"
               >✕ Discard</div>
             ` : ""}
@@ -826,13 +1091,16 @@ export function renderTableView({
 
         <aside class="local-hp-panel">
           <strong>${localDisplayedHp}</strong>
-          ${activeDamageBurst?.seatNumber === localSeatNumber ? `<div class="local-damage-burst">-${activeDamageBurst.amount} HP</div>` : ""}
+          ${activeDamageBursts[localSeatNumber] != null ? `<div class="local-damage-burst">-${activeDamageBursts[localSeatNumber]} HP</div>` : ""}
         </aside>
 
         ${renderPendingObjectChoice(match, localSeatNumber)}
         ${renderTelepathyInspectionModal(match, localSeatNumber, telepathyPreviewCardInstanceId)}
+        ${renderBoardResetKeepModal(match, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
+        ${renderPendingSacrificeChoiceModal(match, localSeatNumber, sacrificeAmountInput)}
         ${chatMarkup}
         ${renderDragPreview(normalDragPreviewCard, dragPointerX, dragPointerY)}
+        ${renderReturnCardFlight(activeReturnCardFlight)}
         <svg class="arrow-drag-overlay" aria-hidden="true"></svg>
       </section>
     </main>

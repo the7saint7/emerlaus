@@ -10,6 +10,9 @@ import {
   requestAddBot,
   requestKickPlayer,
   respondToPendingAction,
+  resolvePendingBoardResetKeep,
+  resolvePendingSacrificeChoice,
+  resolvePendingCurseRelease,
   requestStartMatch,
   selectPendingObject,
   sendChatMessage
@@ -52,6 +55,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     arrowDrag: null,
     hoveredCardInstanceId: "",
     telepathyPreviewCardInstanceId: "",
+    boardResetKeepPreviewCardInstanceId: "",
+    sacrificeAmountInput: "0",
     telepathyPanelScrollTop: 0,
     telepathyListScrollTop: 0,
     inspectedSeatNumber: 0,
@@ -70,10 +75,13 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     activeActionVisual: null,
     centerResponseCards: [],
     activeCardFlight: null,
+    activeReturnCardFlight: null,
+    returningHandCardInstanceId: "",
+    hiddenHandCardInstanceIds: [],
     activeCombatFx: null,
-    activeDamageBurst: null,
-    activeHealBurst: null,
-    impactTargetSeatNumber: 0,
+    activeDamageBursts: {},
+    activeHealBursts: {},
+    impactTargetSeatNumbers: [],
     opponentCursors: {}
   };
   let eventReplayChain = Promise.resolve();
@@ -81,6 +89,29 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   const delay = (ms: number): Promise<void> =>
     new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  interface HandCardVisualSnapshot {
+    rect: DOMRect;
+    imageUrl: string;
+    name: string;
+  }
+
+  let persistentHandAnimationLayer: HTMLDivElement | null = null;
+
+  const ensurePersistentHandAnimationLayer = (): HTMLDivElement => {
+    if (persistentHandAnimationLayer != null) {
+      return persistentHandAnimationLayer;
+    }
+
+    const layer = document.createElement("div");
+    layer.className = "hand-animation-layer";
+    document.body.appendChild(layer);
+    persistentHandAnimationLayer = layer;
+    return layer;
+  };
+
+  const nextFrame = (): Promise<void> =>
+    new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 
   const logClient = (scope: string, message: string): void => {
     const entry = `${new Date().toISOString()} [client:${scope}] ${message}`;
@@ -159,9 +190,6 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         return null;
     }
   };
-
-  const nextFrame = (): Promise<void> =>
-    new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 
   const getSeatAnchorRect = (seatNumber?: number): DOMRect | null => {
     if (seatNumber == null) {
@@ -298,6 +326,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   const applyMatchState = (nextMatch: MatchState | null): void => {
     const previousPendingInspection = state.match?.game?.pendingHandInspection;
+    const previousPendingBoardResetKeep = state.match?.game?.pendingBoardResetKeep;
     state.match = nextMatch;
     // Clear ghost arrows whenever game state resolves (action is done)
     state.opponentCursors = {};
@@ -306,8 +335,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       state.centerResponseCards = [];
       state.activeCardFlight = null;
       state.telepathyPreviewCardInstanceId = "";
+      state.boardResetKeepPreviewCardInstanceId = "";
       state.telepathyPanelScrollTop = 0;
       state.telepathyListScrollTop = 0;
+      state.hiddenHandCardInstanceIds = [];
       return;
     }
 
@@ -317,6 +348,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     }
 
     const nextPendingInspection = nextMatch.game?.pendingHandInspection;
+    const nextPendingBoardResetKeep = nextMatch.game?.pendingBoardResetKeep;
+    const previousPendingSacrificeChoice = state.match?.game?.pendingSacrificeChoice;
+    const nextPendingSacrificeChoice = nextMatch.game?.pendingSacrificeChoice;
     const previousLocalInspectionTargetSeatNumber =
       previousPendingInspection?.viewerSeatNumber === state.localSeatNumber
         ? previousPendingInspection.targetSeatNumber
@@ -339,6 +373,40 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       if (!(nextTargetSeat?.hand ?? []).some((card) => card.instanceId === state.telepathyPreviewCardInstanceId)) {
         state.telepathyPreviewCardInstanceId = nextTargetSeat?.hand?.[0]?.instanceId ?? "";
       }
+    }
+
+    const previousLocalBoardResetKeepChooser =
+      previousPendingBoardResetKeep?.chooserSeatNumber === state.localSeatNumber
+        ? previousPendingBoardResetKeep.chooserSeatNumber
+        : undefined;
+    const nextLocalBoardResetKeepChooser =
+      nextPendingBoardResetKeep?.chooserSeatNumber === state.localSeatNumber
+        ? nextPendingBoardResetKeep.chooserSeatNumber
+        : undefined;
+    if (nextLocalBoardResetKeepChooser == null) {
+      state.boardResetKeepPreviewCardInstanceId = "";
+    } else if (nextLocalBoardResetKeepChooser !== previousLocalBoardResetKeepChooser) {
+      state.boardResetKeepPreviewCardInstanceId = nextPendingBoardResetKeep?.cardOptions[0]?.instanceId ?? "";
+    } else if (state.boardResetKeepPreviewCardInstanceId !== "") {
+      if (!(nextPendingBoardResetKeep?.cardOptions ?? []).some((card) => card.instanceId === state.boardResetKeepPreviewCardInstanceId)) {
+        state.boardResetKeepPreviewCardInstanceId = nextPendingBoardResetKeep?.cardOptions[0]?.instanceId ?? "";
+      }
+    }
+
+    const previousLocalSacrificePrompt =
+      previousPendingSacrificeChoice?.actorSeatNumber === state.localSeatNumber
+        ? previousPendingSacrificeChoice.actorSeatNumber
+        : undefined;
+    const nextLocalSacrificePrompt =
+      nextPendingSacrificeChoice?.actorSeatNumber === state.localSeatNumber
+        ? nextPendingSacrificeChoice.actorSeatNumber
+        : undefined;
+    if (nextLocalSacrificePrompt == null) {
+      state.sacrificeAmountInput = "0";
+    } else if (nextLocalSacrificePrompt !== previousLocalSacrificePrompt) {
+      state.sacrificeAmountInput = "0";
+    } else if (Number(state.sacrificeAmountInput) > (nextPendingSacrificeChoice?.maxAmount ?? 0)) {
+      state.sacrificeAmountInput = String(nextPendingSacrificeChoice?.maxAmount ?? 0);
     }
 
     reconcileDisplayedHp();
@@ -373,34 +441,30 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         tone,
         seatNumber: options?.seatNumber
       };
-      state.activeDamageBurst =
-        options?.damageAmount != null && options?.seatNumber != null
-          ? { seatNumber: options.seatNumber, amount: options.damageAmount }
-          : null;
-      state.activeHealBurst =
-        options?.healAmount != null && options?.seatNumber != null
-          ? { seatNumber: options.seatNumber, amount: options.healAmount }
-          : null;
-      state.impactTargetSeatNumber = options?.impactTargetSeatNumber ?? 0;
+      if (options?.damageAmount != null && options?.seatNumber != null) {
+        state.activeDamageBursts[options.seatNumber] = options.damageAmount;
+      }
+      if (options?.healAmount != null && options?.seatNumber != null) {
+        state.activeHealBursts[options.seatNumber] = options.healAmount;
+      }
+      if (options?.impactTargetSeatNumber != null && options.impactTargetSeatNumber !== 0 && !state.impactTargetSeatNumbers.includes(options.impactTargetSeatNumber)) {
+        state.impactTargetSeatNumbers = [...state.impactTargetSeatNumbers, options.impactTargetSeatNumber];
+      }
       render();
       await delay(durationMs);
       if (state.activeCombatFx?.message === message && state.activeCombatFx.seatNumber === options?.seatNumber) {
         state.activeCombatFx = null;
       }
-      if (
-        state.activeDamageBurst?.seatNumber === options?.seatNumber &&
-        state.activeDamageBurst?.amount === options?.damageAmount
-      ) {
-        state.activeDamageBurst = null;
+      if (options?.seatNumber != null && state.activeDamageBursts[options.seatNumber] === options?.damageAmount) {
+        const { [options.seatNumber]: _removedBurst, ...remainingDamageBursts } = state.activeDamageBursts;
+        state.activeDamageBursts = remainingDamageBursts;
       }
-      if (
-        state.activeHealBurst?.seatNumber === options?.seatNumber &&
-        state.activeHealBurst?.amount === options?.healAmount
-      ) {
-        state.activeHealBurst = null;
+      if (options?.seatNumber != null && state.activeHealBursts[options.seatNumber] === options?.healAmount) {
+        const { [options.seatNumber]: _removedBurst, ...remainingHealBursts } = state.activeHealBursts;
+        state.activeHealBursts = remainingHealBursts;
       }
-      if (state.impactTargetSeatNumber === (options?.impactTargetSeatNumber ?? 0)) {
-        state.impactTargetSeatNumber = 0;
+      if (options?.impactTargetSeatNumber != null && options.impactTargetSeatNumber !== 0) {
+        state.impactTargetSeatNumbers = state.impactTargetSeatNumbers.filter((seatNumber) => seatNumber !== options.impactTargetSeatNumber);
       }
       render();
     };
@@ -418,7 +482,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         tone,
         seatNumber: options?.seatNumber
       };
-      state.impactTargetSeatNumber = options?.impactTargetSeatNumber ?? 0;
+      if (options?.impactTargetSeatNumber != null && options.impactTargetSeatNumber !== 0 && !state.impactTargetSeatNumbers.includes(options.impactTargetSeatNumber)) {
+        state.impactTargetSeatNumbers = [...state.impactTargetSeatNumbers, options.impactTargetSeatNumber];
+      }
       render();
     };
 
@@ -426,8 +492,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       if (options?.seatNumber == null || state.activeCombatFx?.seatNumber === options.seatNumber) {
         state.activeCombatFx = null;
       }
-      if (state.impactTargetSeatNumber === (options?.impactTargetSeatNumber ?? 0)) {
-        state.impactTargetSeatNumber = 0;
+      if (options?.impactTargetSeatNumber != null && options.impactTargetSeatNumber !== 0) {
+        state.impactTargetSeatNumbers = state.impactTargetSeatNumbers.filter((seatNumber) => seatNumber !== options.impactTargetSeatNumber);
       }
       render();
     };
@@ -464,6 +530,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       }
     ): Promise<void> => {
       if (event.type === "dice_roll") {
+        let impactTargetSeatNumber: number | undefined;
         if (event.seatNumber != null) {
           context.lastDiceBySeat.set(event.seatNumber, {
             notation: event.notation,
@@ -482,6 +549,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               { seatNumber: event.seatNumber }
             );
           } else if (rollContext?.kind === "damage") {
+            impactTargetSeatNumber = rollContext.targetSeatNumber;
             setCombatFx(
               `${getSeatDisplayName(rollContext.actorSeatNumber)} throws ${event.notation.toUpperCase()} for damage on ${getSeatDisplayName(rollContext.targetSeatNumber)}`,
               "failure",
@@ -510,6 +578,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           `Replay ${event.id} ${event.notation.toUpperCase()}${event.seatNumber != null ? ` seat=${event.seatNumber}` : ""} expected=${event.total}${event.values.length > 0 ? ` [${event.values.join(", ")}]` : ""} animated=${diceResult.animatedTotal}${diceResult.animatedValues.length > 0 ? ` [${diceResult.animatedValues.join(", ")}]` : ""} raw=${diceResult.rawPayload}`
         );
         await delay(250);
+        if (impactTargetSeatNumber != null) {
+          clearCombatFx({ seatNumber: impactTargetSeatNumber, impactTargetSeatNumber });
+        }
         return;
       }
 
@@ -636,6 +707,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           { seatNumber: event.targetSeatNumber, impactTargetSeatNumber: event.targetSeatNumber }
         );
         await delay(180);
+        clearCombatFx({ seatNumber: event.targetSeatNumber, impactTargetSeatNumber: event.targetSeatNumber });
         return;
       }
 
@@ -815,11 +887,111 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   const getDraggedCard = () => getLocalHand().find((card) => card.instanceId === state.draggingCardInstanceId);
 
+  const captureHandCardVisuals = (): Map<string, HandCardVisualSnapshot> => {
+    const rects = new Map<string, HandCardVisualSnapshot>();
+    rootElement.querySelectorAll<HTMLElement>(".hand-card[data-card-instance-id]").forEach((element) => {
+      const cardInstanceId = element.dataset.cardInstanceId;
+      if (cardInstanceId == null || cardInstanceId === "") {
+        return;
+      }
+
+      const imageElement = element.querySelector<HTMLImageElement>("img");
+      rects.set(cardInstanceId, {
+        rect: element.getBoundingClientRect(),
+        imageUrl: imageElement?.src ?? "",
+        name: imageElement?.alt ?? "Card"
+      });
+    });
+    return rects;
+  };
+
+  const getHandSpreadAnchorCardInstanceId = (): string => {
+    if (state.arrowDrag != null) {
+      return state.arrowDrag.cardInstanceId;
+    }
+    if (state.draggingCardInstanceId !== "") {
+      return state.draggingCardInstanceId;
+    }
+    return state.hoveredCardInstanceId;
+  };
+
   const clearDragState = (): void => {
     state.draggingCardInstanceId = "";
     state.dragHoverTarget = null;
     state.arrowDrag = null;
     state.hoveredCardInstanceId = "";
+  };
+
+  const animateInvalidDragReturn = async (card: CardView, startX: number, startY: number): Promise<void> => {
+    const previousVisuals = captureHandCardVisuals();
+    const previewRect = rootElement.querySelector<HTMLElement>("[data-drag-card-preview]")?.getBoundingClientRect();
+    if (previewRect != null) {
+      previousVisuals.set(card.instanceId, {
+        rect: previewRect,
+        imageUrl: card.imageUrl,
+        name: card.name
+      });
+    }
+
+    clearDragState();
+    render();
+    await animatePersistentHandReflow(previousVisuals);
+  };
+
+  const animatePersistentHandReflow = async (previousVisuals: Map<string, HandCardVisualSnapshot>): Promise<void> => {
+    const layer = ensurePersistentHandAnimationLayer();
+    layer.innerHTML = "";
+
+    const clones: HTMLDivElement[] = [];
+    const hiddenCardIds: string[] = [];
+
+    rootElement.querySelectorAll<HTMLElement>(".hand-card[data-card-instance-id]").forEach((element) => {
+      const cardInstanceId = element.dataset.cardInstanceId;
+      if (cardInstanceId == null || cardInstanceId === "") {
+        return;
+      }
+
+      const previous = previousVisuals.get(cardInstanceId);
+      if (previous == null) {
+        return;
+      }
+
+      const nextRect = element.getBoundingClientRect();
+      const deltaX = previous.rect.left - nextRect.left;
+      const deltaY = previous.rect.top - nextRect.top;
+      if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
+        return;
+      }
+
+      hiddenCardIds.push(cardInstanceId);
+      const clone = document.createElement("div");
+      clone.className = "hand-animation-card";
+      clone.style.left = `${previous.rect.left}px`;
+      clone.style.top = `${previous.rect.top}px`;
+      clone.style.width = `${previous.rect.width}px`;
+      clone.style.height = `${previous.rect.height}px`;
+      clone.style.setProperty("--hand-animation-dx", `${-deltaX}px`);
+      clone.style.setProperty("--hand-animation-dy", `${-deltaY}px`);
+      clone.innerHTML = `<img src="${previous.imageUrl}" alt="${previous.name}" />`;
+      layer.appendChild(clone);
+      clones.push(clone);
+    });
+
+    if (clones.length === 0) {
+      state.hiddenHandCardInstanceIds = [];
+      render();
+      return;
+    }
+
+    state.hiddenHandCardInstanceIds = hiddenCardIds;
+    render();
+    await nextFrame();
+    clones.forEach((clone) => clone.classList.add("hand-animation-card--settled"));
+    await delay(220);
+    layer.innerHTML = "";
+    state.hiddenHandCardInstanceIds = [];
+    state.returningHandCardInstanceId = "";
+    render();
   };
 
   /** Returns true if the card's targets require aiming at a specific opponent. */
@@ -866,7 +1038,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       // Stem curve: cp1 straight up from origin, cp2 straight up from lineEnd.
       // The horizontal gap between origin and lineEnd bends the curve naturally left/right.
       const dist = Math.hypot(lineEndX - originX, lineEndY - originY);
-      const lift = Math.max(120, dist * 0.45);
+      const lift = Math.max(100, dist * 0.38);
       const cp1x = originX;
       const cp1y = originY - lift;
       const cp2x = lineEndX;
@@ -972,19 +1144,30 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     return null;
   };
 
-  const executePlayRequest = async (request: Parameters<typeof playCard>[2]): Promise<void> => {
+  const executePlayRequest = async (
+    request: Parameters<typeof playCard>[2],
+    previousHandVisuals?: Map<string, HandCardVisualSnapshot>
+  ): Promise<void> => {
     logClient("play", `Request play ${request.cardInstanceId} mode=${request.mode}${request.targetSeatNumber != null ? ` targetSeat=${request.targetSeatNumber}` : ""}${request.targetObjectInstanceId != null ? ` targetObject=${request.targetObjectInstanceId}` : ""}`);
     applyMatchState(await playCard(state.instanceId, state.playerSessionToken, request));
     state.errorMessage = "";
     clearDragState();
+    render();
+    if (previousHandVisuals != null) {
+      await animatePersistentHandReflow(previousHandVisuals);
+    }
   };
 
   const handleDraggedCardDrop = async (): Promise<void> => {
     const draggedCard = getDraggedCard();
     const hoverTarget = state.dragHoverTarget;
     if (draggedCard == null || hoverTarget == null) {
-      clearDragState();
-      render();
+      if (draggedCard != null) {
+        await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
+      } else {
+        clearDragState();
+        render();
+      }
       return;
     }
 
@@ -997,10 +1180,11 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
     try {
       if (hoverTarget.kind === "play-slot") {
+        const previousHandVisuals = captureHandCardVisuals();
         await executePlayRequest({
           cardInstanceId: draggedCard.instanceId,
           mode: "active"
-        });
+        }, previousHandVisuals);
       } else if (hoverTarget.kind === "response-slot") {
         const choice =
           draggedCard.cardId === "annulation"
@@ -1011,8 +1195,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
                 ? "mirror"
                 : null;
         if (choice == null) {
-          clearDragState();
-          render();
+          await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
           return;
         }
 
@@ -1022,22 +1205,24 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = "";
         clearDragState();
       } else if (hoverTarget.kind === "seat" && hoverTarget.seatNumber != null) {
+        const previousHandVisuals = captureHandCardVisuals();
         await executePlayRequest({
           cardInstanceId: draggedCard.instanceId,
           mode: "active",
           targetSeatNumber: hoverTarget.seatNumber
-        });
+        }, previousHandVisuals);
       } else if (hoverTarget.kind === "object" && hoverTarget.objectInstanceId != null) {
+        const previousHandVisuals = captureHandCardVisuals();
         await executePlayRequest({
           cardInstanceId: draggedCard.instanceId,
           mode: "active",
           targetObjectInstanceId: hoverTarget.objectInstanceId
-        });
+        }, previousHandVisuals);
       } else {
-        clearDragState();
+        await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
       }
     } catch (error) {
-      clearDragState();
+      await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
       state.errorMessage = error instanceof Error ? error.message : "Unable to play card";
     }
 
@@ -1172,6 +1357,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     // Phase 3: arrow drag release
     if (state.arrowDrag != null) {
       const { cardInstanceId, nearestSeatNumber } = state.arrowDrag;
+      const previousHandVisuals = captureHandCardVisuals();
       clearDragState();
       if (nearestSeatNumber != null) {
         void (async () => {
@@ -1180,14 +1366,14 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               cardInstanceId,
               mode: "active",
               targetSeatNumber: nearestSeatNumber
-            });
+            }, previousHandVisuals);
           } catch (error) {
             state.errorMessage = error instanceof Error ? error.message : "Unable to play card";
           }
           render();
         })();
       } else {
-        render();
+        void animatePersistentHandReflow(previousHandVisuals);
       }
       return;
     }
@@ -1381,7 +1567,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       const actorRect = actorElement.getBoundingClientRect();
       const actorX = actorRect.left - tableRect.left + (actorRect.width / 2);
       const actorY = actorRect.top - tableRect.top + (actorRect.height / 2);
-      const controlOffset = Math.max(40, Math.abs(actorY - originY) * 0.28);
+      const controlOffset = Math.max(34, Math.abs(actorY - originY) * 0.24);
       const [aBaseX, aBaseY] = arrowBase(originX, originY, actorX, actorY, 60);
       const actorPath = `M ${actorX} ${actorY} C ${actorX} ${actorY - controlOffset}, ${aBaseX} ${aBaseY + controlOffset}, ${aBaseX} ${aBaseY}`;
       pathMarkup.push(`<path class="action-target-overlay__attacker" d="${actorPath}" />`);
@@ -1444,7 +1630,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       const targetCY = targetRect.top  - tableRect.top  + (targetRect.height / 2);
       const [edgeX, edgeY] = rectEdgePoint(originX, originY, targetCX, targetCY, targetRect);
       const [tBaseX, tBaseY] = arrowBase(edgeX, edgeY, originX, originY, 60);
-      const controlOffset = Math.max(40, Math.abs(tBaseY - originY) * 0.32);
+      const controlOffset = Math.max(34, Math.abs(tBaseY - originY) * 0.27);
       const path = `M ${originX} ${originY} C ${originX} ${originY + controlOffset}, ${tBaseX} ${tBaseY - controlOffset}, ${tBaseX} ${tBaseY}`;
       return [
         `<path class="action-target-overlay__target" d="${path}" />`,
@@ -1459,6 +1645,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     rootElement.querySelectorAll<HTMLElement>(".hand-card--js-hovered").forEach((el) => {
       el.classList.remove("hand-card--js-hovered");
     });
+    if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
+      return;
+    }
     if (state.hoveredCardInstanceId !== "") {
       rootElement.querySelector<HTMLElement>(
         `[data-card-instance-id='${state.hoveredCardInstanceId}']`
@@ -1474,6 +1663,24 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const applyHoverSpread = (): void => {
     const SPREAD_PX = 110;
     const cards = Array.from(rootElement.querySelectorAll<HTMLElement>(".hand-card"));
+    if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
+      const spreadAnchorCardInstanceId = getHandSpreadAnchorCardInstanceId();
+      const hoveredIndex = cards.findIndex(
+        (el) => el.dataset.cardInstanceId === spreadAnchorCardInstanceId
+      );
+      cards.forEach((el, i) => {
+        const base = parseFloat(el.dataset.baseFanX ?? "0");
+        let offset = 0;
+        if (hoveredIndex >= 0 && spreadAnchorCardInstanceId !== "") {
+          const dist = i - hoveredIndex;
+          if (dist !== 0) {
+            offset = Math.sign(dist) * SPREAD_PX;
+          }
+        }
+        el.style.setProperty("--fan-x", `${(base + offset).toFixed(1)}px`);
+      });
+      return;
+    }
     const hoveredIndex = cards.findIndex(
       (el) => el.dataset.cardInstanceId === state.hoveredCardInstanceId
     );
@@ -1541,6 +1748,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             activeActionVisual: state.activeActionVisual,
             centerResponseCards: state.centerResponseCards,
             activeCardFlight: state.activeCardFlight,
+            activeReturnCardFlight: state.activeReturnCardFlight,
             draggingCardInstanceId: state.draggingCardInstanceId,
             dragPointerX: state.dragPointerX,
             dragPointerY: state.dragPointerY,
@@ -1548,13 +1756,17 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             arrowDrag: state.arrowDrag,
             inspectedSeatNumber: state.inspectedSeatNumber,
             telepathyPreviewCardInstanceId: state.telepathyPreviewCardInstanceId,
+            boardResetKeepPreviewCardInstanceId: state.boardResetKeepPreviewCardInstanceId,
+            sacrificeAmountInput: state.sacrificeAmountInput,
             errorMessage: state.errorMessage,
             chatMarkup,
             eventLogMarkup,
             activeCombatFx: state.activeCombatFx,
-            activeDamageBurst: state.activeDamageBurst,
-            activeHealBurst: state.activeHealBurst,
-            impactTargetSeatNumber: state.impactTargetSeatNumber
+            activeDamageBursts: state.activeDamageBursts,
+            activeHealBursts: state.activeHealBursts,
+            impactTargetSeatNumbers: state.impactTargetSeatNumbers,
+            returningHandCardInstanceId: state.returningHandCardInstanceId,
+            hiddenHandCardInstanceIds: state.hiddenHandCardInstanceIds
           });
     const kickTarget = state.match.seats.find((seat) => seat.seatNumber === state.confirmingKickSeatNumber);
     rootElement.innerHTML = `${baseView}${renderLeaveConfirmationModal(state.confirmingLeave)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "")}`;
@@ -1577,6 +1789,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     // Hand-card hover: mutate DOM directly without re-render so CSS transitions animate.
     rootElement.querySelectorAll<HTMLElement>(".hand-card").forEach((el) => {
       el.addEventListener("pointerenter", () => {
+        if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
+          return;
+        }
         const id = el.dataset.cardInstanceId ?? "";
         if (id === "" || id === state.hoveredCardInstanceId) {
           return;
@@ -1588,6 +1803,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     });
 
     rootElement.querySelector<HTMLElement>(".hand-fan")?.addEventListener("pointerleave", () => {
+      if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
+        return;
+      }
       if (state.hoveredCardInstanceId === "") {
         return;
       }
@@ -1621,6 +1839,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
         event.preventDefault();
         state.inspectedSeatNumber = 0;
+        state.hoveredCardInstanceId = cardInstanceId;
 
         const card = getLocalHand().find((c) => c.instanceId === cardInstanceId);
 
@@ -1702,6 +1921,66 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       });
     });
 
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-board-reset-card']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const previewCardInstanceId = button.dataset.cardInstanceId ?? "";
+        if (previewCardInstanceId === "" || state.boardResetKeepPreviewCardInstanceId === previewCardInstanceId) {
+          return;
+        }
+
+        state.boardResetKeepPreviewCardInstanceId = previewCardInstanceId;
+        render();
+      });
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-board-reset-keep']")?.addEventListener("click", async () => {
+      const cardInstanceId = state.boardResetKeepPreviewCardInstanceId;
+      if (cardInstanceId === "") {
+        return;
+      }
+
+      try {
+        applyMatchState(await resolvePendingBoardResetKeep(state.instanceId, state.playerSessionToken, { cardInstanceId }));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : "Unable to keep the selected card";
+      }
+      render();
+    });
+
+    rootElement.querySelector<HTMLInputElement>("[data-action='edit-sacrifice-amount']")?.addEventListener("input", (event) => {
+      const target = event.currentTarget as HTMLInputElement;
+      state.sacrificeAmountInput = target.value;
+      const pendingSacrificeChoice = state.match?.game?.pendingSacrificeChoice;
+      const confirmButton = rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-sacrifice-amount']");
+      if (pendingSacrificeChoice != null && confirmButton != null) {
+        const parsed = Number(state.sacrificeAmountInput);
+        confirmButton.disabled = !(
+          Number.isInteger(parsed)
+          && parsed >= 0
+          && parsed <= pendingSacrificeChoice.maxAmount
+        );
+      }
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-sacrifice-amount']")?.addEventListener("click", async () => {
+      const pendingSacrificeChoice = state.match?.game?.pendingSacrificeChoice;
+      const parsed = Number(state.sacrificeAmountInput);
+      if (pendingSacrificeChoice == null || !Number.isInteger(parsed) || parsed < 0 || parsed > pendingSacrificeChoice.maxAmount) {
+        state.errorMessage = `Enter a whole number between 0 and ${pendingSacrificeChoice?.maxAmount ?? 0}.`;
+        render();
+        return;
+      }
+
+      try {
+        applyMatchState(await resolvePendingSacrificeChoice(state.instanceId, state.playerSessionToken, { amount: parsed }));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : "Unable to choose sacrifice amount";
+      }
+      render();
+    });
+
     rootElement.querySelector<HTMLButtonElement>("[data-action='kick-cancel']")?.addEventListener("click", () => {
       state.confirmingKickSeatNumber = 0;
       render();
@@ -1781,6 +2060,20 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       }
 
       render();
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='resolve-curse-release']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const choice = button.dataset.choice === "accept" ? "accept" : "pass";
+        try {
+          applyMatchState(await resolvePendingCurseRelease(state.instanceId, state.playerSessionToken, { choice }));
+          state.errorMessage = "";
+        } catch (error) {
+          state.errorMessage = error instanceof Error ? error.message : "Unable to resolve curse release";
+        }
+
+        render();
+      });
     });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='download-server-log']")?.addEventListener("click", () => {

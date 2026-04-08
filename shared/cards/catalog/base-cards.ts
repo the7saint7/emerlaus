@@ -606,14 +606,17 @@ export const baseCardDefinitions = [
     },
     "rules": {
       "selectionMode": "target",
-      "targets": "target_object",
+      "targets": "single_opponent",
       "requiresDefenseWindow": true,
       "requiresResistanceCheck": true,
       "staysInPlay": false,
       "effects": [
         {
           "type": "remove_target_object",
-          "mode": "chosen_by_attacker"
+          "mode": "chosen_by_attacker",
+          "allowedSlots": [
+            "anneau"
+          ]
         }
       ]
     },
@@ -676,7 +679,7 @@ export const baseCardDefinitions = [
     },
     "rules": {
       "selectionMode": "target",
-      "targets": "target_object",
+      "targets": "single_opponent",
       "requiresDefenseWindow": true,
       "requiresResistanceCheck": false,
       "staysInPlay": false,
@@ -5227,7 +5230,7 @@ export const baseCardDefinitions = [
       "resistanceAccrueAllowed": false,
       "annulationAllowed": false,
       "annulationCardsRequired": 0,
-      "mirrorAllowed": true
+      "mirrorAllowed": false
     },
     "effectHints": {
       "targets_all_opponents": true,
@@ -5459,7 +5462,7 @@ export const baseCardDefinitions = [
     },
     "rules": {
       "selectionMode": "confirm",
-      "targets": "all_opponents",
+      "targets": "self",
       "requiresDefenseWindow": false,
       "requiresResistanceCheck": false,
       "staysInPlay": true,

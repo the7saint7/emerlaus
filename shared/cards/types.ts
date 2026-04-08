@@ -35,8 +35,8 @@ export type CardEffect =
   | { type: "lifesteal"; amount: RollExpression; powerSource: "self" | "target" }
   | { type: "set_target_hp"; amount: RollExpression }
   | { type: "instant_kill"; resurrectionBlocked?: boolean }
-  | { type: "remove_target_object"; mode: "chosen_by_attacker" | "all"; chance?: { notation: string; successTotals: number[] } }
-  | { type: "steal_target_object"; mode: "chosen_by_attacker" }
+  | { type: "remove_target_object"; mode: "chosen_by_attacker" | "all"; chance?: { notation: string; successTotals: number[] }; allowedSlots?: string[] }
+  | { type: "steal_target_object"; mode: "chosen_by_attacker"; allowedSlots?: string[] }
   | { type: "modify_resistance"; amount: number; duration: "current_action" | "until_removed" }
   | { type: "skip_turn"; target: "target"; durationTurns: number }
   | { type: "disable_riposte"; target: "target"; duration: "current_action" | "full_turn" }

@@ -7,8 +7,11 @@ import type {
   JoinRequest,
   KickPlayerRequest,
   MatchConfigResponse,
+  PendingBoardResetKeepRequest,
+  PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
+  PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
   SendChatMessageRequest,
@@ -38,6 +41,9 @@ import {
   kickPlayer,
   passMatchForcedFollowUp,
   playMatchCard,
+  resolveMatchBoardResetKeep,
+  resolveMatchSacrificeChoice,
+  resolveMatchCurseRelease,
   respondMatchAction,
   selectMatchObject,
   sendChatMessage,
@@ -322,6 +328,42 @@ app.post("/api/matches/:instanceId/hand-inspection/ack", (request, response) => 
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to close hand inspection"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/board-reset/keep", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingBoardResetKeepRequest;
+    response.json(resolveMatchBoardResetKeep(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to keep card"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/sacrifice-choice", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingSacrificeChoiceRequest;
+    response.json(resolveMatchSacrificeChoice(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to choose sacrifice amount"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/curse-release", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingCurseReleaseRequest;
+    response.json(resolveMatchCurseRelease(request.params.instanceId, userId, body.choice));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to resolve curse release"
     });
   }
 });

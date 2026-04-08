@@ -5,8 +5,11 @@ import type {
   LocalUserProfile,
   MatchConfigResponse,
   MatchState,
+  PendingBoardResetKeepRequest,
+  PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
+  PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest
 } from "../../../shared/types";
@@ -209,6 +212,48 @@ export async function acknowledgePendingHandInspection(
   request: PendingHandInspectionRequest
 ): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/hand-inspection/ack`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function resolvePendingBoardResetKeep(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingBoardResetKeepRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/board-reset/keep`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function resolvePendingSacrificeChoice(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingSacrificeChoiceRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/sacrifice-choice`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function resolvePendingCurseRelease(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingCurseReleaseRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/curse-release`, {
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify(request)

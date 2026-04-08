@@ -14,6 +14,8 @@ import type {
   JoinResponse,
   KickPlayerRequest,
   MatchState,
+  PendingBoardResetKeepRequest,
+  PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
   SeatState,
@@ -30,6 +32,9 @@ import {
   initializeMatchGame,
   passForcedFollowUp,
   playCardFromHand,
+  resolvePendingBoardResetKeep,
+  resolvePendingSacrificeChoice,
+  resolvePendingCurseRelease,
   respondToPendingAction,
   selectPendingObject
 } from "./gameEngine";
@@ -304,6 +309,30 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
       }, delayMs);
 
       botTurnTimers.set(timerKey, timer);
+    }
+    return;
+  }
+
+  const pendingCurseRelease = match.internalGame?.pendingCurseRelease;
+  if (pendingCurseRelease != null) {
+    const seat = match.seats.find((candidate) => candidate.seatNumber === pendingCurseRelease.seatNumber);
+    if (seat?.controllerType === "bot") {
+      const timerKey = `${instanceId}:curse:${seat.seatNumber}`;
+      if (!botTurnTimers.has(timerKey)) {
+        const timer = setTimeout(() => {
+          botTurnTimers.delete(timerKey);
+          const latestMatch = getMatch(instanceId);
+          const latestCurseRelease = latestMatch?.internalGame?.pendingCurseRelease;
+          const latestSeat = latestMatch?.seats.find((candidate) => candidate.seatNumber === latestCurseRelease?.seatNumber);
+          if (latestMatch != null && latestCurseRelease != null && latestSeat?.controllerType === "bot") {
+            resolvePendingCurseRelease(latestMatch, latestSeat.userId, "accept");
+            saveMatch(latestMatch);
+            notifyMatchUpdated(instanceId);
+          }
+          scheduleBotTurnIfNeeded(instanceId);
+        }, 900 + Math.floor(Math.random() * 800));
+        botTurnTimers.set(timerKey, timer);
+      }
     }
     return;
   }
@@ -660,6 +689,45 @@ export function acknowledgeMatchHandInspection(instanceId: string, userId: strin
 
   clearBotTurnTimer(instanceId);
   acknowledgePendingHandInspection(match, userId);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchBoardResetKeep(instanceId: string, userId: string, request: PendingBoardResetKeepRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingBoardResetKeep(match, userId, request.cardInstanceId);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchSacrificeChoice(instanceId: string, userId: string, request: PendingSacrificeChoiceRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingSacrificeChoice(match, userId, request.amount);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchCurseRelease(instanceId: string, userId: string, choice: "accept" | "pass"): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingCurseRelease(match, userId, choice);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);

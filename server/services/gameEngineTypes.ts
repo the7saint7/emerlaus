@@ -66,7 +66,7 @@ export interface StoredGameState {
     chooserSeatNumber: number;
     ownerSeatNumber: number;
     sourceCard: StoredCardInstance;
-    mode: Extract<CardEffect, { type: "remove_target_object" }>["mode"];
+    mode: "remove" | "steal";
     finalizeActorSeatNumber?: number;
   };
   pendingHandInspection?: {
@@ -75,6 +75,25 @@ export interface StoredGameState {
     targetSeatNumber: number;
     sourceCard: StoredCardInstance;
     finalizeActorSeatNumber?: number;
+  };
+  pendingBoardResetKeep?: {
+    boxId?: string;
+    chooserSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    effectIndex: number;
+  };
+  pendingSacrificeChoice?: {
+    boxId?: string;
+    actorSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    maxAmount: number;
+  };
+  pendingCurseRelease?: {
+    seatNumber: number;
+    statusInstanceId: string;
+    sourceCardId: string;
+    releaseCardId: string;
+    releaseCardCount: number;
   };
   pausedSequentialAction?: StoredPendingActionState;
   forcedPlayCategories?: CardCategoryCode[] | "any";

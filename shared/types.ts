@@ -174,6 +174,26 @@ export interface PendingHandInspectionState {
   cardName: string;
 }
 
+export interface PendingBoardResetKeepState {
+  chooserSeatNumber: number;
+  cardName: string;
+  keepCardCount: number;
+  cardOptions: CardView[];
+}
+
+export interface PendingSacrificeChoiceState {
+  actorSeatNumber: number;
+  cardName: string;
+  maxAmount: number;
+}
+
+export interface PendingCurseReleaseState {
+  seatNumber: number;
+  cardName: string;
+  releaseCardName: string;
+  releaseCardCount: number;
+}
+
 export interface ForcedFollowUpState {
   sourceCardName: string;
   actorSeatNumber: number;
@@ -198,6 +218,9 @@ export interface GameState {
   pendingResponseOptions?: PendingActionOption[];
   pendingObjectChoice?: PendingObjectChoiceState;
   pendingHandInspection?: PendingHandInspectionState;
+  pendingBoardResetKeep?: PendingBoardResetKeepState;
+  pendingSacrificeChoice?: PendingSacrificeChoiceState;
+  pendingCurseRelease?: PendingCurseReleaseState;
   forcedFollowUp?: ForcedFollowUpState;
   winnerSeatNumber?: number;
 }
@@ -270,6 +293,18 @@ export interface PendingObjectChoiceRequest {
 }
 
 export interface PendingHandInspectionRequest {
+}
+
+export interface PendingBoardResetKeepRequest {
+  cardInstanceId: string;
+}
+
+export interface PendingSacrificeChoiceRequest {
+  amount: number;
+}
+
+export interface PendingCurseReleaseRequest {
+  choice: "accept" | "pass";
 }
 
 export interface DiscordAuthTokenRequest {

@@ -33,6 +33,8 @@ export interface AppState {
   /** Instance ID of the card currently showing the zoom hover state (empty = none) */
   hoveredCardInstanceId: string;
   telepathyPreviewCardInstanceId: string;
+  boardResetKeepPreviewCardInstanceId: string;
+  sacrificeAmountInput: string;
   telepathyPanelScrollTop: number;
   telepathyListScrollTop: number;
   inspectedSeatNumber: number;
@@ -67,20 +69,26 @@ export interface AppState {
     settled: boolean;
     tone: "action" | "response";
   } | null;
+  activeReturnCardFlight: {
+    card: CardView;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    width: number;
+    height: number;
+    settled: boolean;
+  } | null;
+  returningHandCardInstanceId: string;
+  hiddenHandCardInstanceIds: string[];
   activeCombatFx: {
     message: string;
     tone: "info" | "success" | "failure";
     seatNumber?: number;
   } | null;
-  activeDamageBurst: {
-    seatNumber: number;
-    amount: number;
-  } | null;
-  activeHealBurst: {
-    seatNumber: number;
-    amount: number;
-  } | null;
-  impactTargetSeatNumber: number;
+  activeDamageBursts: Record<number, number>;
+  activeHealBursts: Record<number, number>;
+  impactTargetSeatNumbers: number[];
   /** Confirmed target seat for opponents currently doing an arrow drag */
   opponentCursors: Record<number, { targetSeatNumber: number | null; ts: number }>;
 }
