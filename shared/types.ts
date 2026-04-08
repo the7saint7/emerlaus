@@ -42,6 +42,7 @@ export interface SeatState {
   statuses?: CardView[];
   difficulty?: string;
   disconnectedUserId?: string;
+  handInspectionTargetSeatNumber?: number;
 }
 
 export interface CardView {
@@ -158,6 +159,29 @@ export interface PendingActionState {
   mirrorOriginActorSeatNumber?: number;
 }
 
+export interface PendingObjectChoiceState {
+  boxId?: string;
+  chooserSeatNumber: number;
+  ownerSeatNumber: number;
+  cardName: string;
+  prompt: string;
+  objectOptions: CardView[];
+}
+
+export interface PendingHandInspectionState {
+  viewerSeatNumber: number;
+  targetSeatNumber: number;
+  cardName: string;
+}
+
+export interface ForcedFollowUpState {
+  sourceCardName: string;
+  actorSeatNumber: number;
+  targetSeatNumber: number;
+  allowedCategories: CardCategoryCode[];
+  doubleHpLossDamage: boolean;
+}
+
 export interface GameState {
   turnNumber: number;
   currentTurnSeatNumber: number;
@@ -172,6 +196,9 @@ export interface GameState {
   debugLog: DebugLogEntry[];
   pendingAction?: PendingActionState;
   pendingResponseOptions?: PendingActionOption[];
+  pendingObjectChoice?: PendingObjectChoiceState;
+  pendingHandInspection?: PendingHandInspectionState;
+  forcedFollowUp?: ForcedFollowUpState;
   winnerSeatNumber?: number;
 }
 
@@ -236,6 +263,13 @@ export interface PlayCardRequest {
 
 export interface PendingActionResponseRequest {
   choice: Exclude<ResponseChoiceType, "pending">;
+}
+
+export interface PendingObjectChoiceRequest {
+  objectInstanceId: string;
+}
+
+export interface PendingHandInspectionRequest {
 }
 
 export interface DiscordAuthTokenRequest {

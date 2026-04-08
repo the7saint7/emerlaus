@@ -1,14 +1,17 @@
 import {
+  acknowledgePendingHandInspection,
   devDrawCard,
   devRandomDiceRoll,
   disconnectFromMatch,
   fetchMatch,
   joinMatch,
+  passForcedFollowUp,
   playCard,
   requestAddBot,
   requestKickPlayer,
   respondToPendingAction,
   requestStartMatch,
+  selectPendingObject,
   sendChatMessage
 } from "./api/gameApi";
 import { captureChatDomSnapshot, restoreChatDomState } from "./app/chatDom";
@@ -48,6 +51,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     dragHoverTarget: null,
     arrowDrag: null,
     hoveredCardInstanceId: "",
+    telepathyPreviewCardInstanceId: "",
+    telepathyPanelScrollTop: 0,
+    telepathyListScrollTop: 0,
     inspectedSeatNumber: 0,
     seenGameEventIds: joined.match.game?.eventLog.map((event) => event.id) ?? [],
     seenEventMessageIds: [],
@@ -291,6 +297,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   };
 
   const applyMatchState = (nextMatch: MatchState | null): void => {
+    const previousPendingInspection = state.match?.game?.pendingHandInspection;
     state.match = nextMatch;
     // Clear ghost arrows whenever game state resolves (action is done)
     state.opponentCursors = {};
@@ -298,12 +305,40 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       state.displayedHpBySeat = {};
       state.centerResponseCards = [];
       state.activeCardFlight = null;
+      state.telepathyPreviewCardInstanceId = "";
+      state.telepathyPanelScrollTop = 0;
+      state.telepathyListScrollTop = 0;
       return;
     }
 
     const nextLocalSeat = nextMatch.seats.find((seat) => seat.userId === session.currentUser.userId)?.seatNumber;
     if (nextLocalSeat != null) {
       state.localSeatNumber = nextLocalSeat;
+    }
+
+    const nextPendingInspection = nextMatch.game?.pendingHandInspection;
+    const previousLocalInspectionTargetSeatNumber =
+      previousPendingInspection?.viewerSeatNumber === state.localSeatNumber
+        ? previousPendingInspection.targetSeatNumber
+        : undefined;
+    const nextLocalInspectionTargetSeatNumber =
+      nextPendingInspection?.viewerSeatNumber === state.localSeatNumber
+        ? nextPendingInspection.targetSeatNumber
+        : undefined;
+    if (nextLocalInspectionTargetSeatNumber == null) {
+      state.telepathyPreviewCardInstanceId = "";
+      state.telepathyPanelScrollTop = 0;
+      state.telepathyListScrollTop = 0;
+    } else if (nextLocalInspectionTargetSeatNumber !== previousLocalInspectionTargetSeatNumber) {
+      const nextTargetSeat = nextMatch.seats.find((seat) => seat.seatNumber === nextLocalInspectionTargetSeatNumber);
+      state.telepathyPreviewCardInstanceId = nextTargetSeat?.hand?.[0]?.instanceId ?? "";
+      state.telepathyPanelScrollTop = 0;
+      state.telepathyListScrollTop = 0;
+    } else if (state.telepathyPreviewCardInstanceId !== "") {
+      const nextTargetSeat = nextMatch.seats.find((seat) => seat.seatNumber === nextLocalInspectionTargetSeatNumber);
+      if (!(nextTargetSeat?.hand ?? []).some((card) => card.instanceId === state.telepathyPreviewCardInstanceId)) {
+        state.telepathyPreviewCardInstanceId = nextTargetSeat?.hand?.[0]?.instanceId ?? "";
+      }
     }
 
     reconcileDisplayedHp();
@@ -452,6 +487,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               "failure",
               { seatNumber: rollContext.targetSeatNumber, impactTargetSeatNumber: rollContext.targetSeatNumber }
             );
+            context.rollContextBySeat.delete(event.seatNumber);
           } else if (context.currentAction?.actorSeatNumber === event.seatNumber) {
             setCombatFx(
               `${getSeatDisplayName(event.seatNumber)} throws ${event.notation.toUpperCase()} for ${context.currentAction.card.name}`,
@@ -562,6 +598,14 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           context.rollContextBySeat.delete(event.seatNumber);
         }
         const failed = event.success === false;
+        if (failed && context.currentAction?.actorSeatNumber != null && event.seatNumber != null) {
+          context.rollContextBySeat.set(context.currentAction.actorSeatNumber, {
+            kind: "damage",
+            actorSeatNumber: context.currentAction.actorSeatNumber,
+            targetSeatNumber: event.seatNumber,
+            cardName: event.cardName ?? context.currentAction.card.name
+          });
+        }
         const resultText = failed
           ? `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, failed resistance${event.fatalFailure ? " critically (double damage!)" : ""}`
           : event.criticalSuccess
@@ -732,13 +776,23 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             const resistanceBoundary = lastResistanceResultIndex + 1; // 0 when no resistance
             const impactBoundary = firstImpactIndex === -1 ? remainingEvents.length : firstImpactIndex;
 
-            const phase1Events = remainingEvents.slice(0, resistanceBoundary);
-            const phase2Events = remainingEvents.slice(resistanceBoundary, impactBoundary);
-            const phase3Events = remainingEvents.slice(impactBoundary);
+            if (firstImpactIndex !== -1 && resistanceBoundary > impactBoundary) {
+              // Cards such as Main brûlante interleave resistance and damage:
+              // resist hit 1 -> damage hit 1 -> resist hit 2 -> ...
+              // The normal phased split would overlap the ranges and replay
+              // later resistance rolls twice, so preserve the server order.
+              for (const event of remainingEvents) {
+                await replaySingleEvent(event, replayContext);
+              }
+            } else {
+              const phase1Events = remainingEvents.slice(0, resistanceBoundary);
+              const phase2Events = remainingEvents.slice(resistanceBoundary, impactBoundary);
+              const phase3Events = remainingEvents.slice(impactBoundary);
 
-            await runEventsInParallelQueues(phase1Events);
-            await runEventsInParallelQueues(phase2Events);
-            await runEventsInParallelQueues(phase3Events);
+              await runEventsInParallelQueues(phase1Events);
+              await runEventsInParallelQueues(phase2Events);
+              await runEventsInParallelQueues(phase3Events);
+            }
             logClient("box", `Replay box ${batchBoxId} end`);
           } finally {
             activeReplayBatchCount = Math.max(0, activeReplayBatchCount - 1);
@@ -778,6 +832,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       card.categoryCode === "O" ||
       card.targets === "self" ||
       card.targets === "all_opponents" ||
+      card.targets === "left_opponent" ||
       card.targets === "none" ||
       card.selectionMode === "confirm"
     );
@@ -1492,6 +1547,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             dragHoverTarget: state.dragHoverTarget,
             arrowDrag: state.arrowDrag,
             inspectedSeatNumber: state.inspectedSeatNumber,
+            telepathyPreviewCardInstanceId: state.telepathyPreviewCardInstanceId,
             errorMessage: state.errorMessage,
             chatMarkup,
             eventLogMarkup,
@@ -1504,6 +1560,15 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     rootElement.innerHTML = `${baseView}${renderLeaveConfirmationModal(state.confirmingLeave)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "")}`;
     drawPendingActionTargetOverlay(presentationLockActive);
     updateArrowOverlay();
+
+    const telepathyPanel = rootElement.querySelector<HTMLElement>(".telepathy-panel");
+    if (telepathyPanel != null) {
+      telepathyPanel.scrollTop = state.telepathyPanelScrollTop;
+    }
+    const telepathyList = rootElement.querySelector<HTMLElement>(".telepathy-list");
+    if (telepathyList != null) {
+      telepathyList.scrollTop = state.telepathyListScrollTop;
+    }
 
     // Restore the stable hover class and spread positions after every DOM rebuild.
     applyHoverClass();
@@ -1601,6 +1666,34 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       });
     });
 
+    rootElement.querySelector<HTMLButtonElement>("[data-action='dismiss-telepathy']")?.addEventListener("click", async () => {
+      try {
+        applyMatchState(await acknowledgePendingHandInspection(state.instanceId, state.playerSessionToken, {}));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : "Unable to close hand inspection";
+      }
+
+      render();
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-telepathy-card']").forEach((button) => {
+      const previewCardInstanceId = button.dataset.cardInstanceId ?? "";
+      const setPreview = (): void => {
+        if (previewCardInstanceId === "" || state.telepathyPreviewCardInstanceId === previewCardInstanceId) {
+          return;
+        }
+
+        state.telepathyPanelScrollTop = rootElement.querySelector<HTMLElement>(".telepathy-panel")?.scrollTop ?? 0;
+        state.telepathyListScrollTop = rootElement.querySelector<HTMLElement>(".telepathy-list")?.scrollTop ?? 0;
+        state.telepathyPreviewCardInstanceId = previewCardInstanceId;
+        render();
+      };
+
+      button.addEventListener("focus", setPreview);
+      button.addEventListener("click", setPreview);
+    });
+
     rootElement.querySelectorAll<HTMLButtonElement>("[data-action='kick-seat']").forEach((button) => {
       button.addEventListener("click", () => {
         const seatNumber = button.dataset.seatNumber == null ? 0 : Number(button.dataset.seatNumber);
@@ -1676,6 +1769,18 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='refresh']")?.addEventListener("click", () => {
       void syncMatch();
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='pass-forced-follow-up']")?.addEventListener("click", async () => {
+      try {
+        logClient("forced-follow-up", "Pass forced follow-up");
+        applyMatchState(await passForcedFollowUp(state.instanceId, state.playerSessionToken));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : "Unable to pass forced follow-up";
+      }
+
+      render();
     });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='download-server-log']")?.addEventListener("click", () => {
@@ -1776,6 +1881,25 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = error instanceof Error ? error.message : "Unable to pass";
       }
       render();
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='select-pending-object']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const objectInstanceId = button.dataset.objectInstanceId;
+        if (objectInstanceId == null) {
+          return;
+        }
+
+        button.disabled = true;
+        try {
+          logClient("object", `Select object ${objectInstanceId}`);
+          applyMatchState(await selectPendingObject(state.instanceId, state.playerSessionToken, { objectInstanceId }));
+          state.errorMessage = "";
+        } catch (error) {
+          state.errorMessage = error instanceof Error ? error.message : "Unable to select object";
+        }
+        render();
+      });
     });
 
     restoreChatDomState(rootElement, chatSnapshot, state.chatExpanded);

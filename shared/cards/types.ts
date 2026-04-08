@@ -19,9 +19,12 @@ export interface SaveBaseDefenseBandMappingRequest {
   mapping: DefenseBandRules;
 }
 
+export type RollScaleMode = "power" | "target_power" | "multiply_power" | "multiply_target_power";
+
 export type RollExpression =
-  | { kind: "dice"; notation: string; scaleBy?: "power" | "target_power"; bonusPerPower?: number }
-  | { kind: "fixed"; amount: number; scaleBy?: "power" | "target_power"; bonusPerPower?: number }
+  | { kind: "dice"; notation: string; scaleBy?: RollScaleMode; bonusPerPower?: number; powerBonus?: number }
+  | { kind: "dice_per_power"; notation: string; powerSource: "self" | "target"; powerBonus?: number }
+  | { kind: "fixed"; amount: number; scaleBy?: RollScaleMode; bonusPerPower?: number; powerBonus?: number }
   | { kind: "current_hp_fraction"; numerator: number; denominator: number }
   | { kind: "sacrifice_amount" }
   | { kind: "total_active_players_times"; amount: number };
@@ -32,7 +35,7 @@ export type CardEffect =
   | { type: "lifesteal"; amount: RollExpression; powerSource: "self" | "target" }
   | { type: "set_target_hp"; amount: RollExpression }
   | { type: "instant_kill"; resurrectionBlocked?: boolean }
-  | { type: "remove_target_object"; mode: "chosen_by_attacker" | "all" }
+  | { type: "remove_target_object"; mode: "chosen_by_attacker" | "all"; chance?: { notation: string; successTotals: number[] } }
   | { type: "steal_target_object"; mode: "chosen_by_attacker" }
   | { type: "modify_resistance"; amount: number; duration: "current_action" | "until_removed" }
   | { type: "skip_turn"; target: "target"; durationTurns: number }
@@ -60,8 +63,31 @@ export interface CardRules {
     | "none";
   requiresDefenseWindow: boolean;
   requiresResistanceCheck: boolean;
+  resistanceMode?: "action" | "per_damage_effect";
   staysInPlay: boolean;
   effects: CardEffect[];
+}
+
+export type CardImplementationStatus = "stub" | "generic" | "manual" | "verified" | "needs_handler";
+
+export interface CardImplementationMeta {
+  status: CardImplementationStatus;
+  handler?: string;
+  notes?: string;
+}
+
+export interface CardEffectHints {
+  targets_all_opponents: boolean;
+  targets_left_player: boolean;
+  targets_self: boolean;
+  requires_resistance: boolean;
+  half_on_successful_resistance: boolean;
+  grants_healing: boolean;
+  uses_opponent_power: boolean;
+  moves_or_steals_object: boolean;
+  stays_in_play: boolean;
+  extra_turn_flow: boolean;
+  dice_mentions: string[];
 }
 
 export interface BaseCardDefinition {
@@ -83,8 +109,14 @@ export interface BaseCardDefinition {
   };
   defenseBand: DefenseBandRules | null;
   rules: CardRules;
+  implementation?: CardImplementationMeta;
+  effectHints?: CardEffectHints;
   normalization: {
     textSource: string;
     needsImageReview: boolean;
   };
+}
+
+export interface SaveBaseCardDefinitionRequest {
+  card: BaseCardDefinition;
 }

@@ -7,13 +7,20 @@ import type {
   JoinRequest,
   KickPlayerRequest,
   MatchConfigResponse,
+  PendingHandInspectionRequest,
+  PendingObjectChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
   SendChatMessageRequest,
   StartMatchRequest
 } from "../shared/types";
 import type { SaveBaseDefenseBandMappingRequest } from "../shared/cards/types";
+import type { SaveBaseCardDefinitionRequest } from "../shared/cards/types";
 import { config } from "./config";
+import {
+  readBaseCardCatalog,
+  writeBaseCardDefinition
+} from "./services/baseCardCatalogService";
 import {
   readBaseDefenseBandMappings,
   writeBaseDefenseBandMapping
@@ -26,10 +33,13 @@ import {
   devRandomDiceRoll,
   disconnectPlayer,
   getMatchState,
+  acknowledgeMatchHandInspection,
   joinMatch,
   kickPlayer,
+  passMatchForcedFollowUp,
   playMatchCard,
   respondMatchAction,
+  selectMatchObject,
   sendChatMessage,
   startMatch
 } from "./services/matchService";
@@ -54,6 +64,27 @@ app.get("/api/config", (_request, response) => {
 
 app.get("/api/dev/base-defense-band-mappings", (_request, response) => {
   response.json(readBaseDefenseBandMappings());
+});
+
+app.get("/api/dev/base-cards", (_request, response) => {
+  try {
+    response.json(readBaseCardCatalog());
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to read base card catalog"
+    });
+  }
+});
+
+app.post("/api/dev/base-cards/:cardId", (request, response) => {
+  try {
+    const body = request.body as SaveBaseCardDefinitionRequest;
+    response.json(writeBaseCardDefinition(request.params.cardId, body.card));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to save base card"
+    });
+  }
 });
 
 app.post("/api/dev/base-defense-band-mappings/:cardId", (request, response) => {
@@ -267,6 +298,41 @@ app.post("/api/matches/:instanceId/respond", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to respond to pending action"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/select-object", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingObjectChoiceRequest;
+    response.json(selectMatchObject(request.params.instanceId, userId, body.objectInstanceId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to select object"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/hand-inspection/ack", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const _body = request.body as PendingHandInspectionRequest;
+    response.json(acknowledgeMatchHandInspection(request.params.instanceId, userId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to close hand inspection"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/forced-follow-up/pass", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    response.json(passMatchForcedFollowUp(request.params.instanceId, userId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to pass forced follow-up"
     });
   }
 });

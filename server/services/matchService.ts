@@ -21,14 +21,17 @@ import type {
   StartMatchRequest
 } from "../../shared/types";
 import {
+  acknowledgePendingHandInspection,
   appendServerDebugLog,
   buildBotPendingResponse,
   buildBotPlayRequest,
   buildPublicMatchState,
   getCurrentTurnSeat,
   initializeMatchGame,
+  passForcedFollowUp,
   playCardFromHand,
-  respondToPendingAction
+  respondToPendingAction,
+  selectPendingObject
 } from "./gameEngine";
 import type { StoredMatchState } from "./gameEngineTypes";
 import { getMatch, getOrCreateMatch, saveMatch } from "../store/matchStore";
@@ -229,6 +232,33 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
     return;
   }
 
+  const pendingObjectChoice = match.internalGame?.pendingObjectChoice;
+  if (pendingObjectChoice != null) {
+    const chooserSeat = match.seats.find((seat) => seat.seatNumber === pendingObjectChoice.chooserSeatNumber);
+    const ownerState = match.internalGame?.seatStates.find((seat) => seat.seatNumber === pendingObjectChoice.ownerSeatNumber);
+    if (chooserSeat?.controllerType === "bot" && ownerState != null && ownerState.objects[0] != null) {
+      const timerKey = `${instanceId}:object:${chooserSeat.seatNumber}`;
+      if (!botTurnTimers.has(timerKey)) {
+        const timer = setTimeout(() => {
+          botTurnTimers.delete(timerKey);
+          const latestMatch = getMatch(instanceId);
+          const latestChoice = latestMatch?.internalGame?.pendingObjectChoice;
+          const latestChooser = latestMatch?.seats.find((seat) => seat.seatNumber === latestChoice?.chooserSeatNumber);
+          const latestOwner = latestMatch?.internalGame?.seatStates.find((seat) => seat.seatNumber === latestChoice?.ownerSeatNumber);
+          const object = latestOwner == null ? undefined : latestOwner.objects[Math.floor(Math.random() * latestOwner.objects.length)];
+          if (latestMatch != null && latestChooser?.controllerType === "bot" && object != null) {
+            selectPendingObject(latestMatch, latestChooser.userId, object.instanceId);
+            saveMatch(latestMatch);
+            notifyMatchUpdated(instanceId);
+          }
+          scheduleBotTurnIfNeeded(instanceId);
+        }, 1000 + Math.floor(Math.random() * 1000));
+        botTurnTimers.set(timerKey, timer);
+      }
+    }
+    return;
+  }
+
   const pendingAction = match.internalGame?.pendingAction;
   if (pendingAction != null) {
     const pendingResponders =
@@ -274,6 +304,35 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
       }, delayMs);
 
       botTurnTimers.set(timerKey, timer);
+    }
+    return;
+  }
+
+  const forcedFollowUp = match.internalGame?.forcedFollowUp;
+  if (forcedFollowUp != null) {
+    const forcedActor = match.seats.find((seat) => seat.seatNumber === forcedFollowUp.actorSeatNumber);
+    if (forcedActor?.controllerType === "bot") {
+      const timerKey = `${instanceId}:forced-follow-up:${forcedActor.seatNumber}`;
+      if (!botTurnTimers.has(timerKey)) {
+        const timer = setTimeout(() => {
+          botTurnTimers.delete(timerKey);
+          const latestMatch = getMatch(instanceId);
+          const latestForced = latestMatch?.internalGame?.forcedFollowUp;
+          const latestActor = latestMatch?.seats.find((seat) => seat.seatNumber === latestForced?.actorSeatNumber);
+          if (latestMatch != null && latestForced != null && latestActor?.controllerType === "bot") {
+            const botRequest = buildBotPlayRequest(latestMatch, latestActor.seatNumber);
+            if (botRequest != null) {
+              playCardFromHand(latestMatch, latestActor.userId, botRequest);
+            } else {
+              passForcedFollowUp(latestMatch, latestActor.userId);
+            }
+            saveMatch(latestMatch);
+            notifyMatchUpdated(instanceId);
+          }
+          scheduleBotTurnIfNeeded(instanceId);
+        }, 1000 + Math.floor(Math.random() * 2001));
+        botTurnTimers.set(timerKey, timer);
+      }
     }
     return;
   }
@@ -575,6 +634,45 @@ export function respondMatchAction(instanceId: string, userId: string, request: 
 
   clearBotTurnTimer(instanceId);
   respondToPendingAction(match, userId, request);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function selectMatchObject(instanceId: string, userId: string, objectInstanceId: string): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  selectPendingObject(match, userId, objectInstanceId);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function acknowledgeMatchHandInspection(instanceId: string, userId: string): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  acknowledgePendingHandInspection(match, userId);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function passMatchForcedFollowUp(instanceId: string, userId: string): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  passForcedFollowUp(match, userId);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);

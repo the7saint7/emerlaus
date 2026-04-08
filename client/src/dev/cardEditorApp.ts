@@ -1,0 +1,447 @@
+import type {
+  BaseCardDefinition,
+  CardCategoryCode,
+  CardEffect,
+  CardRules,
+  DefenseBandRules,
+  RollExpression,
+  RollScaleMode
+} from "../../../shared/cards/types";
+import { fetchBaseCardCatalog, saveBaseCardDefinition } from "./cardEditorApi";
+import { renderCardEditorView } from "./renderCardEditorView";
+
+interface EditorState {
+  cards: BaseCardDefinition[];
+  currentIndex: number;
+  statusMessage: string;
+  isSaving: boolean;
+}
+
+const CATEGORY_LABELS: Record<CardCategoryCode, string> = {
+  AD: "Attaques directes",
+  AM: "Attaques massives",
+  A: "Accessoires",
+  O: "Objets",
+  E: "Énergies",
+  S: "Sorts",
+  CA: "Contre-attaques",
+  CO: "Contre-objets",
+  ST: "Sortilèges",
+  SO: "Sorts objets"
+};
+
+const SELECTED_CARD_STORAGE_KEY = "emerlaus.cardEditor.selectedCardId";
+
+function rememberSelectedCard(cardId: string): void {
+  window.sessionStorage.setItem(SELECTED_CARD_STORAGE_KEY, cardId);
+}
+
+function rememberedCardIndex(cards: BaseCardDefinition[]): number {
+  const rememberedCardId = window.sessionStorage.getItem(SELECTED_CARD_STORAGE_KEY);
+  if (rememberedCardId == null) {
+    return 0;
+  }
+
+  const index = cards.findIndex((card) => card.id === rememberedCardId);
+  return index === -1 ? 0 : index;
+}
+
+function cloneCard(card: BaseCardDefinition): BaseCardDefinition {
+  return JSON.parse(JSON.stringify(card)) as BaseCardDefinition;
+}
+
+function ensureDefenseBand(card: BaseCardDefinition): DefenseBandRules {
+  if (card.defenseBand == null) {
+    card.defenseBand = {
+      resistance: {
+        color: "red",
+        rollsRequired: 0
+      },
+      resistanceAccrueAllowed: false,
+      annulationAllowed: false,
+      annulationCardsRequired: 0,
+      mirrorAllowed: false
+    };
+  }
+
+  return card.defenseBand;
+}
+
+function primaryFormulaEffectIndex(card: BaseCardDefinition): number {
+  return card.rules.effects.findIndex((effect) =>
+    effect.type === "damage" ||
+    effect.type === "heal" ||
+    effect.type === "lifesteal"
+  );
+}
+
+function primaryFormulaEffect(card: BaseCardDefinition): CardEffect | null {
+  const index = primaryFormulaEffectIndex(card);
+  return index === -1 ? null : card.rules.effects[index];
+}
+
+function formulaFromEffect(effect: CardEffect | null): RollExpression {
+  if (
+    effect?.type === "damage" ||
+    effect?.type === "heal" ||
+    effect?.type === "lifesteal"
+  ) {
+    return effect.amount;
+  }
+
+  return { kind: "dice", notation: "1D6" };
+}
+
+function setPrimaryFormulaEffect(card: BaseCardDefinition, effect: CardEffect | null): void {
+  const index = primaryFormulaEffectIndex(card);
+  if (effect == null) {
+    if (index !== -1) {
+      card.rules.effects.splice(index, 1);
+    }
+    return;
+  }
+
+  if (index === -1) {
+    card.rules.effects.unshift(effect);
+  } else {
+    card.rules.effects[index] = effect;
+  }
+}
+
+function updatePrimaryFormula(card: BaseCardDefinition, nextFormula: RollExpression): void {
+  const effect = primaryFormulaEffect(card);
+  if (effect == null) {
+    setPrimaryFormulaEffect(card, {
+      type: "damage",
+      amount: nextFormula
+    });
+    return;
+  }
+
+  if (effect.type === "damage") {
+    effect.amount = nextFormula;
+  } else if (effect.type === "heal") {
+    effect.amount = nextFormula;
+  } else if (effect.type === "lifesteal") {
+    effect.amount = nextFormula;
+  }
+}
+
+function numberValue(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function updateFormulaKind(card: BaseCardDefinition, kind: RollExpression["kind"]): void {
+  const current = formulaFromEffect(primaryFormulaEffect(card));
+  const notation = "notation" in current ? current.notation : "1D6";
+  const amount = "amount" in current && typeof current.amount === "number" ? current.amount : 0;
+
+  switch (kind) {
+    case "dice":
+      updatePrimaryFormula(card, { kind, notation });
+      break;
+    case "dice_per_power":
+      updatePrimaryFormula(card, { kind, notation, powerSource: "self", powerBonus: 0 });
+      break;
+    case "fixed":
+      updatePrimaryFormula(card, { kind, amount });
+      break;
+    case "current_hp_fraction":
+      updatePrimaryFormula(card, { kind, numerator: 1, denominator: 2 });
+      break;
+    case "sacrifice_amount":
+      updatePrimaryFormula(card, { kind });
+      break;
+    case "total_active_players_times":
+      updatePrimaryFormula(card, { kind, amount: amount === 0 ? 1 : amount });
+      break;
+  }
+}
+
+function updateEffectType(card: BaseCardDefinition, effectType: string): void {
+  if (effectType === "none") {
+    setPrimaryFormulaEffect(card, null);
+    return;
+  }
+
+  const amount = formulaFromEffect(primaryFormulaEffect(card));
+  if (effectType === "damage") {
+    setPrimaryFormulaEffect(card, { type: "damage", amount });
+  } else if (effectType === "heal") {
+    setPrimaryFormulaEffect(card, { type: "heal", amount, target: "self" });
+  } else if (effectType === "lifesteal") {
+    setPrimaryFormulaEffect(card, { type: "lifesteal", amount, powerSource: "self" });
+  }
+}
+
+function applyFieldUpdate(card: BaseCardDefinition, field: string, element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): void {
+  const value = element.value;
+  const checked = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : false;
+
+  switch (field) {
+    case "name":
+      card.name = value;
+      break;
+    case "description":
+      card.description = value;
+      break;
+    case "category.code": {
+      const code = value as CardCategoryCode;
+      card.category.code = code;
+      card.category.label = CATEGORY_LABELS[code];
+      card.category.raw = `${CATEGORY_LABELS[code]} (${code})`;
+      break;
+    }
+    case "rules.selectionMode":
+      card.rules.selectionMode = value as CardRules["selectionMode"];
+      break;
+    case "rules.targets":
+      card.rules.targets = value as CardRules["targets"];
+      break;
+    case "rules.requiresDefenseWindow":
+      card.rules.requiresDefenseWindow = checked;
+      break;
+    case "rules.requiresResistanceCheck":
+      card.rules.requiresResistanceCheck = checked;
+      break;
+    case "rules.staysInPlay":
+      card.rules.staysInPlay = checked;
+      break;
+    case "defenseBand.resistance.color":
+      ensureDefenseBand(card).resistance.color = value as DefenseBandRules["resistance"]["color"];
+      break;
+    case "defenseBand.resistance.rollsRequired":
+      ensureDefenseBand(card).resistance.rollsRequired = Math.max(0, numberValue(value, 0));
+      break;
+    case "defenseBand.annulationCardsRequired":
+      ensureDefenseBand(card).annulationCardsRequired = Math.max(0, numberValue(value, 0));
+      break;
+    case "defenseBand.resistanceAccrueAllowed":
+      ensureDefenseBand(card).resistanceAccrueAllowed = checked;
+      break;
+    case "defenseBand.annulationAllowed":
+      ensureDefenseBand(card).annulationAllowed = checked;
+      break;
+    case "defenseBand.mirrorAllowed":
+      ensureDefenseBand(card).mirrorAllowed = checked;
+      break;
+    case "effect.type":
+      updateEffectType(card, value);
+      break;
+    case "effect.grantsHalfDamageOnResistance": {
+      const effect = primaryFormulaEffect(card);
+      if (effect?.type === "damage") {
+        effect.grantsHalfDamageOnResistance = checked;
+      }
+      break;
+    }
+    case "effect.healTarget": {
+      const effect = primaryFormulaEffect(card);
+      if (effect?.type === "heal") {
+        effect.target = value as Extract<CardEffect, { type: "heal" }>["target"];
+      }
+      break;
+    }
+    case "effect.lifestealPowerSource": {
+      const effect = primaryFormulaEffect(card);
+      if (effect?.type === "lifesteal") {
+        effect.powerSource = value as Extract<CardEffect, { type: "lifesteal" }>["powerSource"];
+      }
+      break;
+    }
+    case "formula.kind":
+      updateFormulaKind(card, value as RollExpression["kind"]);
+      break;
+    case "formula.notation": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if ("notation" in formula) {
+        formula.notation = value.trim().toUpperCase();
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.amount": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if ("amount" in formula && typeof formula.amount === "number") {
+        formula.amount = numberValue(value, formula.amount);
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.scaleBy": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if ((formula.kind === "dice" || formula.kind === "fixed")) {
+        if (value === "none") {
+          delete formula.scaleBy;
+          delete formula.powerBonus;
+        } else {
+          formula.scaleBy = value as RollScaleMode;
+        }
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.bonusPerPower": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if ((formula.kind === "dice" || formula.kind === "fixed")) {
+        formula.bonusPerPower = numberValue(value, formula.bonusPerPower ?? 1);
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.multiplierPowerBonus": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if ((formula.kind === "dice" || formula.kind === "fixed") && (
+        formula.scaleBy === "multiply_power" ||
+        formula.scaleBy === "multiply_target_power"
+      )) {
+        formula.powerBonus = numberValue(value, formula.powerBonus ?? 0);
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.powerSource": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if (formula.kind === "dice_per_power") {
+        formula.powerSource = value as "self" | "target";
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.powerBonus": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if (formula.kind === "dice_per_power") {
+        formula.powerBonus = numberValue(value, formula.powerBonus ?? 0);
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.numerator": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if (formula.kind === "current_hp_fraction") {
+        formula.numerator = Math.max(1, numberValue(value, formula.numerator));
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    case "formula.denominator": {
+      const formula = formulaFromEffect(primaryFormulaEffect(card));
+      if (formula.kind === "current_hp_fraction") {
+        formula.denominator = Math.max(1, numberValue(value, formula.denominator));
+        updatePrimaryFormula(card, formula);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  card.implementation = {
+    ...(card.implementation ?? { status: "manual" }),
+    status: "manual"
+  };
+}
+
+export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<void> {
+  const cards = (await fetchBaseCardCatalog()).map(cloneCard);
+  const state: EditorState = {
+    cards,
+    currentIndex: rememberedCardIndex(cards),
+    statusMessage: "Edit a card and save it into shared/cards/catalog/base-cards.ts.",
+    isSaving: false
+  };
+
+  const render = (): void => {
+    const card = state.cards[state.currentIndex];
+    rootElement.innerHTML = renderCardEditorView({
+      cards: state.cards,
+      card,
+      currentIndex: state.currentIndex,
+      statusMessage: state.statusMessage,
+      isSaving: state.isSaving
+    });
+
+    rootElement.querySelector<HTMLSelectElement>("[data-card-editor-action='pick-card']")?.addEventListener("change", (event) => {
+      state.currentIndex = Number((event.currentTarget as HTMLSelectElement).value);
+      rememberSelectedCard(state.cards[state.currentIndex].id);
+      state.statusMessage = `Viewing ${state.cards[state.currentIndex].name}`;
+      render();
+    });
+
+    rootElement.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-card-editor-field]").forEach((element) => {
+      const eventName = (element instanceof HTMLInputElement && element.type !== "checkbox") || element instanceof HTMLTextAreaElement
+        ? "input"
+        : "change";
+
+      element.addEventListener(eventName, () => {
+        const field = element.dataset.cardEditorField;
+        if (field == null) {
+          return;
+        }
+
+        applyFieldUpdate(card, field, element);
+        state.statusMessage = `Editing ${card.name}`;
+        if (element instanceof HTMLSelectElement || (element instanceof HTMLInputElement && element.type === "checkbox")) {
+          render();
+        }
+      });
+    });
+
+    const saveCurrent = async (advance: boolean): Promise<void> => {
+      const cardToSave = state.cards[state.currentIndex];
+      const selectedAfterSaveIndex = advance
+        ? (state.currentIndex + 1) % state.cards.length
+        : state.currentIndex;
+      const selectedAfterSaveCardId = state.cards[selectedAfterSaveIndex].id;
+
+      rememberSelectedCard(selectedAfterSaveCardId);
+      state.isSaving = true;
+      state.statusMessage = `Saving ${cardToSave.name}...`;
+      render();
+
+      try {
+        state.cards = (await saveBaseCardDefinition(cardToSave)).map(cloneCard);
+        const restoredIndex = state.cards.findIndex((card) => card.id === selectedAfterSaveCardId);
+        state.currentIndex = restoredIndex === -1 ? 0 : restoredIndex;
+        state.statusMessage = advance
+          ? `Saved ${cardToSave.name}; moved to ${state.cards[state.currentIndex].name}`
+          : `Saved ${state.cards[state.currentIndex].name}`;
+      } catch (error) {
+        rememberSelectedCard(cardToSave.id);
+        state.statusMessage = error instanceof Error ? error.message : "Unable to save card";
+      } finally {
+        state.isSaving = false;
+        render();
+      }
+    };
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-card-editor-action='prev']").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.currentIndex = (state.currentIndex - 1 + state.cards.length) % state.cards.length;
+        rememberSelectedCard(state.cards[state.currentIndex].id);
+        state.statusMessage = `Viewing ${state.cards[state.currentIndex].name}`;
+        render();
+      });
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-card-editor-action='next']").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.currentIndex = (state.currentIndex + 1) % state.cards.length;
+        rememberSelectedCard(state.cards[state.currentIndex].id);
+        state.statusMessage = `Viewing ${state.cards[state.currentIndex].name}`;
+        render();
+      });
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-card-editor-action='save']")?.addEventListener("click", () => {
+      void saveCurrent(false);
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-card-editor-action='save-next']")?.addEventListener("click", () => {
+      void saveCurrent(true);
+    });
+  };
+
+  render();
+}

@@ -5,6 +5,8 @@ import type {
   LocalUserProfile,
   MatchConfigResponse,
   MatchState,
+  PendingHandInspectionRequest,
+  PendingObjectChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest
 } from "../../../shared/types";
@@ -182,6 +184,47 @@ export async function respondToPendingAction(
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function selectPendingObject(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingObjectChoiceRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/select-object`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function acknowledgePendingHandInspection(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingHandInspectionRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/hand-inspection/ack`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function passForcedFollowUp(
+  instanceId: string,
+  playerSessionToken: string
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/forced-follow-up/pass`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify({})
   });
 
   return parseJson<MatchState>(response);

@@ -534,6 +534,18 @@ h2 {
   visibility: hidden;
 }
 
+.forced-follow-up-banner {
+  max-width: min(560px, calc(100vw - 72px));
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 195, 84, 0.58);
+  border-radius: 14px;
+  color: #fff4d2;
+  background: rgba(82, 47, 13, 0.88);
+  box-shadow: 0 16px 34px rgba(8, 10, 8, 0.28);
+  font-weight: 700;
+  text-align: center;
+}
+
 .center-play-slots {
   display: flex;
   align-items: center;
@@ -1724,6 +1736,236 @@ h2 {
   gap: 12px;
 }
 
+.object-choice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 12, 8, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.object-choice-panel {
+  width: min(720px, 100%);
+  padding: 28px 30px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(17, 33, 20, 0.98), rgba(11, 22, 13, 0.95));
+  border: 1px solid rgba(240, 230, 201, 0.12);
+  box-shadow: 0 18px 40px var(--shadow);
+}
+
+.object-choice-panel h2 {
+  margin: 0 0 10px;
+}
+
+.object-choice-panel p {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+
+.object-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 14px;
+}
+
+.object-choice-card {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 12px;
+  border: 1px solid rgba(240, 230, 201, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(248, 238, 213, 0.94);
+  cursor: pointer;
+}
+
+.object-choice-card:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.object-choice-card:not(:disabled):hover {
+  border-color: rgba(241, 215, 148, 0.72);
+  transform: translateY(-2px);
+}
+
+.object-choice-card img {
+  width: 82px;
+  border-radius: 10px;
+}
+
+.object-choice-card span {
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.telepathy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 12, 8, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.telepathy-panel {
+  width: min(980px, 100%);
+  max-height: min(82vh, 920px);
+  overflow: auto;
+  padding: 28px 30px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(17, 33, 20, 0.98), rgba(11, 22, 13, 0.95));
+  border: 1px solid rgba(240, 230, 201, 0.12);
+  box-shadow: 0 18px 40px var(--shadow);
+}
+
+.telepathy-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.telepathy-panel__header h2 {
+  margin: 0 0 8px;
+}
+
+.telepathy-panel__header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.telepathy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.telepathy-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.telepathy-preview {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  min-height: 0;
+}
+
+.telepathy-preview__image {
+  width: min(100%, 360px);
+  max-height: 62vh;
+  object-fit: contain;
+  justify-self: center;
+  border-radius: 18px;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36);
+}
+
+.telepathy-preview__meta {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.telepathy-preview__meta strong {
+  font-size: 1.18rem;
+  color: rgba(248, 238, 213, 0.98);
+}
+
+.telepathy-preview__meta span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.telepathy-preview__meta p {
+  margin: 6px 0 0;
+  color: rgba(248, 238, 213, 0.92);
+  line-height: 1.5;
+}
+
+.telepathy-list {
+  display: grid;
+  gap: 10px;
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.telepathy-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(240, 230, 201, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.telepathy-card img {
+  width: 72px;
+  border-radius: 10px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.telepathy-card:hover,
+.telepathy-card:focus-visible,
+.telepathy-card--active {
+  border-color: rgba(241, 215, 148, 0.72);
+  background: rgba(255, 255, 255, 0.09);
+  outline: none;
+}
+
+.telepathy-card__meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.telepathy-card__meta strong {
+  color: rgba(248, 238, 213, 0.96);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.telepathy-card__meta span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+@media (max-width: 980px) {
+  .telepathy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .telepathy-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .telepathy-preview__image {
+    max-height: 42vh;
+  }
+
+  .telepathy-list {
+    max-height: 32vh;
+  }
+}
+
 .mapper-screen {
   min-height: 100vh;
   padding: 24px;
@@ -1836,13 +2078,105 @@ h2 {
 }
 
 .mapper-field input,
-.mapper-field select {
+.mapper-field select,
+.mapper-field textarea {
   width: 100%;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.08);
   color: var(--ink);
+}
+
+.mapper-field textarea {
+  min-height: 9rem;
+  resize: vertical;
+}
+
+.card-editor-picker {
+  width: min(100%, 360px);
+  margin-top: 1rem;
+}
+
+.card-editor-image-nav {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: -6px;
+}
+
+.card-editor-screen {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(74, 222, 128, 0.12), transparent 34rem),
+    linear-gradient(180deg, #08140b 0%, #0f1d12 48%, #071009 100%);
+  color: rgba(248, 238, 213, 0.94);
+}
+
+.card-editor-screen h1,
+.card-editor-screen h2,
+.card-editor-screen h3,
+.card-editor-screen label {
+  color: rgba(255, 246, 222, 0.96);
+}
+
+.card-editor-screen .hero-copy,
+.card-editor-screen .mapper-card-meta,
+.card-editor-screen .mapper-status {
+  color: rgba(217, 202, 164, 0.78);
+}
+
+.card-editor-screen .mapper-card-panel,
+.card-editor-screen .mapper-form-panel,
+.card-editor-screen .mapper-preview-block {
+  background: linear-gradient(180deg, rgba(17, 33, 20, 0.98), rgba(7, 17, 10, 0.96));
+  border-color: rgba(240, 230, 201, 0.16);
+}
+
+.card-editor-screen .mapper-field input,
+.card-editor-screen .mapper-field select,
+.card-editor-screen .mapper-field textarea,
+.card-editor-screen .card-editor-picker {
+  background: rgba(4, 12, 7, 0.86);
+  border-color: rgba(240, 230, 201, 0.18);
+  color: rgba(255, 246, 222, 0.96);
+}
+
+.card-editor-screen .mapper-field input:focus,
+.card-editor-screen .mapper-field select:focus,
+.card-editor-screen .mapper-field textarea:focus,
+.card-editor-screen .card-editor-picker:focus {
+  border-color: rgba(241, 215, 148, 0.72);
+  box-shadow: 0 0 0 3px rgba(241, 215, 148, 0.12);
+  outline: none;
+}
+
+.card-editor-screen .mapper-field select option,
+.card-editor-screen .card-editor-picker option {
+  background: #071009;
+  color: rgba(255, 246, 222, 0.96);
+}
+
+.mapper-field--full {
+  margin: 1rem 0;
+}
+
+.mapper-fields--formula {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.mapper-check--wide {
+  align-self: end;
+  min-height: 2.75rem;
+}
+
+.mapper-help {
+  margin: 0;
+  color: rgba(217, 202, 164, 0.78);
+  line-height: 1.5;
+}
+
+.mapper-help--wide {
+  grid-column: 1 / -1;
 }
 
 .mapper-fieldset {

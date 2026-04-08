@@ -1,6 +1,7 @@
 import "./styles.css";
 import { createApp } from "./src/app";
 import { createCardBandMapperApp } from "./src/dev/cardBandMapperApp";
+import { createCardEditorApp } from "./src/dev/cardEditorApp";
 
 const rootElement = document.querySelector<HTMLDivElement>("#app");
 
@@ -9,7 +10,8 @@ if (rootElement == null) {
 }
 
 const isBandMapper = new URLSearchParams(window.location.search).get("dev") === "band-mapper";
-const boot = isBandMapper ? createCardBandMapperApp : createApp;
+const isCardEditor = new URLSearchParams(window.location.search).get("dev") === "card-editor";
+const boot = isBandMapper ? createCardBandMapperApp : isCardEditor ? createCardEditorApp : createApp;
 
 boot(rootElement).catch((error) => {
   console.error(error);

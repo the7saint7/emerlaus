@@ -32,6 +32,9 @@ export interface AppState {
   arrowDrag: ArrowDragState | null;
   /** Instance ID of the card currently showing the zoom hover state (empty = none) */
   hoveredCardInstanceId: string;
+  telepathyPreviewCardInstanceId: string;
+  telepathyPanelScrollTop: number;
+  telepathyListScrollTop: number;
   inspectedSeatNumber: number;
   seenGameEventIds: string[];
   seenEventMessageIds: string[];

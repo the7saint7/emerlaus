@@ -9,7 +9,7 @@ import type {
   PlayedCardState,
   ResponseChoiceType
 } from "../../shared/types";
-import type { CardCategoryCode } from "../../shared/cards";
+import type { CardCategoryCode, CardEffect } from "../../shared/cards";
 
 export interface StoredCardInstance {
   instanceId: string;
@@ -31,6 +31,7 @@ export interface StoredSeatState {
   skipTurnsRemaining: number;
   pendingExtraPlays: number;
   attackImmunityTurns: number;
+  noRiposteTurnsRemaining: number;
   handInspectionTargetSeatNumber?: number;
 }
 
@@ -60,8 +61,33 @@ export interface StoredGameState {
   eventLog: GameEvent[];
   debugLog: DebugLogEntry[];
   pendingAction?: StoredPendingActionState;
+  pendingObjectChoice?: {
+    boxId?: string;
+    chooserSeatNumber: number;
+    ownerSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    mode: Extract<CardEffect, { type: "remove_target_object" }>["mode"];
+    finalizeActorSeatNumber?: number;
+  };
+  pendingHandInspection?: {
+    boxId?: string;
+    viewerSeatNumber: number;
+    targetSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    finalizeActorSeatNumber?: number;
+  };
   pausedSequentialAction?: StoredPendingActionState;
   forcedPlayCategories?: CardCategoryCode[] | "any";
+  forcedFollowUp?: {
+    sourceCardId: "colere-du-magicien";
+    actorSeatNumber: number;
+    targetSeatNumber: number;
+    turnOwnerSeatNumber: number;
+    allowedCategories: CardCategoryCode[];
+    doubleHpLossDamage: boolean;
+    suppressDefenseWindow: boolean;
+    suppressResistanceCheck: boolean;
+  };
 }
 
 export type StoredMatchState = MatchState & {
