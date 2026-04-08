@@ -494,8 +494,12 @@ export function getLocalizedCardImageUrl(cardId: string, fallbackImageUrl: strin
 }
 
 export function localizeCardView(card: CardView, language: AppLanguage): CardView {
+  const definition = baseCardDefinitionById[card.cardId];
+  const localizedText = definition?.localization?.[language];
   return {
     ...card,
+    name: localizedText?.name ?? card.name,
+    description: localizedText?.description ?? card.description,
     imageUrl: getLocalizedCardImageUrl(card.cardId, card.imageUrl, language),
     categoryLabel: getLocalizedCategoryLabel(card.categoryCode, language)
   };
@@ -522,6 +526,15 @@ function localizePlayedCardState(playedCard: PlayedCardState | undefined, langua
 }
 
 export function localizeMatchState(match: MatchState, language: AppLanguage): MatchState {
+  const localizeCardName = (cardName: string): string => {
+    if (language === "fr") {
+      return cardName;
+    }
+
+    const definition = Object.values(baseCardDefinitionById).find((card) => card.name === cardName);
+    return definition?.localization?.en.name ?? cardName;
+  };
+
   return {
     ...match,
     seats: match.seats.map((seat) => localizeSeatState(seat, language)),
@@ -546,13 +559,40 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
             ? undefined
             : {
                 ...match.game.pendingObjectChoice,
+                cardName: localizeCardName(match.game.pendingObjectChoice.cardName),
                 objectOptions: match.game.pendingObjectChoice.objectOptions.map((card) => localizeCardView(card, language))
+              },
+          pendingHandInspection: match.game.pendingHandInspection == null
+            ? undefined
+            : {
+                ...match.game.pendingHandInspection,
+                cardName: localizeCardName(match.game.pendingHandInspection.cardName)
               },
           pendingBoardResetKeep: match.game.pendingBoardResetKeep == null
             ? undefined
             : {
                 ...match.game.pendingBoardResetKeep,
+                cardName: localizeCardName(match.game.pendingBoardResetKeep.cardName),
                 cardOptions: match.game.pendingBoardResetKeep.cardOptions.map((card) => localizeCardView(card, language))
+              },
+          pendingSacrificeChoice: match.game.pendingSacrificeChoice == null
+            ? undefined
+            : {
+                ...match.game.pendingSacrificeChoice,
+                cardName: localizeCardName(match.game.pendingSacrificeChoice.cardName)
+              },
+          pendingCurseRelease: match.game.pendingCurseRelease == null
+            ? undefined
+            : {
+                ...match.game.pendingCurseRelease,
+                cardName: localizeCardName(match.game.pendingCurseRelease.cardName),
+                releaseCardName: localizeCardName(match.game.pendingCurseRelease.releaseCardName)
+              },
+          forcedFollowUp: match.game.forcedFollowUp == null
+            ? undefined
+            : {
+                ...match.game.forcedFollowUp,
+                sourceCardName: localizeCardName(match.game.forcedFollowUp.sourceCardName)
               }
         }
   };

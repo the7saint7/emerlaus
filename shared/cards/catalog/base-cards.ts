@@ -1,5 +1,338 @@
 import type { BaseCardDefinition, CardCategoryCode, DefenseBandRules } from "../types";
 
+const englishCardLocalizationById = {
+  "anneau-de-puissance-1": {
+    name: "Power Ring +1",
+    description: `This card must be placed in front of you to be active. It increases your power level by 1 as long as the wizard wears the ring.`
+  },
+  "anneau-de-puissance-2": {
+    name: "Power Ring +2",
+    description: `This card must be placed in front of you to be active. It increases your power level by 2 as long as the wizard wears the ring.`
+  },
+  "anneau-de-puissance-3": {
+    name: "Power Ring +3",
+    description: `This card must be placed in front of you to be active. It increases your power level by 3 as long as the wizard wears the ring.`
+  },
+  "anneau-de-resurrection": {
+    name: "Resurrection Ring",
+    description: `This card must be placed on the table to be active. If the wearer dies, they are resurrected with 50 HP. Then they must throw away the ring and draw 5 new cards while keeping the other objects in front of them.`
+  },
+  "robe-de-protection-2": {
+    name: "Protection Robe +2",
+    description: `This card must be placed in front of you to be active. The robe increases the chance of succeeding on a resistance roll to 12 instead of 10 for as long as the wizard wears it.`
+  },
+  "robe-de-protection-3": {
+    name: "Protection Robe +3",
+    description: `This card must be placed in front of you to be active. The robe increases the chance of succeeding on a resistance roll to 13 instead of 10 for as long as the wizard wears it.`
+  },
+  "robe-dabsorption": {
+    name: "Absorption Robe",
+    description: `This card must be placed in front of you to be active. Against each successful attack directed at them, the wizard is protected from all attacks involving physical damage. For each attack, this robe absorbs 1D10 damage points for as long as the wizard wears it.`
+  },
+  "depouillement": {
+    name: "Strip Away",
+    description: `If the opponent fails the resistance roll, they lose all worn objects ("O" cards placed in front of them).`
+  },
+  "dissipation-dun-anneau": {
+    name: "Ring Dissipation",
+    description: `The opponent throws away a worn ring, chosen by the attacker.`
+  },
+  "la-main-qui-vole": {
+    name: "The Flying Hand",
+    description: `Allows the caster of this spell to take the object of their choice from the opponent (the object must already be on the table).`
+  },
+  "annulation": {
+    name: "Cancel",
+    description: `Cancels the opponent's last thrown stone.`
+  },
+  "miroir": {
+    name: "Mirror",
+    description: `Turns the effects of the opponent's last stone back on them. The power level used for the returned stone remains that of the original attacker.`
+  },
+  "resistance-accrue": {
+    name: "Enhanced Resistance",
+    description: `Increases the resistance roll for one turn only.\nProtection: power level added to the resistance roll.`
+  },
+  "ange-gardien": {
+    name: "Guardian Angel",
+    description: `The wizard removes life points from the opponent of their choice, and that opponent has -3 on the resistance roll against this attack.\nDamage: 1D20 multiplied by power level`
+  },
+  "arc-electrique": {
+    name: "Electric Arc",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: the result of 1D6 multiplied by power level`
+  },
+  "au-seuil-de-la-mort": {
+    name: "At Death's Door",
+    description: `If the opponent fails the resistance roll, they are brought to death's door. The attacker rolls 1D10, and that result becomes the opponent's remaining HP.`
+  },
+  "boule-acidifiee": {
+    name: "Acidified Orb",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D8 multiplied by power level\nIn addition, if the attack succeeds, the wizard rolls 1D6. On a result of 1, they remove one object of their choice from the opponent.`
+  },
+  "boule-de-feu": {
+    name: "Fireball",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D8 multiplied by power level`
+  },
+  "cerceau-de-feu": {
+    name: "Ring of Fire",
+    description: `The wizard removes life points from the opponent of their choice, with a +1 power level bonus for this attack.\nDamage: 1D4 multiplied by (power level +1)`
+  },
+  "coup-de-vent": {
+    name: "Gust of Wind",
+    description: `The wizard removes life points from the opponent of their choice, and that opponent has -3 on the resistance roll against this attack.\nDamage: 1D6 multiplied by power level`
+  },
+  "cumulonimbus": {
+    name: "Cumulonimbus",
+    description: `The wizard removes life points from the opponent of their choice, and that opponent has -3 on the resistance roll against this attack.\nDamage: 1D10 multiplied by power level`
+  },
+  "desintegration": {
+    name: "Disintegration",
+    description: `If the resistance roll is failed, the opponent is disintegrated and therefore dead. Resurrection is impossible.`
+  },
+  "destruction": {
+    name: "Destruction",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D20 multiplied by power level`
+  },
+  "dommage": {
+    name: "Damage",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 5 points multiplied by power level`
+  },
+  "dommage-superieur": {
+    name: "Greater Damage",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 10 points multiplied by power level`
+  },
+  "don-adverse": {
+    name: "Adverse Gift",
+    description: `The wizard uses the power level of the chosen opponent to drain life points from them and add them to their own.\nDrain: 1D8 multiplied by the opponent's power level`
+  },
+  "eclair": {
+    name: "Lightning Bolt",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D6 multiplied by power level`
+  },
+  "energie-acide": {
+    name: "Acid Energy",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D12 multiplied by power level\nIn addition, if the attack succeeds, the wizard rolls 1D6. On a result of 1, they remove one object of their choice from the opponent.`
+  },
+  "eruption-acide": {
+    name: "Acid Eruption",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D6 multiplied by power level\nIn addition, if the attack succeeds, the wizard rolls 1D6. On a result of 1, they remove one object of their choice from the opponent.`
+  },
+  "etouffement": {
+    name: "Suffocation",
+    description: `The wizard removes life points from the opponent of their choice, and that opponent has -4 on the resistance roll against this attack.\nDamage: 1D4 multiplied by power level`
+  },
+  "explosion-energetique": {
+    name: "Energy Explosion",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D12 multiplied by power level`
+  },
+  "flechette-acide": {
+    name: "Acid Dart",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D4 multiplied by power level\nIn addition, if the attack succeeds, the wizard rolls 1D6. On a result of 1, they remove one object of their choice from the opponent.`
+  },
+  "fleche-magique": {
+    name: "Magic Arrow",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D4 multiplied by power level`
+  },
+  "fouet-enflamme": {
+    name: "Flaming Whip",
+    description: `The wizard removes life points from the opponent of their choice, with a +1 power level bonus for this attack.\nDamage: 1D6 multiplied by (power level +1)`
+  },
+  "globe-infernal": {
+    name: "Infernal Globe",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: the result of 1D8 multiplied by power level`
+  },
+  "grenacide": {
+    name: "Grenacide",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D20 multiplied by power level\nIn addition, if the attack succeeds, the wizard rolls 1D6. On a result of 1, they remove one object of their choice from the opponent.`
+  },
+  "lance-flamme": {
+    name: "Flamethrower",
+    description: `The wizard removes life points from the opponent of their choice, with a +1 power level bonus for this attack.\nDamage: 1D12 multiplied by (power level +1)`
+  },
+  "main-brulante": {
+    name: "Burning Hand",
+    description: `The wizard attacks the chosen opponent 5 times with this card. The target gets one resistance roll for each attack.\nDamage: 5 attacks of 1D12 points`
+  },
+  "missile-nucleaire": {
+    name: "Nuclear Missile",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: the result of 1D20 multiplied by power level`
+  },
+  "projectile-magique": {
+    name: "Magic Projectile",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: the result of 1D4 multiplied by power level`
+  },
+  "pulverisateur": {
+    name: "Pulverizer",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: the result of 1D10 multiplied by power level`
+  },
+  "rayon-acide": {
+    name: "Acid Ray",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D10 multiplied by power level\nIn addition, if the attack succeeds, the wizard rolls 1D6. On a result of 1, they remove one object of their choice from the opponent.`
+  },
+  "rayon-laser": {
+    name: "Laser Ray",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: 1D10 multiplied by power level`
+  },
+  "souffle-enflamme": {
+    name: "Fiery Breath",
+    description: `The wizard removes life points from the opponent of their choice, with a +1 power level bonus for this attack.\nDamage: 1D8 multiplied by (power level +1)`
+  },
+  "spirale-de-feu": {
+    name: "Spiral of Fire",
+    description: `The wizard removes life points from the opponent of their choice, with a +1 power level bonus for this attack.\nDamage: 1D10 multiplied by (power level +1)`
+  },
+  "succion-vampirique": {
+    name: "Vampiric Drain",
+    description: `The attacker drains the opponent's life points and adds them to their own.\nDrain: 1D8 multiplied by power level`
+  },
+  "super-boule-de-feu": {
+    name: "Super Fireball",
+    description: `The wizard removes life points from the opponent of their choice, with a +1 power level bonus for this attack.\nDamage: 1D20 multiplied by (power level +1)`
+  },
+  "torpille": {
+    name: "Torpedo",
+    description: `The wizard removes life points from the opponent of their choice, and that opponent has -3 on the resistance roll against this attack.\nDamage: 1D12 multiplied by power level`
+  },
+  "tourbillon": {
+    name: "Whirlwind",
+    description: `The wizard removes life points from the opponent of their choice, and that opponent has -3 on the resistance roll against this attack.\nDamage: 1D8 multiplied by power level`
+  },
+  "transmission-vitale": {
+    name: "Vital Transfer",
+    description: `The wizard uses the power level of the chosen opponent to drain life points from them and add them to their own.\nDrain: 1D10 multiplied by the opponent's power level`
+  },
+  "violence": {
+    name: "Violence",
+    description: `The wizard removes life points from the opponent of their choice.\nDamage: the result of 1D12 multiplied by power level`
+  },
+  "carquois-de-fleches-magiques": {
+    name: "Quiver of Magic Arrows",
+    description: `All opponents take damage.\nDamage: 1D4 multiplied by power level`
+  },
+  "champ-declairs": {
+    name: "Field of Lightning",
+    description: `All opponents take damage. Those who succeed on their resistance roll take half damage.\nDamage: 1D6 multiplied by power level`
+  },
+  "destruction-massive": {
+    name: "Mass Destruction",
+    description: `All opponents take damage.\nDamage: 1D20 multiplied by power level`
+  },
+  "disco-laser": {
+    name: "Laser Disco",
+    description: `All opponents take damage.\nDamage: 1D10 multiplied by power level`
+  },
+  "pluie-de-boules-de-feu": {
+    name: "Rain of Fireballs",
+    description: `All opponents take damage. Those who succeed on their resistance roll take half damage.\nDamage: 1D8 multiplied by power level`
+  },
+  "souffrance-empirique": {
+    name: "Empirical Suffering",
+    description: `All opponents who fail their resistance roll lose half of their life points.`
+  },
+  "vapeur-explosive": {
+    name: "Explosive Vapor",
+    description: `All opponents take damage.\nDamage: 1D8 multiplied by power level`
+  },
+  "fontaine": {
+    name: "Fountain",
+    description: `Each opponent gains 20 extra life points, while the user of this stone receives 20 points multiplied by the number of active players.`
+  },
+  "potion-denergie": {
+    name: "Energy Potion",
+    description: `The wizard adds life points to themselves.\nLife points: 4D6`
+  },
+  "potion-denergie-majeure": {
+    name: "Major Energy Potion",
+    description: `The wizard adds life points to themselves.\nLife points: 5D10`
+  },
+  "potion-denergie-superieure": {
+    name: "Superior Energy Potion",
+    description: `The wizard adds life points to themselves.\nLife points: 6D12`
+  },
+  "potion-denergie-supreme": {
+    name: "Supreme Energy Potion",
+    description: `The wizard adds life points to themselves.\nLife points: 1D100`
+  },
+  "puissance-vitale": {
+    name: "Vital Power",
+    description: `The wizard adds life points to themselves.\nLife points: 1D4 multiplied by power level`
+  },
+  "puissance-vitale-majeure": {
+    name: "Major Vital Power",
+    description: `The wizard adds life points to themselves.\nLife points: 1D8 multiplied by power level`
+  },
+  "puissance-vitale-superieure": {
+    name: "Superior Vital Power",
+    description: `The wizard adds life points to themselves.\nLife points: 1D10 multiplied by power level`
+  },
+  "puissance-vitale-supreme": {
+    name: "Supreme Vital Power",
+    description: `The wizard adds life points to themselves.\nLife points: 1D12 multiplied by power level`
+  },
+  "colere-du-magicien": {
+    name: "Wizard's Wrath",
+    description: `An opponent who fails the resistance roll falls into total paralysis. The attacker immediately throws a second stone from the "AD" category, and the target has no right to retaliate or make a resistance roll. They receive double damage if it is a card that subtracts life points.`
+  },
+  "sommeil": {
+    name: "Sleep",
+    description: `The wizard places this card in front of the player to their left. An opponent who fails the resistance roll loses their turn. Then, for one full turn, all other players may attack them. They have no right to retaliate, since they are asleep.`
+  },
+  "telepathie": {
+    name: "Telepathy",
+    description: `The opponent must show all of their cards to the user of this spell.`
+  },
+  "transfert-de-corps": {
+    name: "Body Transfer",
+    description: `The attacker swaps bodies with the opponent of their choice. They take possession of everything: objects, cards, life points, and even the seat itself. The opponent takes the attacker's place with the attacker's attributes.`
+  },
+  "vitesse-double": {
+    name: "Double Speed",
+    description: `This stone allows the attacker to use two other cards of their choice. These cards must be played one after another. Missing cards are drawn at the end of the turn.`
+  },
+  "malediction": {
+    name: "Curse",
+    description: `The attacker places this card in front of the opponent of their choice. That opponent's resistance roll is reduced by 5 until they are freed from this spell.`
+  },
+  "champ-vampirique-demmerlaus": {
+    name: "Emmerlaus's Vampiric Field",
+    description: `The attacker drains life points from all opponents and gives them to themselves.\nDrain: 1D8 multiplied by power level`
+  },
+  "intervention-divine-demmerlaus": {
+    name: "Emmerlaus's Divine Intervention",
+    description: `All players get rid of every card in their hands, spells, and objects on the table. The attacker receives a 25 HP bonus and has the right to keep one card from their deck in their possession.\nShuffle all cards again, except this one, which is set aside in the talon.`
+  },
+  "sacrifice-demmerlaus": {
+    name: "Emmerlaus's Sacrifice",
+    description: `The attacker sacrifices as many of their own life points as they choose. All opponents make a resistance roll. Those who fail take the same amount of damage as the life points sacrificed. Those who succeed take half damage.`
+  },
+  "sanctuaire-demmerlaus": {
+    name: "Emmerlaus's Sanctuary",
+    description: `The wizard places this card in front of themselves for one full turn. They gain 25 life points plus 1D8 multiplied by power level. No one may attack them during that turn.`
+  },
+  "tenebres-demmerlaus": {
+    name: "Emmerlaus's Darkness",
+    description: `Darkness engulfs and makes all opponents suffer. Those who succeed on their resistance roll take half damage.\nDamage: 1D12 multiplied by power level`
+  }
+} satisfies Record<string, { name: string; description: string }>;
+
+const englishCardLocalizationLookup: Record<string, { name: string; description: string }> = englishCardLocalizationById;
+
+function localizeBaseCardDefinitions(cards: BaseCardDefinition[]): BaseCardDefinition[] {
+  return cards.map((card) => ({
+    ...card,
+    localization: {
+      fr: {
+        name: card.name,
+        description: card.description
+      },
+      en: englishCardLocalizationLookup[card.id] ?? {
+        name: card.name,
+        description: card.description
+      }
+    }
+  }));
+}
+
 export const defaultDefenseBandByCategory = {
   "A": null,
   "O": null,
@@ -76,7 +409,7 @@ export const defaultDefenseBandByCategory = {
   }
 } satisfies Record<CardCategoryCode, DefenseBandRules | null>;
 
-export const baseCardDefinitions = [
+export const baseCardDefinitions = localizeBaseCardDefinitions([
   {
     "id": "anneau-de-puissance-1",
     "name": "Anneau de puissance +1",
@@ -5563,7 +5896,7 @@ export const baseCardDefinitions = [
       "notes": "Migrated from previous explicit rules; formula/effects still need manual verification."
     }
   }
-] satisfies BaseCardDefinition[];
+] satisfies BaseCardDefinition[]);
 
 export const baseCardDefinitionById: Record<string, BaseCardDefinition> = Object.fromEntries(
   baseCardDefinitions.map((card) => [card.id, card])

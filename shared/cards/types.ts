@@ -90,9 +90,18 @@ export interface CardEffectHints {
   dice_mentions: string[];
 }
 
+export interface CardTextLocalization {
+  name: string;
+  description: string;
+}
+
 export interface BaseCardDefinition {
   id: string;
   name: string;
+  localization?: {
+    fr: CardTextLocalization;
+    en: CardTextLocalization;
+  };
   category: {
     label: string;
     code: CardCategoryCode;

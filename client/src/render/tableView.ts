@@ -110,15 +110,6 @@ function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
 }
 
 function renderCardTooltip(card: CardView, language: AppLanguage): string {
-  if (language === "en") {
-    return `
-      <div class="card-tooltip">
-        <p>${escapeHtml(t(language, "card.readFace"))}</p>
-        ${renderDefenseTooltip(card, language)}
-      </div>
-    `;
-  }
-
   return `
     <div class="card-tooltip">
       <strong>${escapeHtml(card.name)}</strong>
@@ -706,22 +697,27 @@ function renderHealBurst(large = false): string {
   `;
 }
 
-const DEV_CARD_OPTIONS = [...baseCardDefinitions]
-  .sort((a, b) => a.name.localeCompare(b.name))
-  .map((card) => {
-    const devLabel = card.id === "annulation"
-      ? `${card.name} / Cancel`
-      : card.name;
-    return `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(devLabel)}</option>`;
-  })
-  .join("");
-
 function renderDevDrawPanel(language: AppLanguage): string {
+  const optionsMarkup = [...baseCardDefinitions]
+    .sort((a, b) => {
+      const left = a.localization?.[language]?.name ?? a.name;
+      const right = b.localization?.[language]?.name ?? b.name;
+      return left.localeCompare(right);
+    })
+    .map((card) => {
+      const localizedName = card.localization?.[language]?.name ?? card.name;
+      const devLabel = card.id === "annulation"
+        ? `${localizedName} / ${language === "fr" ? "Cancel" : "Cancel"}`
+        : localizedName;
+      return `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(devLabel)}</option>`;
+    })
+    .join("");
+
   return `
     <div class="dev-draw-panel">
       <select class="dev-draw-select" data-action="dev-draw-card" title="${escapeHtml(language === "fr" ? "Dev : piger une carte dans la main" : "Dev: draw card into hand")}">
         <option value="">${language === "fr" ? "+ Piger une carte" : "+ Draw card"}</option>
-        ${DEV_CARD_OPTIONS}
+        ${optionsMarkup}
       </select>
     </div>
   `;
@@ -809,9 +805,9 @@ function renderTelepathyInspectionModal(
                 ${previewCard == null ? "" : `
                   <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
                   <div class="telepathy-preview__meta">
+                    <strong>${escapeHtml(previewCard.name)}</strong>
                     <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
-                    ${language === "fr" ? `<strong>${escapeHtml(previewCard.name)}</strong>` : ""}
-                    ${language === "fr" ? `<p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>` : `<p>${escapeHtml(t(language, "card.readFace"))}</p>`}
+                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
                     ${renderDefenseTooltip(previewCard, language)}
                   </div>
                 `}
@@ -826,8 +822,8 @@ function renderTelepathyInspectionModal(
                   >
                     <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
                     <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(card.name)}</strong>
                       <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
-                      ${language === "fr" ? `<strong>${escapeHtml(card.name)}</strong>` : ""}
                     </div>
                   </button>
                 `).join("")}
@@ -882,9 +878,9 @@ function renderBoardResetKeepModal(
                 ${previewCard == null ? "" : `
                   <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
                   <div class="telepathy-preview__meta">
+                    <strong>${escapeHtml(previewCard.name)}</strong>
                     <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
-                    ${language === "fr" ? `<strong>${escapeHtml(previewCard.name)}</strong>` : ""}
-                    ${language === "fr" ? `<p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>` : `<p>${escapeHtml(t(language, "card.readFace"))}</p>`}
+                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
                     ${renderDefenseTooltip(previewCard, language)}
                   </div>
                 `}
@@ -899,8 +895,8 @@ function renderBoardResetKeepModal(
                   >
                     <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
                     <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(card.name)}</strong>
                       <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
-                      ${language === "fr" ? `<strong>${escapeHtml(card.name)}</strong>` : ""}
                     </div>
                   </button>
                 `).join("")}
