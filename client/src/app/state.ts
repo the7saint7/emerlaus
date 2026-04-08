@@ -1,4 +1,5 @@
 import type { CardView, MatchState } from "../../../shared/types";
+import type { AppLanguage } from "../i18n";
 
 export interface DragHoverTarget {
   kind: "discard" | "play-slot" | "response-slot" | "seat" | "object";
@@ -19,6 +20,7 @@ export interface ArrowDragState {
 }
 
 export interface AppState {
+  language: AppLanguage;
   instanceId: string;
   playerSessionToken: string;
   match: MatchState | null;

@@ -2,6 +2,8 @@ import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { CardView, MatchState, PendingActionResponderState, SeatState } from "../../../shared/types";
 import { baseCardDefinitions } from "../../../shared/cards";
 import type { ArrowDragState, DragHoverTarget } from "../app/state";
+import type { AppLanguage } from "../i18n";
+import { t } from "../i18n";
 import type { OpponentAnchor } from "./opponentLayout";
 import { getOpponentAnchorsForPlayerCount } from "./opponentLayout";
 
@@ -12,6 +14,7 @@ const DEAL_ANIMATION_MS = 950; // slightly longer than the CSS duration
 let _handInitialized = false;
 
 interface TableViewParams {
+  language: AppLanguage;
   match: MatchState;
   localSeatNumber: number;
   displayedHpBySeat: Record<number, number>;
@@ -82,7 +85,7 @@ function formatTooltip(card: CardView): string {
   return `${card.name}\n\n${card.description}`;
 }
 
-function renderDefenseTooltip(card: CardView): string {
+function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
   const defenseBand = card.defenseBand;
   if (defenseBand == null) {
     return "";
@@ -91,27 +94,36 @@ function renderDefenseTooltip(card: CardView): string {
   return `
     <div class="card-tooltip-defense">
       <span class="card-defense-pill card-defense-pill--${defenseBand.resistance.color}">
-        Resist ${defenseBand.resistance.color === "red" ? "No" : `${Math.max(1, defenseBand.resistance.rollsRequired)}x`}
+        ${t(language, "defense.resist")} ${defenseBand.resistance.color === "red" ? t(language, "defense.notAvailable") : `${Math.max(1, defenseBand.resistance.rollsRequired)}x`}
       </span>
       <span class="card-defense-pill ${defenseBand.resistanceAccrueAllowed ? "card-defense-pill--allowed" : "card-defense-pill--blocked"}">
-        RA ${defenseBand.resistanceAccrueAllowed ? "Yes" : "No"}
+        ${t(language, "defense.ra")} ${defenseBand.resistanceAccrueAllowed ? t(language, "defense.yes") : t(language, "defense.no")}
       </span>
       <span class="card-defense-pill ${defenseBand.annulationAllowed ? "card-defense-pill--allowed" : "card-defense-pill--blocked"}">
-        Cancel ${defenseBand.annulationAllowed ? `${Math.max(1, defenseBand.annulationCardsRequired)}x` : "No"}
+        ${t(language, "defense.cancel")} ${defenseBand.annulationAllowed ? `${Math.max(1, defenseBand.annulationCardsRequired)}x` : t(language, "defense.no")}
       </span>
       <span class="card-defense-pill ${defenseBand.mirrorAllowed ? "card-defense-pill--allowed" : "card-defense-pill--blocked"}">
-        Mirror ${defenseBand.mirrorAllowed ? "Yes" : "No"}
+        ${t(language, "defense.mirror")} ${defenseBand.mirrorAllowed ? t(language, "defense.yes") : t(language, "defense.no")}
       </span>
     </div>
   `;
 }
 
-function renderCardTooltip(card: CardView): string {
+function renderCardTooltip(card: CardView, language: AppLanguage): string {
+  if (language === "en") {
+    return `
+      <div class="card-tooltip">
+        <p>${escapeHtml(t(language, "card.readFace"))}</p>
+        ${renderDefenseTooltip(card, language)}
+      </div>
+    `;
+  }
+
   return `
     <div class="card-tooltip">
       <strong>${escapeHtml(card.name)}</strong>
       <p>${escapeHtml(card.description).replaceAll("\n", "<br />")}</p>
-      ${renderDefenseTooltip(card)}
+      ${renderDefenseTooltip(card, language)}
     </div>
   `;
 }
@@ -164,20 +176,20 @@ function objectCardMatchesSelectedTargeting(selectedCard: CardView | undefined, 
   return true;
 }
 
-function responseLabel(choice: PendingActionResponderState["choice"]): string {
+function responseLabel(choice: PendingActionResponderState["choice"], language: AppLanguage): string {
   switch (choice) {
     case "resist":
-      return "Resist";
+      return t(language, "response.resist");
     case "annulation":
-      return "Annulation";
+      return t(language, "response.annulation");
     case "resistance_accrue":
-      return "Resistance accrue";
+      return t(language, "response.resistance_accrue");
     case "pass":
-      return "Pass";
+      return t(language, "response.pass");
     case "mirror":
-      return "Mirror";
+      return t(language, "response.mirror");
     default:
-      return "Waiting";
+      return t(language, "response.waiting");
   }
 }
 
@@ -202,7 +214,7 @@ function isHoverTarget(hoverTarget: DragHoverTarget | null, kind: DragHoverTarge
     && (objectInstanceId == null || hoverTarget.objectInstanceId === objectInstanceId);
 }
 
-function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null): string {
+function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, language: AppLanguage): string {
   const objects = seat.objects ?? [];
   const statuses = seat.statuses ?? [];
   const objectTargetable = isObjectTargetable(draggedCard);
@@ -218,7 +230,7 @@ function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hov
           <div class="seat-object-card__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
           </div>
-          ${renderCardTooltip(card)}
+          ${renderCardTooltip(card, language)}
         </button>
       `).join("")}
       ${statuses.map((card) => `
@@ -226,14 +238,14 @@ function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hov
           <div class="seat-object-card__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
           </div>
-          ${renderCardTooltip(card)}
+          ${renderCardTooltip(card, language)}
         </div>
       `).join("")}
     </div>
   `;
 }
 
-function renderSeatInlineObjects(seat: SeatState, draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null): string {
+function renderSeatInlineObjects(seat: SeatState, draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, language: AppLanguage): string {
   const objects = seat.objects ?? [];
   if (objects.length === 0) {
     return "";
@@ -252,7 +264,7 @@ function renderSeatInlineObjects(seat: SeatState, draggedCard: CardView | undefi
           <div class="seat-inline-object__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
           </div>
-          ${renderCardTooltip(card)}
+          ${renderCardTooltip(card, language)}
         </button>
       `).join("")}
     </div>
@@ -273,7 +285,8 @@ function renderOpponentSeat(
   damageBurstAmount?: number,
   impactActive?: boolean,
   healBurstActive?: boolean,
-  forcedTargetSeatNumber?: number
+  forcedTargetSeatNumber?: number,
+  language?: AppLanguage
 ): string {
   const targetable = isSeatTargetable(draggedCard, seat, localSeatNumber, forcedTargetSeatNumber);
   const inspectable = draggedCard == null && seat.controllerType === "human";
@@ -298,17 +311,17 @@ function renderOpponentSeat(
       <div class="seat-details-row">
         <div class="seat-meta">
           <strong>${escapeHtml(seat.displayName)}</strong>
-          <span>Power ${seat.powerLevel ?? 1}</span>
-          ${currentTurnSeatNumber === seat.seatNumber ? `<span class="seat-turn-indicator">Current turn</span>` : ""}
-          ${pendingResponder != null ? `<span class="seat-response-chip seat-response-chip--${pendingResponder.choice}">${responseLabel(pendingResponder.choice)}</span>` : ""}
+          <span>${t(language ?? "en", "stat.power")} ${seat.powerLevel ?? 1}</span>
+          ${currentTurnSeatNumber === seat.seatNumber ? `<span class="seat-turn-indicator">${t(language ?? "en", "table.currentTurn")}</span>` : ""}
+          ${pendingResponder != null ? `<span class="seat-response-chip seat-response-chip--${pendingResponder.choice}">${responseLabel(pendingResponder.choice, language ?? "en")}</span>` : ""}
         </div>
-        ${renderSeatInlineObjects(seat, draggedCard, hoverTarget)}
+        ${renderSeatInlineObjects(seat, draggedCard, hoverTarget, language ?? "en")}
       </div>
       ${damageBurstAmount != null ? `<div class="seat-damage-burst">-${damageBurstAmount}</div>` : ""}
       ${healBurstActive ? renderHealBurst() : ""}
-      ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget)}
-      ${inspectable ? `<button class="action-button action-button--secondary seat-inspect-button" data-action="inspect-seat" data-seat-number="${seat.seatNumber}">${inspectedSeatNumber === seat.seatNumber ? "Close" : "Player"}</button>` : ""}
-      ${showKickButton ? `<button class="action-button action-button--danger seat-kick-button" data-action="kick-seat" data-seat-number="${seat.seatNumber}">Kick Player</button>` : ""}
+      ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget, language ?? "en")}
+      ${inspectable ? `<button class="action-button action-button--secondary seat-inspect-button" data-action="inspect-seat" data-seat-number="${seat.seatNumber}">${inspectedSeatNumber === seat.seatNumber ? t(language ?? "en", "chat.close") : t(language ?? "en", "table.player")}</button>` : ""}
+      ${showKickButton ? `<button class="action-button action-button--danger seat-kick-button" data-action="kick-seat" data-seat-number="${seat.seatNumber}">${t(language ?? "en", "table.kickPlayer")}</button>` : ""}
     </article>
   `;
 }
@@ -320,7 +333,8 @@ function renderHandCards(
   returningHandCardInstanceId: string,
   hiddenHandCardInstanceIds: string[],
   pendingActionActive: boolean,
-  isLocalTurn: boolean
+  isLocalTurn: boolean,
+  language: AppLanguage
 ): string {
   const total = hand.length;
   const FAN_RADIUS = 700;
@@ -386,14 +400,14 @@ function renderHandCards(
           ${disableSelection ? "disabled" : ""}
         >
           <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
-          ${renderCardTooltip(card)}
+          ${renderCardTooltip(card, language)}
         </button>
       </article>
     `;
   }).join("");
 }
 
-function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, localSeatNumber: number, stripClass: string): string {
+function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, localSeatNumber: number, stripClass: string, language: AppLanguage): string {
   if (objects.length === 0) {
     return "";
   }
@@ -411,14 +425,14 @@ function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefin
           <div class="local-object-card__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
           </div>
-          ${renderCardTooltip(card)}
+          ${renderCardTooltip(card, language)}
         </article>
       `).join("")}
     </div>
   `;
 }
 
-function renderLocalStatuses(statuses: CardView[], stripClass: string): string {
+function renderLocalStatuses(statuses: CardView[], stripClass: string, language: AppLanguage): string {
   if (statuses.length === 0) {
     return "";
   }
@@ -430,7 +444,7 @@ function renderLocalStatuses(statuses: CardView[], stripClass: string): string {
           <div class="local-object-card__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
           </div>
-          ${renderCardTooltip(card)}
+          ${renderCardTooltip(card, language)}
         </article>
       `).join("")}
     </div>
@@ -438,6 +452,7 @@ function renderLocalStatuses(statuses: CardView[], stripClass: string): string {
 }
 
 function renderCenterPlayArea(
+  language: AppLanguage,
   match: MatchState,
   localSeatNumber: number,
   draggedCard: CardView | undefined,
@@ -494,10 +509,20 @@ function renderCenterPlayArea(
   const showCurseReleaseOptions = pendingCurseRelease?.seatNumber === localSeatNumber;
   const forcedPrompt = forcedFollowUp == null
     ? ""
-    : `${getLocalSeat(match, forcedFollowUp.actorSeatNumber)?.displayName ?? `Seat ${forcedFollowUp.actorSeatNumber}`} must play ${forcedFollowUp.allowedCategories.join("/")} on ${getLocalSeat(match, forcedFollowUp.targetSeatNumber)?.displayName ?? `Seat ${forcedFollowUp.targetSeatNumber}`} for ${forcedFollowUp.sourceCardName}.`;
+    : t(language, "forced.followUp", {
+        actorName: getLocalSeat(match, forcedFollowUp.actorSeatNumber)?.displayName ?? t(language, "fallback.unknownPlayer"),
+        categories: forcedFollowUp.allowedCategories.join("/"),
+        targetName: getLocalSeat(match, forcedFollowUp.targetSeatNumber)?.displayName ?? t(language, "fallback.unknownPlayer"),
+        cardName: forcedFollowUp.sourceCardName
+      });
   const cursePrompt = pendingCurseRelease == null
     ? ""
-    : `${getLocalSeat(match, pendingCurseRelease.seatNumber)?.displayName ?? `Seat ${pendingCurseRelease.seatNumber}`} may discard ${pendingCurseRelease.releaseCardCount} ${pendingCurseRelease.releaseCardName} to remove ${pendingCurseRelease.cardName}.`;
+    : t(language, "forced.cursePrompt", {
+        actorName: getLocalSeat(match, pendingCurseRelease.seatNumber)?.displayName ?? t(language, "fallback.unknownPlayer"),
+        count: pendingCurseRelease.releaseCardCount,
+        releaseCardName: pendingCurseRelease.releaseCardName,
+        cardName: pendingCurseRelease.cardName
+      });
 
   const isShowingLastPlayed = singleStackCards.length > 0 && displayedAction == null;
 
@@ -516,7 +541,7 @@ function renderCenterPlayArea(
       <div class="center-card-stack__art">
         <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
       </div>
-      ${renderCardTooltip(card)}
+      ${renderCardTooltip(card, language)}
     </div>
   `;
 
@@ -557,18 +582,18 @@ function renderCenterPlayArea(
       </div>
       ${showPassButton ? `
         <div class="center-play-options">
-          <button type="button" class="action-button action-button--secondary" data-action="respond-pending" data-choice="pass">Pass</button>
+          <button type="button" class="action-button action-button--secondary" data-action="respond-pending" data-choice="pass">${t(language, "response.pass")}</button>
         </div>
       ` : ""}
       ${showForcedPassButton ? `
         <div class="center-play-options">
-          <button type="button" class="action-button action-button--secondary" data-action="pass-forced-follow-up">Pass</button>
+          <button type="button" class="action-button action-button--secondary" data-action="pass-forced-follow-up">${t(language, "response.pass")}</button>
         </div>
       ` : ""}
       ${showCurseReleaseOptions ? `
         <div class="center-play-options">
-          <button type="button" class="action-button action-button--secondary" data-action="resolve-curse-release" data-choice="accept">Accept</button>
-          <button type="button" class="action-button action-button--secondary" data-action="resolve-curse-release" data-choice="pass">Pass</button>
+          <button type="button" class="action-button action-button--secondary" data-action="resolve-curse-release" data-choice="accept">${t(language, "curse.accept")}</button>
+          <button type="button" class="action-button action-button--secondary" data-action="resolve-curse-release" data-choice="pass">${t(language, "curse.pass")}</button>
         </div>
       ` : ""}
     </section>
@@ -691,11 +716,11 @@ const DEV_CARD_OPTIONS = [...baseCardDefinitions]
   })
   .join("");
 
-function renderDevDrawPanel(): string {
+function renderDevDrawPanel(language: AppLanguage): string {
   return `
     <div class="dev-draw-panel">
-      <select class="dev-draw-select" data-action="dev-draw-card" title="Dev: draw card into hand">
-        <option value="">+ Draw card</option>
+      <select class="dev-draw-select" data-action="dev-draw-card" title="${escapeHtml(language === "fr" ? "Dev : piger une carte dans la main" : "Dev: draw card into hand")}">
+        <option value="">${language === "fr" ? "+ Piger une carte" : "+ Draw card"}</option>
         ${DEV_CARD_OPTIONS}
       </select>
     </div>
@@ -703,21 +728,25 @@ function renderDevDrawPanel(): string {
 }
 
 function renderPendingObjectChoice(match: MatchState, localSeatNumber: number): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
   const choice = match.game?.pendingObjectChoice;
   if (choice == null) {
     return "";
   }
 
-  const ownerName = match.seats.find((seat) => seat.seatNumber === choice.ownerSeatNumber)?.displayName ?? `Seat ${choice.ownerSeatNumber}`;
-  const chooserName = match.seats.find((seat) => seat.seatNumber === choice.chooserSeatNumber)?.displayName ?? `Seat ${choice.chooserSeatNumber}`;
+  const ownerName = match.seats.find((seat) => seat.seatNumber === choice.ownerSeatNumber)?.displayName ?? t(language, "seat.label", { seatNumber: choice.ownerSeatNumber });
+  const chooserName = match.seats.find((seat) => seat.seatNumber === choice.chooserSeatNumber)?.displayName ?? t(language, "seat.label", { seatNumber: choice.chooserSeatNumber });
   const isLocalChooser = choice.chooserSeatNumber === localSeatNumber;
+  const chooserPrompt = choice.prompt.toLowerCase().includes("steal")
+    ? t(language, "objectChoice.stealTitle")
+    : t(language, "objectChoice.removeTitle");
 
   return `
     <section class="object-choice-overlay">
       <article class="object-choice-panel">
         <p class="eyebrow">${escapeHtml(choice.cardName)}</p>
-        <h2>${isLocalChooser ? "Choose an object to remove" : `${escapeHtml(chooserName)} is choosing an object`}</h2>
-        <p>${isLocalChooser ? escapeHtml(choice.prompt) : `Waiting for ${escapeHtml(chooserName)} to choose one of ${escapeHtml(ownerName)}'s objects.`}</p>
+        <h2>${isLocalChooser ? chooserPrompt : t(language, "objectChoice.chooserWaiting", { chooserName })}</h2>
+        <p>${isLocalChooser ? chooserPrompt : t(language, "objectChoice.waitingBody", { chooserName, ownerName })}</p>
         <div class="object-choice-grid">
           ${choice.objectOptions.map((card) => `
             <button
@@ -742,6 +771,7 @@ function renderTelepathyInspectionModal(
   localSeatNumber: number,
   telepathyPreviewCardInstanceId: string
 ): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
   const pendingInspection = match.game?.pendingHandInspection;
   if (pendingInspection == null) {
     return "";
@@ -764,25 +794,25 @@ function renderTelepathyInspectionModal(
         <div class="telepathy-panel__header">
           <div>
             <p class="eyebrow">${escapeHtml(pendingInspection.cardName)}</p>
-            <h2>${isLocalViewer ? `${escapeHtml(targetSeat.displayName)}'s hand` : "Telepathie in progress"}</h2>
-            <p>${isLocalViewer ? "Review the revealed hand, then close this window to continue the game." : `Waiting for ${escapeHtml(viewerSeat.displayName)} to finish viewing ${escapeHtml(targetSeat.displayName)}'s hand.`}</p>
+            <h2>${isLocalViewer ? t(language, "telepathy.viewerTitle", { targetName: targetSeat.displayName }) : t(language, "telepathy.inProgress")}</h2>
+            <p>${isLocalViewer ? t(language, "telepathy.viewerBody") : t(language, "telepathy.waitingBody", { viewerName: viewerSeat.displayName, targetName: targetSeat.displayName })}</p>
           </div>
-          ${isLocalViewer ? `<button type="button" class="action-button action-button--secondary" data-action="dismiss-telepathy">Close</button>` : ""}
+          ${isLocalViewer ? `<button type="button" class="action-button action-button--secondary" data-action="dismiss-telepathy">${t(language, "telepathy.close")}</button>` : ""}
         </div>
         <div class="telepathy-grid">
           ${!isLocalViewer
-            ? `<p class="telepathy-empty">No other actions can continue until the viewer closes this window.</p>`
+            ? `<p class="telepathy-empty">${t(language, "telepathy.blocked")}</p>`
             : revealedHand.length === 0
-            ? `<p class="telepathy-empty">This player has no cards in hand.</p>`
+            ? `<p class="telepathy-empty">${t(language, "telepathy.empty")}</p>`
             : `
               <div class="telepathy-preview">
                 ${previewCard == null ? "" : `
                   <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
                   <div class="telepathy-preview__meta">
-                    <strong>${escapeHtml(previewCard.name)}</strong>
                     <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
-                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
-                    ${renderDefenseTooltip(previewCard)}
+                    ${language === "fr" ? `<strong>${escapeHtml(previewCard.name)}</strong>` : ""}
+                    ${language === "fr" ? `<p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>` : `<p>${escapeHtml(t(language, "card.readFace"))}</p>`}
+                    ${renderDefenseTooltip(previewCard, language)}
                   </div>
                 `}
               </div>
@@ -796,8 +826,8 @@ function renderTelepathyInspectionModal(
                   >
                     <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
                     <div class="telepathy-card__meta">
-                      <strong>${escapeHtml(card.name)}</strong>
                       <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                      ${language === "fr" ? `<strong>${escapeHtml(card.name)}</strong>` : ""}
                     </div>
                   </button>
                 `).join("")}
@@ -814,6 +844,7 @@ function renderBoardResetKeepModal(
   localSeatNumber: number,
   boardResetKeepPreviewCardInstanceId: string
 ): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
   const pendingKeep = match.game?.pendingBoardResetKeep;
   if (pendingKeep == null) {
     return "";
@@ -836,25 +867,25 @@ function renderBoardResetKeepModal(
         <div class="telepathy-panel__header">
           <div>
             <p class="eyebrow">${escapeHtml(pendingKeep.cardName)}</p>
-            <h2>${isLocalChooser ? `Choose ${pendingKeep.keepCardCount} Card${pendingKeep.keepCardCount === 1 ? "" : "s"} To Keep` : "Intervention divine in progress"}</h2>
-            <p>${isLocalChooser ? `Select the ${pendingKeep.keepCardCount === 1 ? "one card" : `${pendingKeep.keepCardCount} cards`} that stay${pendingKeep.keepCardCount === 1 ? "s" : ""} in your hand before the rest of the board is cleared and reshuffled.` : `Waiting for ${escapeHtml(chooserSeat.displayName)} to choose which card to keep.`}</p>
+            <h2>${isLocalChooser ? t(language, "boardReset.title", { count: pendingKeep.keepCardCount, plural: pendingKeep.keepCardCount === 1 ? "" : "s" }) : t(language, "boardReset.inProgress")}</h2>
+            <p>${isLocalChooser ? t(language, "boardReset.body", { selectionLabel: pendingKeep.keepCardCount === 1 ? (language === "fr" ? "la seule carte" : "the one card") : language === "fr" ? `${pendingKeep.keepCardCount} cartes` : `${pendingKeep.keepCardCount} cards`, stayVerb: pendingKeep.keepCardCount === 1 ? (language === "fr" ? "reste" : "stays") : language === "fr" ? "restent" : "stay" }) : t(language, "boardReset.waitingBody", { chooserName: chooserSeat.displayName })}</p>
           </div>
-          ${isLocalChooser ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-board-reset-keep" ${previewCard == null ? "disabled" : ""}>Keep This Card</button>` : ""}
+          ${isLocalChooser ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-board-reset-keep" ${previewCard == null ? "disabled" : ""}>${t(language, "boardReset.keepAction")}</button>` : ""}
         </div>
         <div class="telepathy-grid">
           ${!isLocalChooser
-            ? `<p class="telepathy-empty">No other actions can continue until the keeper card is chosen.</p>`
+            ? `<p class="telepathy-empty">${t(language, "boardReset.blocked")}</p>`
             : keepableCards.length === 0
-            ? `<p class="telepathy-empty">There are no cards left in hand to keep.</p>`
+            ? `<p class="telepathy-empty">${t(language, "boardReset.empty")}</p>`
             : `
               <div class="telepathy-preview">
                 ${previewCard == null ? "" : `
                   <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
                   <div class="telepathy-preview__meta">
-                    <strong>${escapeHtml(previewCard.name)}</strong>
                     <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
-                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
-                    ${renderDefenseTooltip(previewCard)}
+                    ${language === "fr" ? `<strong>${escapeHtml(previewCard.name)}</strong>` : ""}
+                    ${language === "fr" ? `<p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>` : `<p>${escapeHtml(t(language, "card.readFace"))}</p>`}
+                    ${renderDefenseTooltip(previewCard, language)}
                   </div>
                 `}
               </div>
@@ -868,8 +899,8 @@ function renderBoardResetKeepModal(
                   >
                     <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
                     <div class="telepathy-card__meta">
-                      <strong>${escapeHtml(card.name)}</strong>
                       <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                      ${language === "fr" ? `<strong>${escapeHtml(card.name)}</strong>` : ""}
                     </div>
                   </button>
                 `).join("")}
@@ -886,6 +917,7 @@ function renderPendingSacrificeChoiceModal(
   localSeatNumber: number,
   sacrificeAmountInput: string
 ): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
   const pendingSacrificeChoice = match.game?.pendingSacrificeChoice;
   if (pendingSacrificeChoice == null) {
     return "";
@@ -909,15 +941,15 @@ function renderPendingSacrificeChoiceModal(
         <div class="telepathy-panel__header">
           <div>
             <p class="eyebrow">${escapeHtml(pendingSacrificeChoice.cardName)}</p>
-            <h2>${isLocalActor ? "Choose Sacrifice Amount" : "Sacrifice in progress"}</h2>
-            <p>${isLocalActor ? `Enter how many HP to sacrifice. Choose a whole number from 0 to ${pendingSacrificeChoice.maxAmount}.` : `Waiting for ${escapeHtml(actorSeat.displayName)} to choose how many HP to sacrifice.`}</p>
+            <h2>${isLocalActor ? t(language, "sacrifice.title") : t(language, "sacrifice.inProgress")}</h2>
+            <p>${isLocalActor ? t(language, "sacrifice.body", { maxAmount: pendingSacrificeChoice.maxAmount }) : t(language, "sacrifice.waitingBody", { playerName: actorSeat.displayName })}</p>
           </div>
         </div>
         ${!isLocalActor
-          ? `<p class="telepathy-empty">No other actions can continue until the sacrifice amount is chosen.</p>`
+          ? `<p class="telepathy-empty">${t(language, "telepathy.blocked")}</p>`
           : `
             <div class="sacrifice-choice-form">
-              <label class="sacrifice-choice-form__label" for="sacrifice-amount-input">HP to sacrifice</label>
+              <label class="sacrifice-choice-form__label" for="sacrifice-amount-input">${t(language, "sacrifice.label")}</label>
               <input
                 id="sacrifice-amount-input"
                 class="sacrifice-choice-form__input"
@@ -929,14 +961,14 @@ function renderPendingSacrificeChoiceModal(
                 inputmode="numeric"
                 value="${escapeHtml(sacrificeAmountInput)}"
               />
-              <p class="sacrifice-choice-form__hint">Maximum: ${pendingSacrificeChoice.maxAmount} HP. You may reduce yourself to 0.</p>
+              <p class="sacrifice-choice-form__hint">${t(language, "sacrifice.hint", { maxAmount: pendingSacrificeChoice.maxAmount })}</p>
               <button
                 type="button"
                 class="action-button action-button--secondary"
                 data-action="confirm-sacrifice-amount"
                 ${isValidAmount ? "" : "disabled"}
               >
-                Confirm
+                ${t(language, "sacrifice.confirm")}
               </button>
             </div>
           `}
@@ -946,6 +978,7 @@ function renderPendingSacrificeChoiceModal(
 }
 
 export function renderTableView({
+  language,
   match,
   localSeatNumber,
   displayedHpBySeat,
@@ -999,6 +1032,7 @@ export function renderTableView({
     && (localSeat?.hand?.length ?? 0) > 0
     && localPlayableCardCount === 0;
   const localDisplayedHp = localSeat == null ? 0 : displayedHpBySeat[localSeat.seatNumber] ?? localSeat.hp ?? 0;
+  const localizedMatch = { ...match, __language: language } as MatchState & { __language: AppLanguage };
   const seatMarkup = anchors.map((anchor, index) => {
     const seat = opponents[index];
     if (seat == null) {
@@ -1019,7 +1053,8 @@ export function renderTableView({
       activeDamageBursts[seat.seatNumber],
       impactTargetSeatNumbers.includes(seat.seatNumber),
       activeHealBursts[seat.seatNumber] != null,
-      forcedFollowUp?.actorSeatNumber === localSeatNumber ? forcedFollowUp.targetSeatNumber : undefined
+      forcedFollowUp?.actorSeatNumber === localSeatNumber ? forcedFollowUp.targetSeatNumber : undefined,
+      language
     );
   }).join("");
 
@@ -1029,32 +1064,32 @@ export function renderTableView({
 
       <section class="table-shell">
         <div class="table-actions">
-          ${renderDevDrawPanel()}
+          ${renderDevDrawPanel(language)}
           ${localIsHost ? `
             <button
               data-action="download-server-log"
               class="action-button action-button--secondary"
             >
-              Server Log
+              ${t(language, "table.serverLog")}
             </button>
             <button
               data-action="download-client-log"
               class="action-button action-button--secondary"
             >
-              Client Log
+              ${t(language, "table.clientLog")}
             </button>
           ` : ""}
           <button
             data-action="leave-match"
             class="action-button action-button--danger"
           >
-            Leave Match
+            ${t(language, "table.leaveMatch")}
           </button>
         </div>
 
         <div class="table-surface ${isLocalTurn ? "table-surface--local-turn" : ""} ${impactTargetSeatNumbers.length > 0 ? "table-surface--impact" : ""}">
           <svg class="action-target-overlay" data-action-target-overlay="true" aria-hidden="true"></svg>
-          ${renderCenterPlayArea(match, localSeatNumber, draggedCard, dragHoverTarget, activeCombatFx, impactTargetSeatNumbers.length > 0, presentationLockActive, activeActionVisual, centerResponseCards)}
+          ${renderCenterPlayArea(language, localizedMatch, localSeatNumber, draggedCard, dragHoverTarget, activeCombatFx, impactTargetSeatNumbers.length > 0, presentationLockActive, activeActionVisual, centerResponseCards)}
           ${eventLogMarkup}
           ${seatMarkup}
           ${activeCardFlight != null ? `
@@ -1069,35 +1104,35 @@ export function renderTableView({
 
           <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumbers.includes(localSeatNumber) ? "local-hand-panel--impact" : ""} ${activeHealBursts[localSeatNumber] != null ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
             ${activeHealBursts[localSeatNumber] != null ? renderHealBurst(true) : ""}
-            ${renderLocalStatuses(localSeat?.statuses ?? [], "local-status-strip")}
-            ${renderLocalObjects((localSeat?.objects ?? []).filter(c => c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-rings-strip")}
+            ${renderLocalStatuses(localSeat?.statuses ?? [], "local-status-strip", language)}
+            ${renderLocalObjects((localSeat?.objects ?? []).filter(c => c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-rings-strip", language)}
             ${showNoPlayableDiscardPrompt ? `
               <div class="local-turn-discard-prompt">
-                You cannot play any card this turn. Choose one card to discard.
+                ${t(language, "table.noPlayableDiscard")}
               </div>
             ` : ""}
             <div class="hand-fan">
-              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", returningHandCardInstanceId, hiddenHandCardInstanceIds, pendingAction != null, isLocalTurn || forcedFollowUp?.actorSeatNumber === localSeatNumber)}
+              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", returningHandCardInstanceId, hiddenHandCardInstanceIds, pendingAction != null, isLocalTurn || forcedFollowUp?.actorSeatNumber === localSeatNumber, language)}
             </div>
-            ${renderLocalObjects((localSeat?.objects ?? []).filter(c => !c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-equipment-strip")}
+            ${renderLocalObjects((localSeat?.objects ?? []).filter(c => !c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-equipment-strip", language)}
             ${(draggingCardInstanceId || showNoPlayableDiscardPrompt) ? `
               <div
                 class="hand-discard-zone ${showNoPlayableDiscardPrompt && !draggingCardInstanceId ? "hand-discard-zone--idle" : ""} ${isHoverTarget(dragHoverTarget, "discard") ? "hand-discard-zone--hovered" : ""}"
                 data-drop-target="discard"
-              >✕ Discard</div>
+              >✕ ${t(language, "table.discard")}</div>
             ` : ""}
           </section>
         </div>
 
         <aside class="local-hp-panel">
           <strong>${localDisplayedHp}</strong>
-          ${activeDamageBursts[localSeatNumber] != null ? `<div class="local-damage-burst">-${activeDamageBursts[localSeatNumber]} HP</div>` : ""}
+          ${activeDamageBursts[localSeatNumber] != null ? `<div class="local-damage-burst">-${activeDamageBursts[localSeatNumber]} ${t(language, "stat.hp")}</div>` : ""}
         </aside>
 
-        ${renderPendingObjectChoice(match, localSeatNumber)}
-        ${renderTelepathyInspectionModal(match, localSeatNumber, telepathyPreviewCardInstanceId)}
-        ${renderBoardResetKeepModal(match, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
-        ${renderPendingSacrificeChoiceModal(match, localSeatNumber, sacrificeAmountInput)}
+        ${renderPendingObjectChoice(localizedMatch, localSeatNumber)}
+        ${renderTelepathyInspectionModal(localizedMatch, localSeatNumber, telepathyPreviewCardInstanceId)}
+        ${renderBoardResetKeepModal(localizedMatch, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
+        ${renderPendingSacrificeChoiceModal(localizedMatch, localSeatNumber, sacrificeAmountInput)}
         ${chatMarkup}
         ${renderDragPreview(normalDragPreviewCard, dragPointerX, dragPointerY)}
         ${renderReturnCardFlight(activeReturnCardFlight)}

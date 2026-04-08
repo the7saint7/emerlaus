@@ -1,19 +1,22 @@
-export function renderLoadingScreen(): string {
-  return `<main class="loading-screen">Loading match...</main>`;
+import type { AppLanguage } from "../i18n";
+import { t } from "../i18n";
+
+export function renderLoadingScreen(language: AppLanguage): string {
+  return `<main class="loading-screen">${t(language, "loading.match")}</main>`;
 }
 
-export function renderLeftMatchScreen(message: string): string {
+export function renderLeftMatchScreen(message: string, language: AppLanguage): string {
   return `
     <main class="left-match-screen">
       <section class="left-match-card">
-        <h1>You left the match</h1>
+        <h1>${t(language, "left.title")}</h1>
         <p>${message}</p>
       </section>
     </main>
   `;
 }
 
-export function renderLeaveConfirmationModal(confirmingLeave: boolean): string {
+export function renderLeaveConfirmationModal(confirmingLeave: boolean, language: AppLanguage): string {
   if (!confirmingLeave) {
     return "";
   }
@@ -21,33 +24,33 @@ export function renderLeaveConfirmationModal(confirmingLeave: boolean): string {
   return `
     <div class="modal-backdrop">
       <section class="modal-card">
-        <h2>Are you sure?</h2>
-        <p>Leaving the match will replace your seat with a bot.</p>
+        <h2>${t(language, "leave.confirm.title")}</h2>
+        <p>${t(language, "leave.confirm.body")}</p>
         <div class="modal-actions">
-          <button data-action="leave-cancel" class="action-button action-button--secondary">Cancel</button>
-          <button data-action="leave-confirm" class="action-button action-button--danger">Leave Match</button>
+          <button data-action="leave-cancel" class="action-button action-button--secondary">${t(language, "common.cancel")}</button>
+          <button data-action="leave-confirm" class="action-button action-button--danger">${t(language, "leave.confirm.action")}</button>
         </div>
       </section>
     </div>
   `;
 }
 
-export function renderKickConfirmationModal(playerName: string): string {
+export function renderKickConfirmationModal(playerName: string, language: AppLanguage): string {
   return `
     <div class="modal-backdrop">
       <section class="modal-card">
-        <h2>Kick player?</h2>
-        <p>${playerName} will be replaced by a bot.</p>
+        <h2>${t(language, "kick.confirm.title")}</h2>
+        <p>${t(language, "kick.confirm.body", { playerName })}</p>
         <div class="modal-actions">
-          <button data-action="kick-cancel" class="action-button action-button--secondary">No</button>
-          <button data-action="kick-confirm" class="action-button action-button--danger">Yes</button>
+          <button data-action="kick-cancel" class="action-button action-button--secondary">${t(language, "defense.no")}</button>
+          <button data-action="kick-confirm" class="action-button action-button--danger">${t(language, "defense.yes")}</button>
         </div>
       </section>
     </div>
   `;
 }
 
-export function renderDiscardConfirmationModal(confirmingDiscard: boolean): string {
+export function renderDiscardConfirmationModal(confirmingDiscard: boolean, language: AppLanguage): string {
   if (!confirmingDiscard) {
     return "";
   }
@@ -55,11 +58,11 @@ export function renderDiscardConfirmationModal(confirmingDiscard: boolean): stri
   return `
     <div class="modal-backdrop">
       <section class="modal-card">
-        <h2>Discard this card?</h2>
-        <p>This will discard the card without using its effect.</p>
+        <h2>${t(language, "discard.confirm.title")}</h2>
+        <p>${t(language, "discard.confirm.body")}</p>
         <div class="modal-actions">
-          <button data-action="discard-cancel" class="action-button action-button--secondary">No</button>
-          <button data-action="discard-confirm" class="action-button action-button--danger">Yes</button>
+          <button data-action="discard-cancel" class="action-button action-button--secondary">${t(language, "defense.no")}</button>
+          <button data-action="discard-confirm" class="action-button action-button--danger">${t(language, "defense.yes")}</button>
         </div>
       </section>
     </div>

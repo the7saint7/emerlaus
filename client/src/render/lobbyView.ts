@@ -1,5 +1,7 @@
 import { getLocalSeat } from "../../../shared/seating";
 import type { LocalUserProfile, MatchState } from "../../../shared/types";
+import type { AppLanguage } from "../i18n";
+import { t } from "../i18n";
 
 interface LobbyViewParams {
   match: MatchState;
@@ -7,6 +9,7 @@ interface LobbyViewParams {
   currentUser: LocalUserProfile;
   sessionMode: "browser" | "discord";
   errorMessage: string;
+  language: AppLanguage;
 }
 
 export function renderLobbyView({
@@ -14,7 +17,8 @@ export function renderLobbyView({
   localSeatNumber,
   currentUser,
   sessionMode,
-  errorMessage
+  errorMessage,
+  language
 }: LobbyViewParams): string {
   const localSeat = getLocalSeat(match, localSeatNumber);
   const hostSeat = match.seats.find((seat) => seat.isHost);
@@ -27,20 +31,20 @@ export function renderLobbyView({
     if (seat == null) {
       return `
         <article class="lobby-seat lobby-seat--empty">
-          <span class="seat-tag">Seat ${seatNumber}</span>
-          <strong>Open Seat</strong>
-          <p>Available for a player or a bot.</p>
+          <span class="seat-tag">${t(language, "seat.label", { seatNumber })}</span>
+          <strong>${t(language, "lobby.openSeat")}</strong>
+          <p>${t(language, "lobby.seatAvailable")}</p>
         </article>
       `;
     }
 
     return `
       <article class="lobby-seat">
-        <span class="seat-tag">Seat ${seatNumber}</span>
+        <span class="seat-tag">${t(language, "seat.label", { seatNumber })}</span>
         <img class="seat-avatar" src="${seat.avatarUrl}" alt="${seat.displayName}" />
         <strong>${seat.displayName}</strong>
-        <p>${seat.controllerType === "bot" ? `Bot • ${seat.difficulty ?? "normal"}` : seat.connected ? "Connected" : "Disconnected"}</p>
-        ${seat.isHost ? `<span class="host-chip">Host</span>` : ""}
+        <p>${seat.controllerType === "bot" ? t(language, "seat.bot", { difficulty: seat.difficulty ?? "normal" }) : seat.connected ? t(language, "seat.connected") : t(language, "seat.disconnected")}</p>
+        ${seat.isHost ? `<span class="host-chip">${t(language, "seat.host")}</span>` : ""}
       </article>
     `;
   }).join("");
@@ -49,34 +53,34 @@ export function renderLobbyView({
     <main class="shell">
       <section class="hero-panel">
         <div>
-          <p class="eyebrow">Emerlaus Activity</p>
-          <h1>Card Table Lobby</h1>
+          <p class="eyebrow">${t(language, "lobby.activity")}</p>
+          <h1>${t(language, "lobby.title")}</h1>
           <p class="hero-copy">
-            Seats are fixed in match order. Your screen will always rotate the table so your own hand stays at the bottom.
+            ${t(language, "lobby.copy")}
           </p>
         </div>
         <div class="status-stack">
-          <span class="status-pill">${sessionMode === "discord" ? "Discord Activity" : "Browser Mock Mode"}</span>
-          <span class="status-pill">Instance ${match.instanceId}</span>
-          <span class="status-pill">${match.seats.length}/${match.maxSeats} seats filled</span>
+          <span class="status-pill">${sessionMode === "discord" ? t(language, "lobby.discord") : t(language, "lobby.browser")}</span>
+          <span class="status-pill">${t(language, "lobby.instance", { instanceId: match.instanceId })}</span>
+          <span class="status-pill">${t(language, "lobby.seatsFilled", { filled: match.seats.length, max: match.maxSeats })}</span>
         </div>
       </section>
 
       <section class="control-panel">
         <div class="control-card">
-          <h2>Local Player</h2>
+          <h2>${t(language, "lobby.localPlayer")}</h2>
           <p>${currentUser.displayName}</p>
-          <p>Seat ${localSeatNumber}</p>
+          <p>${t(language, "seat.label", { seatNumber: localSeatNumber })}</p>
         </div>
         <div class="control-card">
-          <h2>Host</h2>
-          <p>${hostSeat?.displayName ?? "Unassigned"}</p>
-          <p>${amHost ? "You control setup actions." : "Waiting for host actions."}</p>
+          <h2>${t(language, "lobby.host")}</h2>
+          <p>${hostSeat?.displayName ?? t(language, "lobby.unassigned")}</p>
+          <p>${amHost ? t(language, "lobby.hostControl") : t(language, "lobby.hostWaiting")}</p>
         </div>
         <div class="control-card control-card--actions">
-          <button data-action="refresh" class="action-button action-button--secondary">Refresh</button>
-          <button data-action="add-bot" class="action-button" ${amHost ? "" : "disabled"}>Add Bot</button>
-          <button data-action="start-match" class="action-button action-button--accent" ${amHost ? "" : "disabled"}>Start Match</button>
+          <button data-action="refresh" class="action-button action-button--secondary">${t(language, "lobby.refresh")}</button>
+          <button data-action="add-bot" class="action-button" ${amHost ? "" : "disabled"}>${t(language, "lobby.addBot")}</button>
+          <button data-action="start-match" class="action-button action-button--accent" ${amHost ? "" : "disabled"}>${t(language, "lobby.startMatch")}</button>
         </div>
       </section>
 

@@ -29,6 +29,44 @@ body {
     linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
 }
 
+.language-toggle {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 5000;
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(240, 230, 201, 0.18);
+  border-radius: 999px;
+  background: rgba(10, 18, 12, 0.88);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.language-toggle__button {
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.language-toggle__button:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.language-toggle__button--active {
+  border-color: rgba(217, 180, 89, 0.52);
+  background: rgba(217, 180, 89, 0.18);
+}
+
 button,
 input,
 textarea,

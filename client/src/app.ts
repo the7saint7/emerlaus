@@ -29,6 +29,15 @@ import {
 import { createDiscordSession } from "./discord/session";
 import { diceController, type DiceStagePlacement } from "./features/dice/diceController";
 import { getSeatDiceColor } from "./features/dice/diceSeatColors";
+import {
+  loadStoredLanguage,
+  localizeCardView,
+  localizeMatchState,
+  persistLanguage,
+  renderLanguageToggle,
+  t,
+  type AppLanguage
+} from "./i18n";
 import { renderChatView, renderHiddenChatButton } from "./render/chatView";
 import { renderLobbyView } from "./render/lobbyView";
 import { renderTableView } from "./render/tableView";
@@ -43,6 +52,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const joined = await joinMatch(session.instanceId, session.currentUser);
 
   const state: AppState = {
+    language: loadStoredLanguage(),
     instanceId: session.instanceId,
     playerSessionToken: joined.playerSessionToken,
     match: joined.match,
@@ -142,7 +152,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   const getSeatDisplayName = (seatNumber?: number): string => {
     if (seatNumber == null) {
-      return "Unknown player";
+      return t(state.language, "fallback.unknownPlayer");
     }
 
     return state.match?.seats.find((seat) => seat.seatNumber === seatNumber)?.displayName ?? `Seat ${seatNumber}`;
@@ -177,6 +187,17 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       zone: "discard"
     };
   };
+
+  const localizeActiveActionVisual = (visual: AppState["activeActionVisual"]): AppState["activeActionVisual"] =>
+    visual == null
+      ? null
+      : {
+          ...visual,
+          card: localizeCardView(visual.card, state.language)
+        };
+
+  const localizeCardList = (cards: CardView[]): CardView[] =>
+    cards.map((card) => localizeCardView(card, state.language));
 
   const getResponsePresentationCard = (choice?: string): CardView | null => {
     switch (choice) {
@@ -544,21 +565,33 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               ? ""
               : ` ${rollContext.bonus > 0 ? `+${rollContext.bonus}` : `${rollContext.bonus}`}`;
             setCombatFx(
-              `${getSeatDisplayName(event.seatNumber)} throws ${event.notation.toUpperCase()} for resistance${bonus} (threshold ${rollContext.threshold ?? 10})`,
+              t(state.language, "combat.rollResistance", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                notation: event.notation.toUpperCase(),
+                bonus,
+                threshold: rollContext.threshold ?? 10
+              }),
               "info",
               { seatNumber: event.seatNumber }
             );
           } else if (rollContext?.kind === "damage") {
             impactTargetSeatNumber = rollContext.targetSeatNumber;
             setCombatFx(
-              `${getSeatDisplayName(rollContext.actorSeatNumber)} throws ${event.notation.toUpperCase()} for damage on ${getSeatDisplayName(rollContext.targetSeatNumber)}`,
+              t(state.language, "combat.rollDamage", {
+                actorName: getSeatDisplayName(rollContext.actorSeatNumber),
+                notation: event.notation.toUpperCase(),
+                targetName: getSeatDisplayName(rollContext.targetSeatNumber)
+              }),
               "failure",
               { seatNumber: rollContext.targetSeatNumber, impactTargetSeatNumber: rollContext.targetSeatNumber }
             );
             context.rollContextBySeat.delete(event.seatNumber);
           } else if (context.currentAction?.actorSeatNumber === event.seatNumber) {
             setCombatFx(
-              `${getSeatDisplayName(event.seatNumber)} throws ${event.notation.toUpperCase()} for ${context.currentAction.card.name}`,
+              t(state.language, "combat.rollCard", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                notation: event.notation.toUpperCase()
+              }),
               "info",
               { seatNumber: event.seatNumber }
             );
@@ -599,7 +632,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         render();
         await showCombatFx(
           event,
-          event.summary,
+          t(state.language, "combat.actionPlayed", {
+            playerName: getSeatDisplayName(event.actorSeatNumber),
+            cardName: event.card.name
+          }),
           "info",
           1400,
           { seatNumber: event.actorSeatNumber }
@@ -614,22 +650,32 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           state.centerResponseCards = [...state.centerResponseCards, responseCard].slice(-3);
           render();
         }
-        let message = `${getSeatDisplayName(event.seatNumber)} responds`;
+        let message = t(state.language, "response.waiting");
         switch (event.responseChoice) {
           case "pass":
-            message = `${getSeatDisplayName(event.seatNumber)} passes`;
+            message = t(state.language, "combat.response.pass", {
+              playerName: getSeatDisplayName(event.seatNumber)
+            });
             break;
           case "resist":
-            message = `${getSeatDisplayName(event.seatNumber)} chooses to resist ${event.cardName ?? "the spell"}`;
+            message = t(state.language, "combat.response.resist", {
+              playerName: getSeatDisplayName(event.seatNumber)
+            });
             break;
           case "resistance_accrue":
-            message = `${getSeatDisplayName(event.seatNumber)} plays Resistance accrue`;
+            message = t(state.language, "combat.response.resistance_accrue", {
+              playerName: getSeatDisplayName(event.seatNumber)
+            });
             break;
           case "annulation":
-            message = `${getSeatDisplayName(event.seatNumber)} plays Annulation`;
+            message = t(state.language, "combat.response.annulation", {
+              playerName: getSeatDisplayName(event.seatNumber)
+            });
             break;
           case "mirror":
-            message = `${getSeatDisplayName(event.seatNumber)} reflects with Mirror!`;
+            message = t(state.language, "combat.response.mirror", {
+              playerName: getSeatDisplayName(event.seatNumber)
+            });
             break;
           default:
             break;
@@ -655,7 +701,11 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         }
         const bonus = event.bonus == null || event.bonus === 0 ? "" : ` ${event.bonus > 0 ? `+${event.bonus}` : `${event.bonus}`}`;
         setCombatFx(
-          `${getSeatDisplayName(event.seatNumber)} prepares a resistance roll${bonus} (threshold ${event.threshold ?? 10})`,
+          t(state.language, "combat.resistance.prepare", {
+            playerName: getSeatDisplayName(event.seatNumber),
+            bonus,
+            threshold: event.threshold ?? 10
+          }),
           "info",
           { seatNumber: event.seatNumber }
         );
@@ -678,10 +728,23 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           });
         }
         const resultText = failed
-          ? `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, failed resistance${event.fatalFailure ? " critically (double damage!)" : ""}`
+          ? event.fatalFailure
+            ? t(state.language, "combat.resistance.failedCritical", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                total: lastRoll?.total ?? "?"
+              })
+            : t(state.language, "combat.resistance.failed", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                total: lastRoll?.total ?? "?"
+              })
           : event.criticalSuccess
-            ? `${getSeatDisplayName(event.seatNumber)} threw 1, critical resistance! No damage!`
-            : `${getSeatDisplayName(event.seatNumber)} threw ${lastRoll?.total ?? "?"}, spell resisted`;
+            ? t(state.language, "combat.resistance.critical", {
+                playerName: getSeatDisplayName(event.seatNumber)
+              })
+            : t(state.language, "combat.resistance.success", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                total: lastRoll?.total ?? "?"
+              });
         await showCombatFx(
           event,
           resultText,
@@ -702,7 +765,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           });
         }
         setCombatFx(
-          `${event.cardName ?? "Attack"} is about to hit ${getSeatDisplayName(event.targetSeatNumber)}`,
+          t(state.language, "combat.attackIncoming", {
+            cardName: event.cardName ?? (state.language === "fr" ? "Attaque" : "Attack"),
+            targetName: getSeatDisplayName(event.targetSeatNumber)
+          }),
           "failure",
           { seatNumber: event.targetSeatNumber, impactTargetSeatNumber: event.targetSeatNumber }
         );
@@ -725,7 +791,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         }
         await showCombatFx(
           event,
-          `${getSeatDisplayName(event.seatNumber)} took ${amount} damage`,
+          t(state.language, "combat.tookDamage", {
+            playerName: getSeatDisplayName(event.seatNumber),
+            amount
+          }),
           "failure",
           1800,
           { seatNumber: event.seatNumber, damageAmount: amount }
@@ -737,7 +806,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       if (event.type === "hp_gain" && (event.amount ?? 0) > 0) {
         await showCombatFx(
           event,
-          `${getSeatDisplayName(event.seatNumber)} gains ${event.amount} HP`,
+          t(state.language, "combat.gainsHp", {
+            playerName: getSeatDisplayName(event.seatNumber),
+            amount: event.amount ?? 0
+          }),
           "success",
           1600,
           { seatNumber: event.seatNumber, healAmount: event.amount }
@@ -1223,7 +1295,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       }
     } catch (error) {
       await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
-      state.errorMessage = error instanceof Error ? error.message : "Unable to play card";
+      state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.playCard");
     }
 
     render();
@@ -1368,7 +1440,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               targetSeatNumber: nearestSeatNumber
             }, previousHandVisuals);
           } catch (error) {
-            state.errorMessage = error instanceof Error ? error.message : "Unable to play card";
+            state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.playCard");
           }
           render();
         })();
@@ -1462,10 +1534,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         connectSSE(state.instanceId);
       } else {
         applyMatchState(null);
-        state.leftMessage = "Your seat was replaced by a bot. Start a new Activity session to enter a new lobby.";
+        state.leftMessage = t(state.language, "left.replacedByBot");
       }
     } catch (error) {
-      state.errorMessage = error instanceof Error ? error.message : "Unable to leave match";
+      state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.leaveMatch");
     }
 
     render();
@@ -1483,7 +1555,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       state.chatExpanded = true;
       state.errorMessage = "";
     } catch (error) {
-      state.errorMessage = error instanceof Error ? error.message : "Unable to send message";
+      state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.sendMessage");
     }
 
     render();
@@ -1703,26 +1775,28 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
     if (state.leftMessage !== "") {
       diceController.hide();
-      rootElement.innerHTML = renderLeftMatchScreen(state.leftMessage);
+      rootElement.innerHTML = `${renderLanguageToggle(state.language)}${renderLeftMatchScreen(state.leftMessage, state.language)}`;
       return;
     }
 
     if (state.match == null) {
       diceController.hide();
-      rootElement.innerHTML = renderLoadingScreen();
+      rootElement.innerHTML = `${renderLanguageToggle(state.language)}${renderLoadingScreen(state.language)}`;
       return;
     }
 
     logNewDealerEvents();
+    const localizedMatch = localizeMatchState(state.match, state.language);
 
     const chatMarkup =
       state.match.status === "in_progress"
         ? state.chatHidden
-          ? renderHiddenChatButton()
+          ? renderHiddenChatButton(state.language)
           : renderChatView({
-              chatMessages: state.match.chatMessages,
+              chatMessages: localizedMatch.chatMessages,
               draft: state.chatDraft,
-              expanded: state.chatExpanded
+              expanded: state.chatExpanded,
+              language: state.language
             })
         : "";
 
@@ -1734,21 +1808,27 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     const baseView =
       state.match.status === "lobby"
         ? renderLobbyView({
-            match: state.match,
+            match: localizedMatch,
             localSeatNumber: state.localSeatNumber,
             currentUser: session.currentUser,
             sessionMode: session.mode,
-            errorMessage: state.errorMessage
+            errorMessage: state.errorMessage,
+            language: state.language
           })
         : renderTableView({
-            match: state.match,
+            language: state.language,
+            match: localizedMatch,
             localSeatNumber: state.localSeatNumber,
             displayedHpBySeat: state.displayedHpBySeat,
             presentationLockActive,
-            activeActionVisual: state.activeActionVisual,
-            centerResponseCards: state.centerResponseCards,
-            activeCardFlight: state.activeCardFlight,
-            activeReturnCardFlight: state.activeReturnCardFlight,
+            activeActionVisual: localizeActiveActionVisual(state.activeActionVisual),
+            centerResponseCards: localizeCardList(state.centerResponseCards),
+            activeCardFlight: state.activeCardFlight == null
+              ? null
+              : { ...state.activeCardFlight, card: localizeCardView(state.activeCardFlight.card, state.language) },
+            activeReturnCardFlight: state.activeReturnCardFlight == null
+              ? null
+              : { ...state.activeReturnCardFlight, card: localizeCardView(state.activeReturnCardFlight.card, state.language) },
             draggingCardInstanceId: state.draggingCardInstanceId,
             dragPointerX: state.dragPointerX,
             dragPointerY: state.dragPointerY,
@@ -1769,7 +1849,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             hiddenHandCardInstanceIds: state.hiddenHandCardInstanceIds
           });
     const kickTarget = state.match.seats.find((seat) => seat.seatNumber === state.confirmingKickSeatNumber);
-    rootElement.innerHTML = `${baseView}${renderLeaveConfirmationModal(state.confirmingLeave)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "")}`;
+    rootElement.innerHTML = `${renderLanguageToggle(state.language)}${baseView}${renderLeaveConfirmationModal(state.confirmingLeave, state.language)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName, state.language) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "", state.language)}`;
     drawPendingActionTargetOverlay(presentationLockActive);
     updateArrowOverlay();
 
@@ -1814,13 +1894,28 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       applyHoverSpread();
     });
 
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='set-language']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const nextLanguage = button.dataset.language;
+        if (nextLanguage !== "fr" && nextLanguage !== "en") {
+          return;
+        }
+        if (state.language === nextLanguage) {
+          return;
+        }
+        state.language = nextLanguage;
+        persistLanguage(nextLanguage);
+        render();
+      });
+    });
+
     rootElement.querySelector<HTMLButtonElement>("[data-action='add-bot']")?.addEventListener("click", async () => {
       try {
         logClient("lobby", "Host requested add bot");
         applyMatchState(await requestAddBot(state.instanceId, state.playerSessionToken));
         state.errorMessage = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to add bot";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.addBot");
       }
 
       render();
@@ -1890,7 +1985,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(await acknowledgePendingHandInspection(state.instanceId, state.playerSessionToken, {}));
         state.errorMessage = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to close hand inspection";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.closeInspection");
       }
 
       render();
@@ -1943,7 +2038,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(await resolvePendingBoardResetKeep(state.instanceId, state.playerSessionToken, { cardInstanceId }));
         state.errorMessage = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to keep the selected card";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.keepCard");
       }
       render();
     });
@@ -1967,7 +2062,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       const pendingSacrificeChoice = state.match?.game?.pendingSacrificeChoice;
       const parsed = Number(state.sacrificeAmountInput);
       if (pendingSacrificeChoice == null || !Number.isInteger(parsed) || parsed < 0 || parsed > pendingSacrificeChoice.maxAmount) {
-        state.errorMessage = `Enter a whole number between 0 and ${pendingSacrificeChoice?.maxAmount ?? 0}.`;
+        state.errorMessage = t(state.language, "error.sacrificeRange", { maxAmount: pendingSacrificeChoice?.maxAmount ?? 0 });
         render();
         return;
       }
@@ -1976,7 +2071,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(await resolvePendingSacrificeChoice(state.instanceId, state.playerSessionToken, { amount: parsed }));
         state.errorMessage = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to choose sacrifice amount";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.chooseSacrifice");
       }
       render();
     });
@@ -1999,7 +2094,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = "";
         state.inspectedSeatNumber = 0;
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to kick player";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.kickPlayer");
       } finally {
         state.confirmingKickSeatNumber = 0;
       }
@@ -2025,7 +2120,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         });
         state.confirmingDiscardCardInstanceId = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to discard card";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.discardCard");
       }
 
       render();
@@ -2040,7 +2135,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.displayedHpBySeat = buildDisplayedHpBySeat(state.match);
         state.seenGameEventIds = state.match?.game?.eventLog.map((event) => event.id) ?? [];
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to start match";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.startMatch");
       }
 
       render();
@@ -2056,7 +2151,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(await passForcedFollowUp(state.instanceId, state.playerSessionToken));
         state.errorMessage = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to pass forced follow-up";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.passFollowUp");
       }
 
       render();
@@ -2069,7 +2164,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           applyMatchState(await resolvePendingCurseRelease(state.instanceId, state.playerSessionToken, { choice }));
           state.errorMessage = "";
         } catch (error) {
-          state.errorMessage = error instanceof Error ? error.message : "Unable to resolve curse release";
+          state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.resolveCurse");
         }
 
         render();
@@ -2099,7 +2194,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(nextMatch);
         render();
       } catch (err) {
-        state.errorMessage = err instanceof Error ? err.message : "Failed to draw card";
+        state.errorMessage = err instanceof Error ? err.message : t(state.language, "error.drawCard");
         render();
       }
     });
@@ -2171,7 +2266,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(await respondToPendingAction(state.instanceId, state.playerSessionToken, { choice: "pass" }));
         state.errorMessage = "";
       } catch (error) {
-        state.errorMessage = error instanceof Error ? error.message : "Unable to pass";
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.passResponse");
       }
       render();
     });
@@ -2189,7 +2284,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           applyMatchState(await selectPendingObject(state.instanceId, state.playerSessionToken, { objectInstanceId }));
           state.errorMessage = "";
         } catch (error) {
-          state.errorMessage = error instanceof Error ? error.message : "Unable to select object";
+          state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.selectObject");
         }
         render();
       });
