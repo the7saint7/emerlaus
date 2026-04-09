@@ -1,0 +1,37 @@
+{
+  "instanceId": "i-1491528123953446962-gc-1491512261326667838-1491512262517592077",
+  "status": "in_progress",
+  "createdAt": "2026-04-08T20:00:19.529Z",
+  "startedAt": "2026-04-08T20:00:38.322Z",
+  "currentTurnSeatNumber": 1,
+  "currentTurnDisplayName": "the7saint7",
+  "turnNumber": 17,
+  "pendingAction": null,
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "the7saint7",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 2,
+      "statusCount": 0,
+      "hp": 41,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "ReaI (Bot)",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 2,
+      "statusCount": 1,
+      "hp": 84,
+      "isAlive": true
+    }
+  ]
+}

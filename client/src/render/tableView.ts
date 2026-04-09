@@ -3,7 +3,7 @@ import type { CardView, MatchState, PendingActionResponderState, SeatState } fro
 import { baseCardDefinitions } from "../../../shared/cards";
 import type { ArrowDragState, DragHoverTarget } from "../app/state";
 import type { AppLanguage } from "../i18n";
-import { t } from "../i18n";
+import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, t } from "../i18n";
 import type { OpponentAnchor } from "./opponentLayout";
 import { getOpponentAnchorsForPlayerCount } from "./opponentLayout";
 
@@ -56,6 +56,7 @@ interface TableViewParams {
   inspectedSeatNumber: number;
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
+  cardReferencePreviewCardId: string;
   sacrificeAmountInput: string;
   errorMessage: string;
   chatMarkup: string;
@@ -70,6 +71,10 @@ interface TableViewParams {
   impactTargetSeatNumbers: number[];
   returningHandCardInstanceId: string;
   hiddenHandCardInstanceIds: string[];
+  hoveredCardInstanceId: string;
+  hoveredCenterSlotKind: "" | "attack" | "response";
+  cardReferenceOpen: boolean;
+  showVictoryCelebration: boolean;
 }
 
 function escapeHtml(value: string): string {
@@ -283,27 +288,29 @@ function renderOpponentSeat(
   const inspectable = draggedCard == null && seat.controllerType === "human";
   const showKickButton = localIsHost && inspectedSeatNumber === seat.seatNumber && seat.controllerType === "human" && !seat.isHost;
   const currentTurn = currentTurnSeatNumber === seat.seatNumber;
-  const hpBarPercent = Math.max(0, Math.min(100, (displayedHp / 50) * 100));
+  const horizontalAnchorClass =
+    anchor.x <= 24 ? "table-seat--edge-left"
+    : anchor.x >= 76 ? "table-seat--edge-right"
+    : "table-seat--center-x";
+  const verticalAnchorClass =
+    anchor.y <= 24 ? "table-seat--edge-top"
+    : anchor.y >= 76 ? "table-seat--edge-bottom"
+    : "table-seat--center-y";
   return `
     <article
-      class="table-seat ${targetable ? "table-seat--targetable" : ""} ${currentTurn ? "table-seat--current-turn" : ""} ${impactActive ? "table-seat--impact" : ""} ${isHoverTarget(hoverTarget, "seat", seat.seatNumber) ? "table-seat--hovered" : ""} ${healBurstActive ? "table-seat--heal-active" : ""}"
+      class="table-seat ${horizontalAnchorClass} ${verticalAnchorClass} ${seat.isAlive === false ? "table-seat--dead" : ""} ${targetable ? "table-seat--targetable" : ""} ${currentTurn ? "table-seat--current-turn" : ""} ${impactActive ? "table-seat--impact" : ""} ${isHoverTarget(hoverTarget, "seat", seat.seatNumber) ? "table-seat--hovered" : ""} ${healBurstActive ? "table-seat--heal-active" : ""}"
       style="left:${anchor.x}%; top:${anchor.y}%;"
       data-seat-area="true"
       data-seat-number="${seat.seatNumber}"
       ${targetable ? `data-drop-target="seat" data-seat-number="${seat.seatNumber}"` : ""}
     >
-      <div class="seat-health-row">
-        <div class="seat-health-bar">
-          <span style="width:${hpBarPercent}%"></span>
-        </div>
-        <span class="seat-health-numbers">${displayedHp}</span>
-    </div>
-    <img class="seat-avatar seat-avatar--table" src="${seat.avatarUrl}" alt="${escapeHtml(seat.displayName)}" />
+      <img class="seat-avatar seat-avatar--table" src="${seat.avatarUrl}" alt="${escapeHtml(seat.displayName)}" />
       <div class="seat-details-row">
+        <div class="seat-hp-chip">${displayedHp}</div>
         <div class="seat-meta">
           <strong>${escapeHtml(seat.displayName)}</strong>
           <span>${t(language ?? "en", "stat.power")} ${seat.powerLevel ?? 1}</span>
-          ${currentTurnSeatNumber === seat.seatNumber ? `<span class="seat-turn-indicator">${t(language ?? "en", "table.currentTurn")}</span>` : ""}
+          ${currentTurnSeatNumber === seat.seatNumber ? `<span class="seat-turn-indicator seat-turn-indicator--thinking">${t(language ?? "en", "table.thinking")}<span class="seat-thinking-dots" aria-hidden="true">...</span></span>` : ""}
           ${pendingResponder != null ? `<span class="seat-response-chip seat-response-chip--${pendingResponder.choice}">${responseLabel(pendingResponder.choice, language ?? "en")}</span>` : ""}
         </div>
         ${renderSeatInlineObjects(seat, draggedCard, hoverTarget, language ?? "en")}
@@ -323,6 +330,7 @@ function renderHandCards(
   arrowDragCardInstanceId: string,
   returningHandCardInstanceId: string,
   hiddenHandCardInstanceIds: string[],
+  hoveredCardInstanceId: string,
   pendingActionActive: boolean,
   isLocalTurn: boolean,
   language: AppLanguage
@@ -331,6 +339,12 @@ function renderHandCards(
   const FAN_RADIUS = 700;
   const FAN_SPREAD_DEG = total <= 1 ? 0 : Math.min(34, 8 + (total - 2) * 4);
   const CUT_OFF_PX = 80; // hides the defense band at card bottom
+  const SPREAD_PX = 110;
+  const EDGE_SPREAD_MULTIPLIER = 1.5;
+  const spreadAnchorCardInstanceId = arrowDragCardInstanceId || draggingCardInstanceId || hoveredCardInstanceId;
+  const spreadAnchorIndex = spreadAnchorCardInstanceId === ""
+    ? -1
+    : hand.findIndex((card) => card.instanceId === spreadAnchorCardInstanceId);
 
   // Detect newly dealt cards and keep the animation class alive for the full duration,
   // even if the component re-renders multiple times before the animation finishes.
@@ -357,6 +371,7 @@ function renderHandCards(
     const selected = card.instanceId === draggingCardInstanceId && arrowDragCardInstanceId === "";
     // Keep the arrow-source card in its zoomed hover state while aiming
     const arrowActive = card.instanceId === arrowDragCardInstanceId;
+    const hovered = hoveredCardInstanceId !== "" && card.instanceId === hoveredCardInstanceId && !selected && !arrowActive;
     // During a pending action only response cards (canPlay) are draggable.
     // On your own turn, ALL cards can be dragged so reaction-only cards (e.g.
     // annulation, resistance-accrue) can at least be discarded.
@@ -370,6 +385,14 @@ function renderHandCards(
     const fanX = Math.sin(angleRad) * FAN_RADIUS;
     const fanY = (1 - Math.cos(angleRad)) * FAN_RADIUS + CUT_OFF_PX;
     const fanRotate = angleRad * 180 / Math.PI;
+    const spreadMagnitude =
+      spreadAnchorIndex >= 0 && (spreadAnchorIndex === 0 || spreadAnchorIndex === total - 1)
+        ? SPREAD_PX * EDGE_SPREAD_MULTIPLIER
+        : SPREAD_PX;
+    const spreadOffset =
+      spreadAnchorIndex >= 0 && card.instanceId !== spreadAnchorCardInstanceId
+        ? Math.sign(i - spreadAnchorIndex) * spreadMagnitude
+        : 0;
     // Rightmost card (dealt last) sits on top
     const fanZ = i + 1;
     const animUntil = _dealAnimatingUntil.get(card.instanceId);
@@ -380,8 +403,8 @@ function renderHandCards(
 
     return `
       <article
-        class="hand-card ${isNew ? "hand-card--new" : ""} ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""} ${returning ? "hand-card--returning-target" : ""} ${overlayHidden ? "hand-card--overlay-hidden" : ""}"
-        style="--fan-x:${fanX.toFixed(1)}px;--fan-y:${fanY.toFixed(1)}px;--fan-rotate:${fanRotate.toFixed(2)}deg;--fan-z:${fanZ};${isNew ? `--deal-elapsed:${dealElapsed.toFixed(0)}ms;` : ""}"
+        class="hand-card ${isNew ? "hand-card--new" : ""} ${card.canPlay ? "hand-card--playable" : ""} ${selected ? "hand-card--selected" : ""} ${hovered ? "hand-card--js-hovered" : ""} ${arrowActive ? "hand-card--arrow-active" : ""} ${responsePlayable ? "hand-card--response-playable" : ""} ${returning ? "hand-card--returning-target" : ""} ${overlayHidden ? "hand-card--overlay-hidden" : ""}"
+        style="--fan-x:${(fanX + spreadOffset).toFixed(1)}px;--fan-y:${fanY.toFixed(1)}px;--fan-rotate:${fanRotate.toFixed(2)}deg;--fan-z:${fanZ};${isNew ? `--deal-elapsed:${dealElapsed.toFixed(0)}ms;` : ""}"
         data-card-instance-id="${card.instanceId}"
         data-base-fan-x="${fanX.toFixed(1)}"
       >
@@ -452,7 +475,8 @@ function renderCenterPlayArea(
   impactActive: boolean,
   presentationLockActive: boolean,
   activeActionVisual: TableViewParams["activeActionVisual"],
-  centerResponseCards: TableViewParams["centerResponseCards"]
+  centerResponseCards: TableViewParams["centerResponseCards"],
+  hoveredCenterSlotKind: TableViewParams["hoveredCenterSlotKind"]
 ): string {
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
   const forcedFollowUp = presentationLockActive ? undefined : match.game?.forcedFollowUp;
@@ -484,19 +508,38 @@ function renderCenterPlayArea(
 
   const playSlotCompatible = isPlaySlotCompatible(draggedCard);
   const responseSlotCompatible = displayedAction != null && draggedCard?.categoryCode === "CA" && draggedCard.canPlay;
-  const isDropReady = responseSlotCompatible && isHoverTarget(hoverTarget, "response-slot");
   // Show a Pass button only when the player is the current responder and has CA cards to choose from
   // (auto-pass fires when they have no CA cards; this lets them deliberately pass despite having options)
   const options = presentationLockActive ? [] : match.game?.pendingResponseOptions ?? [];
   const showPassButton = options.some((option) => option.choice === "pass");
   const localSeat = getLocalSeat(match, localSeatNumber);
+  const pendingCurseRelease = presentationLockActive ? undefined : match.game?.pendingCurseRelease;
+  const localPlayableCardCount = localSeat?.hand?.filter((card) => card.canPlay).length ?? 0;
+  const showNoPlayableDiscardPrompt =
+    localSeat?.seatNumber === match.game?.currentTurnSeatNumber
+    && pendingAction == null
+    && forcedFollowUp == null
+    && pendingCurseRelease == null
+    && (localSeat?.hand?.length ?? 0) > 0
+    && localPlayableCardCount === 0;
+  const discardSlotCompatible = showNoPlayableDiscardPrompt && draggedCard != null;
+  const centerDropTargetKind =
+    responseSlotCompatible
+      ? "response-slot"
+      : discardSlotCompatible
+        ? "discard"
+        : playSlotCompatible
+          ? "play-slot"
+          : undefined;
+  const isDropReady =
+    (responseSlotCompatible && isHoverTarget(hoverTarget, "response-slot"))
+    || (discardSlotCompatible && isHoverTarget(hoverTarget, "discard"));
   const localForcedCards = localSeat?.hand?.filter((card) =>
     card.canPlay && forcedFollowUp?.allowedCategories.includes(card.categoryCode)
   ) ?? [];
   const showForcedPassButton =
     forcedFollowUp?.actorSeatNumber === localSeatNumber &&
     localForcedCards.length === 0;
-  const pendingCurseRelease = presentationLockActive ? undefined : match.game?.pendingCurseRelease;
   const showCurseReleaseOptions = pendingCurseRelease?.seatNumber === localSeatNumber;
   const forcedPrompt = forcedFollowUp == null
     ? ""
@@ -521,10 +564,18 @@ function renderCenterPlayArea(
   const attackSlotClass = [
     "center-play-slot",
     singleStackCards.length > 0 || splitView ? "center-play-slot--filled" : "",
+    hoveredCenterSlotKind === "attack" ? "center-play-slot--js-hovered" : "",
     impactActive ? "center-play-slot--impact" : "",
-    (playSlotCompatible || responseSlotCompatible) ? "center-play-slot--targetable" : "",
-    (isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot")) ? "center-play-slot--hovered" : "",
+    (playSlotCompatible || responseSlotCompatible || discardSlotCompatible) ? "center-play-slot--targetable" : "",
+    (isHoverTarget(hoverTarget, "play-slot") || isHoverTarget(hoverTarget, "response-slot") || isHoverTarget(hoverTarget, "discard")) ? "center-play-slot--hovered" : "",
     isDropReady ? "center-play-slot--drop-ready" : ""
+  ].filter(Boolean).join(" ");
+
+  const responseSlotClass = [
+    "center-play-slot",
+    "center-play-slot--filled",
+    "center-play-slot--response-cards",
+    hoveredCenterSlotKind === "response" ? "center-play-slot--js-hovered" : ""
   ].filter(Boolean).join(" ");
 
   const renderSingleCard = (card: CardView, isTop: boolean, offset: number, lift: number) => `
@@ -541,9 +592,9 @@ function renderCenterPlayArea(
       <div class="combat-fx-banner ${activeCombatFx != null ? `combat-fx-banner--${activeCombatFx.tone}` : "combat-fx-banner--idle"}">${activeCombatFx != null ? escapeHtml(activeCombatFx.message) : "\u00a0"}</div>
       ${forcedPrompt !== "" ? `<div class="forced-follow-up-banner">${escapeHtml(forcedPrompt)}</div>` : ""}
       ${cursePrompt !== "" ? `<div class="forced-follow-up-banner">${escapeHtml(cursePrompt)}</div>` : ""}
-      <div class="center-play-slots${splitView ? " center-play-slots--split" : ""}">
+        <div class="center-play-slots${splitView ? " center-play-slots--split" : ""}">
         ${splitView ? `
-          <article class="center-play-slot center-play-slot--filled center-play-slot--response-cards">
+          <article class="${responseSlotClass}" data-center-hover-slot="response">
             <div class="center-card-stack">
               ${activeResponseCards.map((card, i) => renderSingleCard(card, i === activeResponseCards.length - 1, i * 4, i * 4)).join("")}
             </div>
@@ -551,9 +602,10 @@ function renderCenterPlayArea(
         ` : ""}
         <article
           class="${attackSlotClass}"
+          data-center-hover-slot="attack"
           data-center-card-stack="true"
           ${displayedAction != null ? `data-pending-card-center="true"` : ""}
-          ${(responseSlotCompatible || playSlotCompatible) ? `data-drop-target="${responseSlotCompatible ? "response-slot" : "play-slot"}"` : ""}
+          ${centerDropTargetKind != null ? `data-drop-target="${centerDropTargetKind}"` : ""}
         >
           ${splitView
             ? `
@@ -693,6 +745,77 @@ function renderHealBurst(large = false): string {
       ${particles.map(({ x, delay, size, dist, dur }) =>
         `<span class="heal-particle" style="--hx:${x};--hdelay:${delay};--hsize:${size};--hdist:${dist};--hdur:${dur}">+</span>`
       ).join("")}
+    </div>
+  `;
+}
+
+function seededUnit(seed: number): number {
+  const raw = Math.sin(seed * 12.9898) * 43758.5453123;
+  return raw - Math.floor(raw);
+}
+
+function renderVictoryCelebration(match: MatchState, language: AppLanguage, enabled: boolean): string {
+  if (!enabled) {
+    return "";
+  }
+
+  const winnerSeatNumber = match.game?.winnerSeatNumber;
+  if (winnerSeatNumber == null) {
+    return "";
+  }
+
+  const winnerSeat = match.seats.find((seat) => seat.seatNumber === winnerSeatNumber);
+  if (winnerSeat == null) {
+    return "";
+  }
+
+  const winnerName = winnerSeat.displayName;
+  const labelPool = [
+    "GG",
+    "GGEZ",
+    `${winnerName} WINS!!!`,
+    "WINNER!!!",
+    winnerName
+  ];
+  const floatCount = 18;
+  const heroText = language === "fr" ? `${winnerName} gagne !` : `${winnerName} wins!`;
+
+  return `
+    <div class="victory-celebration" aria-hidden="true">
+      <div class="victory-celebration__hero">
+        <img class="victory-celebration__avatar" src="${winnerSeat.avatarUrl}" alt="${escapeHtml(winnerName)}" />
+        <div class="victory-celebration__hero-copy">
+          <strong>${escapeHtml(winnerName)}</strong>
+          <span>${escapeHtml(heroText)}</span>
+        </div>
+      </div>
+      ${Array.from({ length: floatCount }, (_, index) => {
+        const contentSeed = winnerSeatNumber * 100 + index;
+        const label = labelPool[Math.floor(seededUnit(contentSeed + 1) * labelPool.length)] ?? "WINNER!!!";
+        const useAvatar = seededUnit(contentSeed + 2) > 0.72;
+        const x = (4 + seededUnit(contentSeed + 3) * 90).toFixed(2);
+        const y = (14 + seededUnit(contentSeed + 4) * 70).toFixed(2);
+        const driftX = (-70 + seededUnit(contentSeed + 5) * 140).toFixed(1);
+        const travelY = (80 + seededUnit(contentSeed + 6) * 180).toFixed(1);
+        const scale = (0.75 + seededUnit(contentSeed + 7) * 1.25).toFixed(2);
+        const rotate = (seededUnit(contentSeed + 8) * 30).toFixed(1);
+        const duration = (3.4 + seededUnit(contentSeed + 9) * 3.2).toFixed(2);
+        const delay = (-seededUnit(contentSeed + 10) * 6.5).toFixed(2);
+        const opacity = (0.54 + seededUnit(contentSeed + 11) * 0.36).toFixed(2);
+        return `
+          <div
+            class="victory-float ${useAvatar ? "victory-float--avatar" : "victory-float--text"}"
+            style="left:${x}%; top:${y}%; --victory-drift-x:${driftX}px; --victory-travel-y:${travelY}px; --victory-scale:${scale}; --victory-rotate:${rotate}deg; --victory-duration:${duration}s; --victory-delay:${delay}s; --victory-opacity:${opacity};"
+          >
+            ${useAvatar
+              ? `
+                <img src="${winnerSeat.avatarUrl}" alt="${escapeHtml(winnerName)}" />
+                <span>${escapeHtml(winnerName)}</span>
+              `
+              : `<span>${escapeHtml(label)}</span>`}
+          </div>
+        `;
+      }).join("")}
     </div>
   `;
 }
@@ -973,6 +1096,104 @@ function renderPendingSacrificeChoiceModal(
   `;
 }
 
+function renderCardReferenceModal(
+  language: AppLanguage,
+  previewCardId: string,
+  open: boolean
+): string {
+  if (!open) {
+    return "";
+  }
+
+  const collator = new Intl.Collator(language, { sensitivity: "base" });
+  const catalogCards = baseCardDefinitions.map((definition) => {
+    const localizedText = definition.localization?.[language];
+    return {
+      cardId: definition.id,
+      name: localizedText?.name ?? definition.name,
+      description: localizedText?.description ?? definition.description,
+      imageUrl: getLocalizedCardImageUrl(
+        definition.id,
+        `/${(definition.image.importedAssetPath ?? "").replace(/^client[\\/]+public[\\/]+/, "").replace(/\\/g, "/")}`,
+        language
+      ),
+      categoryCode: definition.category.code,
+      categoryLabel: getLocalizedCategoryLabel(definition.category.code, language),
+      defenseBand: definition.defenseBand
+    };
+  }).sort((left, right) => {
+    const categoryComparison = collator.compare(left.categoryLabel, right.categoryLabel);
+    if (categoryComparison !== 0) {
+      return categoryComparison;
+    }
+
+    return collator.compare(left.name, right.name);
+  });
+
+  const previewCard =
+    catalogCards.find((card) => card.cardId === previewCardId)
+    ?? catalogCards[0];
+
+  if (previewCard == null) {
+    return "";
+  }
+
+  return `
+    <section class="telepathy-overlay">
+      <article class="telepathy-panel card-reference-panel">
+        <div class="telepathy-panel__header">
+          <div>
+            <p class="eyebrow">${t(language, "reference.title")}</p>
+            <h2>${t(language, "reference.title")}</h2>
+            <p>${t(language, "reference.body")}</p>
+          </div>
+          <button type="button" class="action-button action-button--secondary" data-action="close-card-reference">${t(language, "reference.close")}</button>
+        </div>
+        <div class="card-reference-grid">
+          <div class="card-reference-list telepathy-list" data-card-reference-list="true">
+            ${catalogCards.map((card) => `
+              <button
+                type="button"
+                class="telepathy-card ${previewCard.cardId === card.cardId ? "telepathy-card--active" : ""}"
+                data-action="preview-reference-card"
+                data-card-id="${card.cardId}"
+              >
+                <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                <div class="telepathy-card__meta">
+                  <strong>${escapeHtml(card.name)}</strong>
+                  <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                </div>
+              </button>
+            `).join("")}
+          </div>
+          <div class="telepathy-preview card-reference-preview">
+            <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+            <div class="telepathy-preview__meta">
+              <strong>${escapeHtml(previewCard.name)}</strong>
+              <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
+              <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
+              ${renderDefenseTooltip({
+                instanceId: previewCard.cardId,
+                cardId: previewCard.cardId,
+                name: previewCard.name,
+                description: previewCard.description,
+                imageUrl: previewCard.imageUrl,
+                categoryCode: previewCard.categoryCode,
+                categoryLabel: previewCard.categoryLabel,
+                selectionMode: "confirm",
+                targets: "none",
+                defenseBand: previewCard.defenseBand,
+                canPlay: false,
+                zone: "discard"
+              }, language)}
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  `;
+}
+
 export function renderTableView({
   language,
   match,
@@ -991,6 +1212,7 @@ export function renderTableView({
   inspectedSeatNumber,
   telepathyPreviewCardInstanceId,
   boardResetKeepPreviewCardInstanceId,
+  cardReferencePreviewCardId,
   sacrificeAmountInput,
   errorMessage,
   chatMarkup,
@@ -1000,7 +1222,11 @@ export function renderTableView({
   activeHealBursts,
   impactTargetSeatNumbers,
   returningHandCardInstanceId,
-  hiddenHandCardInstanceIds
+  hiddenHandCardInstanceIds,
+  hoveredCardInstanceId,
+  hoveredCenterSlotKind,
+  cardReferenceOpen,
+  showVictoryCelebration
 }: TableViewParams): string {
   const localSeat = getLocalSeat(match, localSeatNumber);
   const localIsHost = localSeat?.isHost === true;
@@ -1081,11 +1307,18 @@ export function renderTableView({
           >
             ${t(language, "table.leaveMatch")}
           </button>
+          <button
+            data-action="open-card-reference"
+            class="action-button action-button--secondary"
+          >
+            ${t(language, "table.cardReference")}
+          </button>
         </div>
 
         <div class="table-surface ${isLocalTurn ? "table-surface--local-turn" : ""} ${impactTargetSeatNumbers.length > 0 ? "table-surface--impact" : ""}">
           <svg class="action-target-overlay" data-action-target-overlay="true" aria-hidden="true"></svg>
-          ${renderCenterPlayArea(language, localizedMatch, localSeatNumber, draggedCard, dragHoverTarget, activeCombatFx, impactTargetSeatNumbers.length > 0, presentationLockActive, activeActionVisual, centerResponseCards)}
+          ${renderVictoryCelebration(localizedMatch, language, showVictoryCelebration)}
+          ${renderCenterPlayArea(language, localizedMatch, localSeatNumber, draggedCard, dragHoverTarget, activeCombatFx, impactTargetSeatNumbers.length > 0, presentationLockActive, activeActionVisual, centerResponseCards, hoveredCenterSlotKind)}
           ${eventLogMarkup}
           ${seatMarkup}
           ${activeCardFlight != null ? `
@@ -1098,7 +1331,11 @@ export function renderTableView({
             </div>
           ` : ""}
 
-          <section class="local-hand-panel ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumbers.includes(localSeatNumber) ? "local-hand-panel--impact" : ""} ${activeHealBursts[localSeatNumber] != null ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+          <section class="local-hand-panel ${localSeat?.isAlive === false ? "local-hand-panel--dead" : ""} ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumbers.includes(localSeatNumber) ? "local-hand-panel--impact" : ""} ${activeHealBursts[localSeatNumber] != null ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+            <aside class="local-hp-panel">
+              <strong>${localDisplayedHp}</strong>
+              ${activeDamageBursts[localSeatNumber] != null ? `<div class="local-damage-burst">-${activeDamageBursts[localSeatNumber]} ${t(language, "stat.hp")}</div>` : ""}
+            </aside>
             ${activeHealBursts[localSeatNumber] != null ? renderHealBurst(true) : ""}
             ${renderLocalStatuses(localSeat?.statuses ?? [], "local-status-strip", language)}
             ${renderLocalObjects((localSeat?.objects ?? []).filter(c => c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-rings-strip", language)}
@@ -1108,7 +1345,7 @@ export function renderTableView({
               </div>
             ` : ""}
             <div class="hand-fan">
-              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", returningHandCardInstanceId, hiddenHandCardInstanceIds, pendingAction != null, isLocalTurn || forcedFollowUp?.actorSeatNumber === localSeatNumber, language)}
+              ${renderHandCards(localSeat?.hand ?? [], draggingCardInstanceId, arrowDrag?.cardInstanceId ?? "", returningHandCardInstanceId, hiddenHandCardInstanceIds, hoveredCardInstanceId, pendingAction != null, isLocalTurn || forcedFollowUp?.actorSeatNumber === localSeatNumber, language)}
             </div>
             ${renderLocalObjects((localSeat?.objects ?? []).filter(c => !c.cardId.startsWith("anneau")), draggedCard, dragHoverTarget, localSeatNumber, "local-equipment-strip", language)}
             ${(draggingCardInstanceId || showNoPlayableDiscardPrompt) ? `
@@ -1120,15 +1357,11 @@ export function renderTableView({
           </section>
         </div>
 
-        <aside class="local-hp-panel">
-          <strong>${localDisplayedHp}</strong>
-          ${activeDamageBursts[localSeatNumber] != null ? `<div class="local-damage-burst">-${activeDamageBursts[localSeatNumber]} ${t(language, "stat.hp")}</div>` : ""}
-        </aside>
-
         ${renderPendingObjectChoice(localizedMatch, localSeatNumber)}
         ${renderTelepathyInspectionModal(localizedMatch, localSeatNumber, telepathyPreviewCardInstanceId)}
         ${renderBoardResetKeepModal(localizedMatch, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
         ${renderPendingSacrificeChoiceModal(localizedMatch, localSeatNumber, sacrificeAmountInput)}
+        ${renderCardReferenceModal(language, cardReferencePreviewCardId, cardReferenceOpen)}
         ${chatMarkup}
         ${renderDragPreview(normalDragPreviewCard, dragPointerX, dragPointerY)}
         ${renderReturnCardFlight(activeReturnCardFlight)}

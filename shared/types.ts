@@ -1,4 +1,4 @@
-import type { CardCategoryCode, DefenseBandRules } from "./cards";
+import type { CardCategoryCode, DefenseBandRules } from "./cards/index.js";
 
 export type MatchStatus = "lobby" | "in_progress" | "finished";
 
@@ -135,6 +135,7 @@ export interface PendingActionResponderState {
   seatNumber: number;
   state: "pending" | "locked";
   choice: ResponseChoiceType;
+  committedCardCount?: number;
   card?: CardView;
   cards?: CardView[];
 }
@@ -286,6 +287,7 @@ export interface PlayCardRequest {
 
 export interface PendingActionResponseRequest {
   choice: Exclude<ResponseChoiceType, "pending">;
+  annulationCount?: number;
 }
 
 export interface PendingObjectChoiceRequest {

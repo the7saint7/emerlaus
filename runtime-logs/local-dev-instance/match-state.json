@@ -1,0 +1,48 @@
+{
+  "instanceId": "local-dev-instance",
+  "status": "in_progress",
+  "createdAt": "2026-04-08T10:36:46.912Z",
+  "startedAt": "2026-04-08T10:36:53.214Z",
+  "currentTurnSeatNumber": 1,
+  "currentTurnDisplayName": "Browser Player 765",
+  "turnNumber": 4,
+  "pendingAction": null,
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "Browser Player 765",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "Bot 1",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 54,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 3,
+      "displayName": "Bot 2",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 50,
+      "isAlive": true
+    }
+  ]
+}

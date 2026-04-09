@@ -1,4 +1,4 @@
-import type { MatchState, SeatState } from "./types";
+import type { MatchState, SeatState } from "./types.js";
 
 export function sortSeatsAscending(seats: SeatState[]): SeatState[] {
   return [...seats].sort((left, right) => left.seatNumber - right.seatNumber);

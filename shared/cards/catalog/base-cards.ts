@@ -1,4 +1,4 @@
-import type { BaseCardDefinition, CardCategoryCode, DefenseBandRules } from "../types";
+import type { BaseCardDefinition, CardCategoryCode, DefenseBandRules } from "../types.js";
 
 const englishCardLocalizationById = {
   "anneau-de-puissance-1": {
@@ -4058,9 +4058,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D4",
-            "scaleBy": "multiply_power"
+            "powerSource": "self"
           },
           "grantsHalfDamageOnResistance": false
         }

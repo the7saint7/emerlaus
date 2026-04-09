@@ -1,20 +1,17 @@
 export interface ChatDomSnapshot {
   previousScrollTop: number;
-  selectionEnd: number | null;
-  selectionStart: number | null;
-  shouldRestoreFocus: boolean;
+  previousBottomOffset: number;
   shouldStickToBottom: boolean;
 }
 
 export function captureChatDomSnapshot(rootElement: HTMLDivElement): ChatDomSnapshot {
-  const previousChatInput = rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']");
   const previousChatHistory = rootElement.querySelector<HTMLElement>("[data-chat-history='true']");
 
   return {
     previousScrollTop: previousChatHistory?.scrollTop ?? 0,
-    selectionEnd: previousChatInput?.selectionEnd ?? null,
-    selectionStart: previousChatInput?.selectionStart ?? null,
-    shouldRestoreFocus: previousChatInput != null && document.activeElement === previousChatInput,
+    previousBottomOffset: previousChatHistory == null
+      ? 0
+      : previousChatHistory.scrollHeight - previousChatHistory.scrollTop,
     shouldStickToBottom:
       previousChatHistory != null &&
       previousChatHistory.scrollHeight - previousChatHistory.scrollTop - previousChatHistory.clientHeight < 36
@@ -24,29 +21,14 @@ export function captureChatDomSnapshot(rootElement: HTMLDivElement): ChatDomSnap
 export function restoreChatDomState(
   rootElement: HTMLDivElement,
   snapshot: ChatDomSnapshot,
-  expanded: boolean
+  _expanded: boolean
 ): void {
   const chatHistory = rootElement.querySelector<HTMLElement>("[data-chat-history='true']");
-  if (chatHistory != null && expanded) {
+  if (chatHistory != null) {
     if (snapshot.shouldStickToBottom) {
       chatHistory.scrollTop = chatHistory.scrollHeight;
     } else {
-      chatHistory.scrollTop = snapshot.previousScrollTop;
+      chatHistory.scrollTop = Math.max(0, chatHistory.scrollHeight - snapshot.previousBottomOffset);
     }
-  }
-
-  if (!snapshot.shouldRestoreFocus) {
-    return;
-  }
-
-  const currentChatInput = rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']");
-  currentChatInput?.focus();
-
-  if (
-    currentChatInput != null &&
-    snapshot.selectionStart != null &&
-    snapshot.selectionEnd != null
-  ) {
-    currentChatInput.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
   }
 }

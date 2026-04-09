@@ -1,2 +1,2 @@
-export * from "./types";
-export * from "./baseCardDefinitions";
+export * from "./types.js";
+export * from "./baseCardDefinitions.js";

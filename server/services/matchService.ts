@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { buildAvatarDataUrl } from "../../shared/avatar.js";
 import {
   assignHost,
   findNextOpenSeat,
   getSeatByUserId,
   seedSkeletonStats
-} from "../../shared/matchRules";
-import { baseCardDefinitionById } from "../../shared/cards";
+} from "../../shared/matchRules.js";
+import { baseCardDefinitionById } from "../../shared/cards/index.js";
 import type {
   AddBotRequest,
   AnnounceDiceRollRequest,
@@ -19,9 +20,8 @@ import type {
   PendingActionResponseRequest,
   PlayCardRequest,
   SeatState,
-  SendChatMessageRequest,
   StartMatchRequest
-} from "../../shared/types";
+} from "../../shared/types.js";
 import {
   acknowledgePendingHandInspection,
   appendServerDebugLog,
@@ -31,17 +31,18 @@ import {
   getCurrentTurnSeat,
   initializeMatchGame,
   passForcedFollowUp,
+  passTurnWithoutPlaying,
   playCardFromHand,
   resolvePendingBoardResetKeep,
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
   respondToPendingAction,
   selectPendingObject
-} from "./gameEngine";
-import type { StoredMatchState } from "./gameEngineTypes";
-import { getMatch, getOrCreateMatch, saveMatch } from "../store/matchStore";
-import { issuePlayerSession, revokePlayerSession } from "../store/playerSessionStore";
-import { notifyMatchUpdated } from "../store/sseStore";
+} from "./gameEngine.js";
+import type { StoredMatchState } from "./gameEngineTypes.js";
+import { getMatch, getOrCreateMatch, saveMatch } from "../store/matchStore.js";
+import { issuePlayerSession, revokePlayerSession } from "../store/playerSessionStore.js";
+import { notifyMatchUpdated } from "../store/sseStore.js";
 
 const MAX_CHAT_MESSAGES = 100;
 const botTurnTimers = new Map<string, NodeJS.Timeout>();
@@ -55,7 +56,7 @@ function getBotResponderTimerKey(instanceId: string, seatNumber: number): string
 }
 
 function buildAvatarFallback(displayName: string): string {
-  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(displayName)}`;
+  return buildAvatarDataUrl(displayName);
 }
 
 function cleanupReconnectedBotSeats(match: StoredMatchState): void {
@@ -257,7 +258,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
             notifyMatchUpdated(instanceId);
           }
           scheduleBotTurnIfNeeded(instanceId);
-        }, 1000 + Math.floor(Math.random() * 1000));
+        }, 500 + Math.floor(Math.random() * 500));
         botTurnTimers.set(timerKey, timer);
       }
     }
@@ -283,7 +284,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
         continue;
       }
 
-      const delayMs = 1000 + Math.floor(Math.random() * 2001);
+      const delayMs = 500 + Math.floor(Math.random() * 1001);
       const timer = setTimeout(() => {
         botTurnTimers.delete(timerKey);
         const latestMatch = getMatch(instanceId);
@@ -299,10 +300,18 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
           return;
         }
 
-        const botResponse = buildBotPendingResponse(latestMatch, responderSeat.seatNumber);
-        if (botResponse != null) {
-          respondToPendingAction(latestMatch, latestResponderSeat.userId, botResponse);
-          saveMatch(latestMatch);
+        try {
+          const botResponse = buildBotPendingResponse(latestMatch, responderSeat.seatNumber);
+          if (botResponse != null) {
+            respondToPendingAction(latestMatch, latestResponderSeat.userId, botResponse);
+            saveMatch(latestMatch);
+          }
+        } catch (error) {
+          appendServerDebugLog(
+            latestMatch,
+            "bot_ai",
+            `Seat ${latestResponderSeat.seatNumber} response failed: ${error instanceof Error ? error.message : "Unknown error"}`
+          );
         }
 
         scheduleBotTurnIfNeeded(instanceId);
@@ -330,7 +339,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
             notifyMatchUpdated(instanceId);
           }
           scheduleBotTurnIfNeeded(instanceId);
-        }, 900 + Math.floor(Math.random() * 800));
+        }, 450 + Math.floor(Math.random() * 400));
         botTurnTimers.set(timerKey, timer);
       }
     }
@@ -349,17 +358,26 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
           const latestForced = latestMatch?.internalGame?.forcedFollowUp;
           const latestActor = latestMatch?.seats.find((seat) => seat.seatNumber === latestForced?.actorSeatNumber);
           if (latestMatch != null && latestForced != null && latestActor?.controllerType === "bot") {
-            const botRequest = buildBotPlayRequest(latestMatch, latestActor.seatNumber);
-            if (botRequest != null) {
-              playCardFromHand(latestMatch, latestActor.userId, botRequest);
-            } else {
+            try {
+              const botRequest = buildBotPlayRequest(latestMatch, latestActor.seatNumber);
+              if (botRequest != null) {
+                playCardFromHand(latestMatch, latestActor.userId, botRequest);
+              } else {
+                passForcedFollowUp(latestMatch, latestActor.userId);
+              }
+            } catch (error) {
+              appendServerDebugLog(
+                latestMatch,
+                "bot_ai",
+                `Seat ${latestActor.seatNumber} forced follow-up failed: ${error instanceof Error ? error.message : "Unknown error"}`
+              );
               passForcedFollowUp(latestMatch, latestActor.userId);
             }
             saveMatch(latestMatch);
             notifyMatchUpdated(instanceId);
           }
           scheduleBotTurnIfNeeded(instanceId);
-        }, 1000 + Math.floor(Math.random() * 2001));
+        }, 500 + Math.floor(Math.random() * 1001));
         botTurnTimers.set(timerKey, timer);
       }
     }
@@ -376,7 +394,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
     return;
   }
 
-  const delayMs = 1000 + Math.floor(Math.random() * 2001);
+  const delayMs = 500 + Math.floor(Math.random() * 1001);
   const timer = setTimeout(() => {
     botTurnTimers.delete(turnTimerKey);
     const latestMatch = getMatch(instanceId);
@@ -389,11 +407,27 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
       return;
     }
 
-    const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
-    if (botRequest != null) {
-      playCardFromHand(latestMatch, latestCurrentSeat.userId, botRequest);
-      saveMatch(latestMatch);
+    try {
+      const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
+      if (botRequest != null) {
+        playCardFromHand(latestMatch, latestCurrentSeat.userId, botRequest);
+      } else {
+        appendServerDebugLog(
+          latestMatch,
+          "bot_ai",
+          `Seat ${latestCurrentSeat.seatNumber} had no playable bot action; forcing turn advance`
+        );
+        passTurnWithoutPlaying(latestMatch, latestCurrentSeat.seatNumber, "bot had no playable action");
+      }
+    } catch (error) {
+      appendServerDebugLog(
+        latestMatch,
+        "bot_ai",
+        `Seat ${latestCurrentSeat.seatNumber} turn failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+      passTurnWithoutPlaying(latestMatch, latestCurrentSeat.seatNumber, "bot action failed");
     }
+    saveMatch(latestMatch);
 
     scheduleBotTurnIfNeeded(instanceId);
   }, delayMs);
@@ -441,32 +475,6 @@ export function startMatch(instanceId: string, userId: string, _request: StartMa
   appendServerDebugLog(match, "session", `Match session started by ${userId} with ${match.seats.length} seats`);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
-  return buildPublicMatchState(match, userId);
-}
-
-export function sendChatMessage(instanceId: string, userId: string, request: SendChatMessageRequest): MatchState {
-  const match = requireMatch(instanceId);
-  const seat = requireHumanSeat(match, userId);
-  const content = request.content.trim();
-
-  if (content.length === 0) {
-    throw new Error("Chat message cannot be empty");
-  }
-
-  match.chatMessages.push({
-    id: randomUUID(),
-    userId: seat.userId,
-    displayName: seat.displayName,
-    avatarUrl: seat.avatarUrl,
-    content: content.slice(0, 500),
-    createdAt: new Date().toISOString()
-  });
-
-  if (match.chatMessages.length > MAX_CHAT_MESSAGES) {
-    match.chatMessages = match.chatMessages.slice(-MAX_CHAT_MESSAGES);
-  }
-
-  saveMatch(match);
   return buildPublicMatchState(match, userId);
 }
 

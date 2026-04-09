@@ -6,7 +6,7 @@ import {
   type CardCategoryCode,
   type CardEffect,
   type RollExpression
-} from "../../shared/cards";
+} from "../../shared/cards/index.js";
 import type {
   CardTargetMode,
   CardView,
@@ -23,7 +23,7 @@ import type {
   PendingActionState,
   ResponseChoiceType,
   SeatState
-} from "../../shared/types";
+} from "../../shared/types.js";
 import type {
   StoredCardInstance,
   StoredGameState,
@@ -32,7 +32,7 @@ import type {
   StoredSeatState,
   StoredSeatStatus,
   StoredPendingActionState
-} from "./gameEngineTypes";
+} from "./gameEngineTypes.js";
 
 const ATTACK_CATEGORIES = new Set<CardCategoryCode>(["AD", "AM", "S", "E", "CO"]);
 
@@ -164,15 +164,14 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
   }
 
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
+  const requiresTargetObject = definition.rules.effects.some((effect) =>
+    effect.type === "remove_target_object" || effect.type === "steal_target_object"
+  );
   const opponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber)
     .filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
-  const eligibleOpponents = allowedObjectSlots == null
-    ? opponents
-    : opponents.filter((seatNumber) =>
-      getStoredSeat(game, seatNumber).objects.some((objectCard) =>
-        objectMatchesAllowedSlots(objectCard.cardId, allowedObjectSlots)
-      )
-    );
+  const eligibleOpponents = requiresTargetObject
+    ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
+    : opponents;
   if (!isAttackDefinition(definition) || Math.random() >= 0.5) {
     return pickRandom(eligibleOpponents);
   }
@@ -312,10 +311,6 @@ function publishDiceRoll(match: StoredMatchState, notation: string, total: numbe
     values: diceRoll.values
   });
 
-  appendDealerMessage(
-    match,
-    `Dealer rolled ${notation.toUpperCase()}: ${total}${values.length > 0 ? ` [${values.join(", ")}]` : ""}`
-  );
   appendServerDebugLog(match, "dice", `Queued roll ${notation.toUpperCase()} => ${total}${values.length > 0 ? ` [${values.join(", ")}]` : ""}`);
 }
 
@@ -348,10 +343,6 @@ function publishSeatDiceRoll(
     values: diceRoll.values
   });
 
-  appendDealerMessage(
-    match,
-    `Dealer rolled ${notation.toUpperCase()} for seat ${seatNumber}: ${total}${values.length > 0 ? ` [${values.join(", ")}]` : ""}`
-  );
   appendServerDebugLog(match, "dice", `Queued roll ${notation.toUpperCase()} for seat ${seatNumber} => ${total}${values.length > 0 ? ` [${values.join(", ")}]` : ""}`);
 }
 
@@ -435,6 +426,17 @@ function objectMatchesAllowedSlots(cardId: string, allowedSlots?: string[]): boo
   }
 
   return allowedSlots.includes(getObjectSlot(requireDefinition(cardId).name));
+}
+
+function seatHasEligibleTargetObject(
+  game: StoredGameState,
+  seatNumber: number,
+  allowedSlots?: string[]
+): boolean {
+  return getStoredSeat(game, seatNumber).objects.some((objectCard) =>
+    requireDefinition(objectCard.cardId).category.code === "O"
+    && objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
+  );
 }
 
 function evaluateRoll(
@@ -667,10 +669,13 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
 
   const definition = requireDefinition(card.cardId);
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
+  const requiresTargetObject = definition.rules.effects.some((effect) =>
+    effect.type === "remove_target_object" || effect.type === "steal_target_object"
+  );
   const livingOpponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
   const attackableOpponents = livingOpponents.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
   const opponentsWithEligibleObjects = livingOpponents.filter((seatNumber) =>
-    getStoredSeat(game, seatNumber).objects.some((objectCard) => objectMatchesAllowedSlots(objectCard.cardId, allowedObjectSlots))
+    seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
   );
   if (game.forcedFollowUp != null) {
     if (game.forcedFollowUp.actorSeatNumber !== actorSeatNumber) {
@@ -699,7 +704,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid opponent target" };
     case "single_opponent":
-      if (allowedObjectSlots != null) {
+      if (requiresTargetObject) {
         return opponentsWithEligibleObjects.length > 0
           ? { canPlay: true }
           : { canPlay: false, reason: "No valid opponent target" };
@@ -722,13 +727,13 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
       }
     case "target_object":
       return listTargetableObjectOwners(game, actorSeatNumber).some((seatNumber) =>
-        getStoredSeat(game, seatNumber).objects.some((objectCard) => objectMatchesAllowedSlots(objectCard.cardId, allowedObjectSlots))
+        seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
       )
         ? { canPlay: true }
         : { canPlay: false, reason: "No target object available" };
     case "single_player_or_object":
       return attackableOpponents.length > 0 || listTargetableObjectOwners(game, actorSeatNumber).some((seatNumber) =>
-        getStoredSeat(game, seatNumber).objects.some((objectCard) => objectMatchesAllowedSlots(objectCard.cardId, allowedObjectSlots))
+        seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
       )
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid target" };
@@ -795,7 +800,7 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
     {
       choice: "pass",
       label: "Pass",
-      description: "Do not defend against the current action."
+      description: "Do not play a defense card. A normal resistance roll still happens if allowed."
     }
   ];
 
@@ -805,11 +810,11 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
     pendingDefinition.defenseBand != null &&
     pendingDefinition.defenseBand.resistance.color !== "red"
   ) {
-    options.push({
-      choice: "resist",
-      label: "Resist",
-      description: "Attempt a resistance roll against this action."
-    });
+    options[0] = {
+      choice: "pass",
+      label: "Pass",
+      description: "Do not play a defense card. Resolve the normal resistance roll."
+    };
   }
 
   if (
@@ -1480,12 +1485,26 @@ interface ResistanceRollOutcome {
   criticalSuccess: boolean;
 }
 
-function canAttemptResistance(definition: BaseCardDefinition, responderChoice: ResponseChoiceType): boolean {
+function canAttemptResistance(
+  match: StoredMatchState,
+  pendingAction: StoredPendingActionState,
+  definition: BaseCardDefinition,
+  targetSeatNumber: number,
+  responderChoice: ResponseChoiceType
+): boolean {
+  if (pendingAction.fromMirror === true) {
+    return false;
+  }
+
+  if (isAttackDefinition(definition) && getStoredSeat(match.internalGame!, targetSeatNumber).noRiposteTurnsRemaining > 0) {
+    return false;
+  }
+
   return (
     definition.rules.requiresResistanceCheck &&
     definition.defenseBand != null &&
     definition.defenseBand.resistance.color !== "red" &&
-    (responderChoice === "resist" || responderChoice === "resistance_accrue")
+    (responderChoice === "pass" || responderChoice === "resist" || responderChoice === "resistance_accrue")
   );
 }
 
@@ -1498,7 +1517,7 @@ function rollResistanceForAction(
   rollsRequired: number,
   attemptLabel?: string
 ): ResistanceRollOutcome {
-  if (!canAttemptResistance(definition, responderChoice)) {
+  if (!canAttemptResistance(match, pendingAction, definition, targetSeatNumber, responderChoice)) {
     return { attempted: false, resisted: false, fatalFailure: false, criticalSuccess: false };
   }
 
@@ -1694,6 +1713,9 @@ function describePlay(match: StoredMatchState, actorSeatNumber: number, definiti
   }
 
   if (targetSeatNumbers[0] != null) {
+    if (targetSeatNumbers[0] === actorSeatNumber) {
+      return `${actorName} played ${definition.name}.`;
+    }
     return `${actorName} played ${definition.name} on ${getPublicSeat(match, targetSeatNumbers[0]).displayName}.`;
   }
 
@@ -1726,10 +1748,18 @@ function applyEffect(
       const sacrificeAmount = effect.amount.kind === "sacrifice_amount"
         ? evaluateRoll(match, effect.amount, actorSeat, undefined, actorSeatNumber, boxId)
         : undefined;
+      const sharedDamageAmount =
+        effect.amount.kind === "dice_per_power" && effect.amount.powerSource === "self"
+          ? evaluateRoll(match, effect.amount, actorSeat, undefined, actorSeatNumber, boxId)
+          : undefined;
 
       for (const targetSeatNumber of targetSeatNumbers) {
         const targetSeat = getPublicSeat(match, targetSeatNumber);
-        const amount = (sacrificeAmount ?? evaluateRoll(match, effect.amount, actorSeat, targetSeat, actorSeatNumber, boxId)) * damageMultiplier;
+        const amount = (
+          sacrificeAmount
+          ?? sharedDamageAmount
+          ?? evaluateRoll(match, effect.amount, actorSeat, targetSeat, actorSeatNumber, boxId)
+        ) * damageMultiplier;
         applyDamage(match, targetSeatNumber, amount, definition, false, boxId);
       }
 
@@ -1839,7 +1869,17 @@ function applyEffect(
           discardInstances(game, removed);
         }
       } else {
-        const ownerSeatNumber = requestObjectOwnerSeatNumber(match, actorSeatNumber, targetSeatNumbers, targetObjectInstanceId, definition);
+        let ownerSeatNumber: number;
+        try {
+          ownerSeatNumber = requestObjectOwnerSeatNumber(match, actorSeatNumber, targetSeatNumbers, targetObjectInstanceId, definition);
+        } catch (error) {
+          appendServerDebugLog(
+            match,
+            "object",
+            `${definition.name} skipped remove_target_object because ${error instanceof Error ? error.message : "the target object became invalid"}${boxId != null ? ` [box ${boxId}]` : ""}`
+          );
+          return false;
+        }
         if (targetObjectInstanceId == null) {
           return queueObjectChoice(match, actorSeatNumber, ownerSeatNumber, cardInstance, "remove", boxId, objectChoiceFinalizeActorSeatNumber);
         }
@@ -1852,7 +1892,17 @@ function applyEffect(
       }
       break;
     case "steal_target_object": {
-      const ownerSeatNumber = requestObjectOwnerSeatNumber(match, actorSeatNumber, targetSeatNumbers, targetObjectInstanceId, definition);
+      let ownerSeatNumber: number;
+      try {
+        ownerSeatNumber = requestObjectOwnerSeatNumber(match, actorSeatNumber, targetSeatNumbers, targetObjectInstanceId, definition);
+      } catch (error) {
+        appendServerDebugLog(
+          match,
+          "object",
+          `${definition.name} skipped steal_target_object because ${error instanceof Error ? error.message : "the target object became invalid"}${boxId != null ? ` [box ${boxId}]` : ""}`
+        );
+        return false;
+      }
       if (targetObjectInstanceId == null) {
         return queueObjectChoice(match, actorSeatNumber, ownerSeatNumber, cardInstance, "steal", boxId, objectChoiceFinalizeActorSeatNumber);
       }
@@ -2059,6 +2109,27 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
   }
 }
 
+export function passTurnWithoutPlaying(match: StoredMatchState, seatNumber: number, reason: string): void {
+  const game = match.internalGame;
+  if (game == null || game.currentTurnSeatNumber !== seatNumber) {
+    return;
+  }
+
+  const seat = getStoredSeat(game, seatNumber);
+  const handBeforeRefill = seat.hand.length;
+  while (seat.hand.length < game.minimumHandSize && seat.alive) {
+    drawCards(match, seatNumber, 1);
+  }
+
+  appendServerDebugLog(
+    match,
+    "turn",
+    `Seat ${seatNumber} ended turn without playing (${reason}); refill ${handBeforeRefill} -> ${seat.hand.length}`
+  );
+  startNextTurn(match, seatNumber);
+  refreshSeatSummaries(match);
+}
+
 export function initializeMatchGame(match: StoredMatchState): void {
   const deck = createDeck();
   const minimumHandSize = determineMinimumHandSize(deck.length);
@@ -2212,6 +2283,7 @@ function buildPendingActionPublicState(match: StoredMatchState): PendingActionSt
       seatNumber: responder.seatNumber,
       state: responder.state,
       choice: responder.choice,
+      committedCardCount: responder.consumedCards.length,
       card: responder.consumedCards[0] == null
         ? undefined
         : buildCardView(responder.consumedCards[0], requireDefinition(responder.consumedCards[0].cardId), "discard", false),
@@ -2524,10 +2596,20 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
   const options = getResponseOptionChoices(match, currentResponder.seatNumber);
   const playerName = responderSeat.displayName;
 
-  if (options.some((option) => option.choice === "resist")) {
-    appendDealerMessage(match, `${playerName} had no CA card and resisted automatically.`);
-    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-resisted (no CA cards)`);
-    respondToPendingAction(match, responderSeat.userId, { choice: "resist" });
+  const canUseNormalResistance = options.some((option) => option.choice === "pass")
+    && getCurrentPendingResponder(pendingAction)?.seatNumber === currentResponder.seatNumber
+    && canAttemptResistance(
+      match,
+      pendingAction,
+      requireDefinition(pendingAction.storedCard.cardId),
+      currentResponder.seatNumber,
+      "pass"
+    );
+
+  if (canUseNormalResistance) {
+    appendDealerMessage(match, `${playerName} had no CA card and relied on normal resistance.`);
+    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed into normal resistance (no CA cards)`);
+    respondToPendingAction(match, responderSeat.userId, { choice: "pass" });
   } else {
     appendDealerMessage(match, `${playerName} had no defense — passed automatically.`);
     appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed (no CA cards, no resist)`);
@@ -2750,7 +2832,13 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
   let fatalFailure = false;
   let criticalSuccess = false;
   if (definition.rules.requiresResistanceCheck && definition.defenseBand != null && definition.defenseBand.resistance.color !== "red") {
-    const attemptedResistance = responder.choice === "resist" || responder.choice === "resistance_accrue";
+    const attemptedResistance = canAttemptResistance(
+      match,
+      pendingAction,
+      definition,
+      targetSeatNumber,
+      responder.choice
+    );
     if (attemptedResistance) {
       const rollsRequired = Math.max(1, definition.defenseBand.resistance.rollsRequired || 1);
       const threshold = computeResistanceThreshold(match, targetSeatNumber, responder.choice);
@@ -2938,10 +3026,12 @@ function finalizePendingAction(match: StoredMatchState): void {
       game.pausedSequentialAction = undefined;
       appendServerDebugLog(match, "mirror", "Mirror chain resolved; resuming outer action");
       refreshSeatSummaries(match);
-      // If the restored action is per_target with all responders locked, finalize it
-      if (game.pendingAction.responseMode === "per_target" &&
-          game.pendingAction.responders.every((r) => r.state !== "pending")) {
-        finalizePendingAction(match);
+      if (game.pendingAction.responders.every((responder) => responder.state !== "pending")) {
+        if (game.pendingAction.responseMode === "per_target") {
+          finalizePendingAction(match);
+        } else {
+          resolvePendingAction(match);
+        }
       } else {
         autoRespondIfNeeded(match);
       }
@@ -3019,7 +3109,11 @@ function resolvePendingAction(match: StoredMatchState): void {
         `Seat ${cancelingSeatNumber} canceled ${definition.name}; stopping collective responses`
       );
     }
-    appendDealerMessage(match, `${definition.name} was canceled before resolving.`);
+    if (cancelingSeatNumber != null) {
+      appendDealerMessage(match, `${getPublicSeat(match, cancelingSeatNumber).displayName} canceled ${definition.name}.`);
+    } else {
+      appendDealerMessage(match, `${definition.name} was canceled before resolving.`);
+    }
     game.lastPlayedCard = {
       actorSeatNumber: pendingAction.actorSeatNumber,
       targetSeatNumbers: [...pendingAction.targetSeatNumbers],
@@ -3034,12 +3128,10 @@ function resolvePendingAction(match: StoredMatchState): void {
     return;
   }
 
+  // In collective response mode, partial Annulation contributions are spent
+  // but do not protect individual targets unless the full cancel threshold
+  // was met above and the action already returned early as canceled.
   const canceledTargets = new Set<number>();
-  for (const responder of pendingAction.responders) {
-    if (responder.choice === "annulation") {
-      canceledTargets.add(responder.seatNumber);
-    }
-  }
 
   // Mirrored targets dodge the original collective action. The reflected copy
   // is handled immediately as a mirror chain, so do not apply it again here.
@@ -3063,7 +3155,13 @@ function resolvePendingAction(match: StoredMatchState): void {
       }
 
       const responder = pendingAction.responders.find((candidate) => candidate.seatNumber === targetSeatNumber);
-      const resistanceAttempted = responder?.choice === "resist" || responder?.choice === "resistance_accrue";
+      const resistanceAttempted = responder != null && canAttemptResistance(
+        match,
+        pendingAction,
+        definition,
+        targetSeatNumber,
+        responder.choice
+      );
       if (!resistanceAttempted) {
         continue;
       }
@@ -3387,9 +3485,23 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
         .reduce((count, candidate) => count + candidate.consumedCards.length, 0);
       const neededCount = Math.max(1, requiredCount - alreadyCommitted);
       const availableCount = seatState.hand.filter((card) => card.cardId === "annulation").length;
-      responder.consumedCards = consumeHandCardsById(seatState.hand, "annulation", Math.min(availableCount, neededCount));
+      const requestedCount = Number.isFinite(request.annulationCount)
+        ? Math.max(1, Math.floor(request.annulationCount!))
+        : neededCount;
+      const consumeCount = Math.min(availableCount, neededCount, requestedCount);
+      responder.consumedCards = consumeHandCardsById(seatState.hand, "annulation", consumeCount);
+      appendServerDebugLog(
+        match,
+        "response",
+        `Seat ${responderSeat.seatNumber} committed ${responder.consumedCards.length} Annulation card(s) on ${requireDefinition(pendingAction.storedCard.cardId).name} (${alreadyCommitted + responder.consumedCards.length}/${requiredCount})`
+      );
     } else {
       responder.consumedCards = consumeHandCardsById(seatState.hand, "annulation", requiredCount);
+      appendServerDebugLog(
+        match,
+        "response",
+        `Seat ${responderSeat.seatNumber} committed ${responder.consumedCards.length} Annulation card(s) on ${requireDefinition(pendingAction.storedCard.cardId).name}`
+      );
     }
   } else if (request.choice === "resistance_accrue") {
     responder.consumedCards = consumeHandCardsById(seatState.hand, "resistance-accrue", 1);
@@ -3425,6 +3537,8 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
         .filter((candidate) => candidate.choice === "annulation")
         .reduce((count, candidate) => count + candidate.consumedCards.length, 0);
       if (committedAnnulations >= annulationRequired) {
+        resolvePendingAction(match);
+      } else if (pendingAction.responders.every((candidate) => candidate.state !== "pending")) {
         resolvePendingAction(match);
       } else {
         refreshSeatSummaries(match);
@@ -4023,7 +4137,6 @@ export function buildBotPendingResponse(match: StoredMatchState, seatNumber: num
     availableChoices.has("annulation") ? "annulation"
     : availableChoices.has("mirror") ? "mirror"
     : availableChoices.has("resistance_accrue") ? "resistance_accrue"
-    : availableChoices.has("resist") ? "resist"
     : "pass";
 
   appendServerDebugLog(

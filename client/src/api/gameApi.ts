@@ -91,22 +91,6 @@ export async function requestKickPlayer(
   return parseJson<MatchState>(response);
 }
 
-export async function sendChatMessage(
-  instanceId: string,
-  playerSessionToken: string,
-  content: string
-): Promise<MatchState> {
-  const response = await fetch(`/api/matches/${instanceId}/chat`, {
-    method: "POST",
-    headers: buildPlayerHeaders(playerSessionToken),
-    body: JSON.stringify({
-      content
-    })
-  });
-
-  return parseJson<MatchState>(response);
-}
-
 export async function disconnectFromMatch(instanceId: string, playerSessionToken: string): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/disconnect`, {
     method: "POST",
@@ -115,6 +99,23 @@ export async function disconnectFromMatch(instanceId: string, playerSessionToken
   });
 
   return parseJson<MatchState>(response);
+}
+
+export async function persistClientLogSnapshot(
+  instanceId: string,
+  playerSessionToken: string,
+  entries: string[]
+): Promise<void> {
+  const response = await fetch(`/api/matches/${instanceId}/client-log`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify({ entries })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ error: "Unable to persist client log" }));
+    throw new Error(typeof payload.error === "string" ? payload.error : "Unable to persist client log");
+  }
 }
 
 export async function playCard(

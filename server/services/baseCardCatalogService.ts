@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BaseCardDefinition } from "../../shared/cards/types";
+import type { BaseCardDefinition } from "../../shared/cards/types.js";
 
 const CATALOG_PATH = path.resolve(process.cwd(), "shared/cards/catalog/base-cards.ts");
 const CATALOG_START = "export const baseCardDefinitions = ";

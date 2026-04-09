@@ -6,6 +6,9 @@ export default defineConfig({
     exclude: ["@3d-dice/dice-box"]
   },
   server: {
+    // Discord local testing commonly uses a Cloudflare tunnel that presents a
+    // random *.trycloudflare.com hostname to the Vite dev server.
+    allowedHosts: [".trycloudflare.com"],
     port: 5173,
     proxy: {
       "/api": {

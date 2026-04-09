@@ -1,6 +1,7 @@
-import { createEmptyMatch } from "../../shared/matchRules";
-import type { StoredMatchState } from "../services/gameEngineTypes";
-import { notifyMatchUpdated } from "./sseStore";
+import { createEmptyMatch } from "../../shared/matchRules.js";
+import type { StoredMatchState } from "../services/gameEngineTypes.js";
+import { persistMatchLogs } from "../services/localLogService.js";
+import { notifyMatchUpdated } from "./sseStore.js";
 
 const matches = new Map<string, StoredMatchState>();
 
@@ -22,6 +23,7 @@ export function getMatch(instanceId: string): StoredMatchState | undefined {
 export function saveMatch(match: StoredMatchState, quiet = false): StoredMatchState {
   matches.set(match.instanceId, match);
   if (!quiet) {
+    persistMatchLogs(match);
     notifyMatchUpdated(match.instanceId);
   }
   return match;

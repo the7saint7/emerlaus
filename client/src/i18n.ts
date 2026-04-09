@@ -2,6 +2,7 @@ import { baseCardDefinitionById } from "../../shared/cards";
 import type { CardCategoryCode } from "../../shared/cards";
 import type {
   CardView,
+  ChatMessage,
   MatchState,
   PendingActionResponderState,
   PlayedCardState,
@@ -16,6 +17,10 @@ type TranslationKey =
   | "language.french"
   | "language.english"
   | "common.cancel"
+  | "annulationChoice.title"
+  | "annulationChoice.body"
+  | "annulationChoice.playOne"
+  | "annulationChoice.playTwo"
   | "loading.match"
   | "left.title"
   | "leave.confirm.title"
@@ -60,7 +65,9 @@ type TranslationKey =
   | "table.serverLog"
   | "table.clientLog"
   | "table.leaveMatch"
+  | "table.cardReference"
   | "table.currentTurn"
+  | "table.thinking"
   | "table.player"
   | "table.kickPlayer"
   | "table.noPlayableDiscard"
@@ -92,6 +99,9 @@ type TranslationKey =
   | "telepathy.blocked"
   | "telepathy.empty"
   | "telepathy.close"
+  | "reference.title"
+  | "reference.body"
+  | "reference.close"
   | "boardReset.title"
   | "boardReset.inProgress"
   | "boardReset.body"
@@ -153,6 +163,10 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "language.french": "French",
     "language.english": "English",
     "common.cancel": "Cancel",
+    "annulationChoice.title": "Use Annulation",
+    "annulationChoice.body": "This attack still needs {neededCount} Annulation card(s). You currently have {maxCount}. How many do you want to commit?",
+    "annulationChoice.playOne": "Play 1",
+    "annulationChoice.playTwo": "Play 2",
     "loading.match": "Loading match...",
     "left.title": "You left the match",
     "leave.confirm.title": "Are you sure?",
@@ -162,11 +176,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "kick.confirm.body": "{playerName} will be replaced by a bot.",
     "discard.confirm.title": "Discard this card?",
     "discard.confirm.body": "This will discard the card without using its effect.",
-    "chat.empty": "No player messages yet.",
-    "chat.title": "Table Chat",
-    "chat.history.expanded": "Expanded history",
-    "chat.history.recent": "Recent messages",
-    "chat.open": "Open",
+    "chat.empty": "No events yet.",
+    "chat.title": "Event Log",
+    "chat.history.expanded": "Full history",
+    "chat.history.recent": "Recent events",
+    "chat.open": "Expand",
     "chat.close": "Close",
     "chat.hide": "Hide",
     "chat.placeholder": "Type here. Unicode emoji works too.",
@@ -197,7 +211,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.serverLog": "Server Log",
     "table.clientLog": "Client Log",
     "table.leaveMatch": "Leave Match",
+    "table.cardReference": "Card Guide",
     "table.currentTurn": "Current turn",
+    "table.thinking": "Thinking",
     "table.player": "Player",
     "table.kickPlayer": "Kick Player",
     "table.noPlayableDiscard": "You cannot play any card this turn. Choose one card to discard.",
@@ -229,6 +245,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "telepathy.blocked": "No other actions can continue until the viewer closes this window.",
     "telepathy.empty": "This player has no cards in hand.",
     "telepathy.close": "Close",
+    "reference.title": "Card Reference",
+    "reference.body": "Browse the full card catalog. Select a card on the left to read it clearly.",
+    "reference.close": "Close",
     "boardReset.title": "Choose {count} card{plural} to keep",
     "boardReset.inProgress": "Intervention divine in progress",
     "boardReset.body": "Select the {selectionLabel} that {stayVerb} in your hand before the rest of the board is cleared and reshuffled.",
@@ -250,7 +269,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "combat.rollResistance": "{playerName} throws {notation} for resistance{bonus} (threshold {threshold})",
     "combat.rollDamage": "{actorName} throws {notation} for damage on {targetName}",
     "combat.rollCard": "{playerName} throws {notation} for the current action",
-    "combat.response.pass": "{playerName} passes",
+    "combat.response.pass": "{playerName} plays no defense card",
     "combat.response.resist": "{playerName} chooses to resist",
     "combat.response.resistance_accrue": "{playerName} plays Resistance Accrue",
     "combat.response.annulation": "{playerName} plays Annulation",
@@ -287,6 +306,10 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "language.french": "Français",
     "language.english": "Anglais",
     "common.cancel": "Annuler",
+    "annulationChoice.title": "Jouer Annulation",
+    "annulationChoice.body": "Cette attaque a encore besoin de {neededCount} carte(s) Annulation. Vous en avez {maxCount}. Combien voulez-vous engager ?",
+    "annulationChoice.playOne": "Jouer 1",
+    "annulationChoice.playTwo": "Jouer 2",
     "loading.match": "Chargement de la partie...",
     "left.title": "Vous avez quitté la partie",
     "leave.confirm.title": "Êtes-vous certain?",
@@ -296,11 +319,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "kick.confirm.body": "{playerName} sera remplacé par un bot.",
     "discard.confirm.title": "Défausser cette carte?",
     "discard.confirm.body": "Cette action défaussera la carte sans utiliser son effet.",
-    "chat.empty": "Aucun message de joueur pour le moment.",
-    "chat.title": "Discussion",
+    "chat.empty": "Aucun événement pour le moment.",
+    "chat.title": "Journal des événements",
     "chat.history.expanded": "Historique complet",
-    "chat.history.recent": "Messages récents",
-    "chat.open": "Ouvrir",
+    "chat.history.recent": "Événements récents",
+    "chat.open": "Agrandir",
     "chat.close": "Fermer",
     "chat.hide": "Masquer",
     "chat.placeholder": "Écrivez ici. Les émojis Unicode fonctionnent aussi.",
@@ -331,7 +354,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.serverLog": "Journal serveur",
     "table.clientLog": "Journal client",
     "table.leaveMatch": "Quitter la partie",
+    "table.cardReference": "Guide des cartes",
     "table.currentTurn": "Tour actuel",
+    "table.thinking": "Réfléchit",
     "table.player": "Joueur",
     "table.kickPlayer": "Expulser le joueur",
     "table.noPlayableDiscard": "Vous ne pouvez jouer aucune carte ce tour-ci. Choisissez une carte à défausser.",
@@ -363,6 +388,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "telepathy.blocked": "Aucune autre action ne peut continuer tant que cette fenêtre n'est pas fermée.",
     "telepathy.empty": "Ce joueur n'a aucune carte en main.",
     "telepathy.close": "Fermer",
+    "reference.title": "Reference des cartes",
+    "reference.body": "Parcourez tout le catalogue. Selectionnez une carte a gauche pour la lire clairement.",
+    "reference.close": "Fermer",
     "boardReset.title": "Choisissez {count} carte{plural} à garder",
     "boardReset.inProgress": "Intervention divine en cours",
     "boardReset.body": "Sélectionnez {selectionLabel} qui {stayVerb} dans votre main avant que le reste du plateau soit vidé et brassé à nouveau.",
@@ -384,7 +412,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "combat.rollResistance": "{playerName} lance {notation} pour la résistance{bonus} (seuil {threshold})",
     "combat.rollDamage": "{actorName} lance {notation} pour infliger des dégâts à {targetName}",
     "combat.rollCard": "{playerName} lance {notation} pour l'action en cours",
-    "combat.response.pass": "{playerName} passe",
+    "combat.response.pass": "{playerName} ne joue pas de carte de defense",
     "combat.response.resist": "{playerName} choisit de résister",
     "combat.response.resistance_accrue": "{playerName} joue Résistance accrue",
     "combat.response.annulation": "{playerName} joue Annulation",
@@ -467,7 +495,7 @@ export function loadStoredLanguage(): AppLanguage {
     return stored;
   }
 
-  return navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en";
+  return "fr";
 }
 
 export function persistLanguage(language: AppLanguage): void {
@@ -525,6 +553,168 @@ function localizePlayedCardState(playedCard: PlayedCardState | undefined, langua
   };
 }
 
+function localizeDealerMessage(content: string, language: AppLanguage): string {
+  const localizeCardName = (cardName: string): string => {
+    if (language === "fr") {
+      return cardName;
+    }
+
+    const definition = Object.values(baseCardDefinitionById).find((card) => card.name === cardName);
+    return definition?.localization?.en.name ?? cardName;
+  };
+
+  const patterns: Array<[(content: string) => RegExpMatchArray | null, (match: RegExpMatchArray) => string]> = [
+    [/^(.+) discarded (.+)\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} défausse ${localizeCardName(match[2])}.`
+      : `${match[1]} discarded ${localizeCardName(match[2])}.`],
+    [/^(.+) played (.+) against everyone\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])} contre tout le monde.`
+      : `${match[1]} played ${localizeCardName(match[2])} against everyone.`],
+    [/^(.+) played (.+) on (.+)'s object\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])} sur l'objet de ${match[3]}.`
+      : `${match[1]} played ${localizeCardName(match[2])} on ${match[3]}'s object.`],
+    [/^(.+) played (.+) on (.+)\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])} sur ${match[3]}.`
+      : `${match[1]} played ${localizeCardName(match[2])} on ${match[3]}.`],
+    [/^(.+) played (.+)\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])}.`
+      : `${match[1]} played ${localizeCardName(match[2])}.`],
+    [/^(.+) critically resisted (.+)!$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} résiste de façon critique à ${localizeCardName(match[2])} !`
+      : `${match[1]} critically resisted ${localizeCardName(match[2])}!`],
+    [/^(.+) resisted (.+)\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} résiste à ${localizeCardName(match[2])}.`
+      : `${match[1]} resisted ${localizeCardName(match[2])}.`],
+    [/^(.+) critically failed the resistance roll\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} échoue de façon critique à son jet de résistance.`
+      : `${match[1]} critically failed the resistance roll.`],
+    [/^(.+) canceled (.+)\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} annule ${localizeCardName(match[2])}.`
+      : `${match[1]} canceled ${localizeCardName(match[2])}.`],
+    [/^(.+) reflects (.+) back at (.+)!$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} renvoie ${localizeCardName(match[2])} vers ${match[3]} !`
+      : `${match[1]} reflects ${localizeCardName(match[2])} back at ${match[3]}!`],
+    [/^(.+) had no CA card and resisted automatically\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} n'avait pas de CA et a résisté automatiquement.`
+      : `${match[1]} had no CA card and resisted automatically.`],
+    [/^(.+) had no defense — passed automatically\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} n'avait aucune défense et passe automatiquement.`
+      : `${match[1]} had no defense — passed automatically.`],
+    [/^(.+) was restored by (.+)\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} est restauré par ${localizeCardName(match[2])}.`
+      : `${match[1]} was restored by ${localizeCardName(match[2])}.`],
+    [/^(.+) has fallen\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} tombe au combat.`
+      : `${match[1]} has fallen.`],
+    [/^(.+) is the last wizard standing\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} est le dernier magicien debout.`
+      : `${match[1]} is the last wizard standing.`],
+    [/^(.+) loses a turn\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} perd un tour.`
+      : `${match[1]} loses a turn.`],
+    [/^(.+) has no AD card for (.+) and passes\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${match[1]} n'a pas de carte AD pour ${localizeCardName(match[2])} et passe.`
+      : `${match[1]} has no AD card for ${localizeCardName(match[2])} and passes.`],
+    [/^(.+) was canceled before resolving\.$/.exec.bind(/^$/), (match) => language === "fr"
+      ? `${localizeCardName(match[1])} est annulée avant sa résolution.`
+      : `${localizeCardName(match[1])} was canceled before resolving.`],
+    [/^Dealer reshuffled the discard pile into the deck\.$/.exec.bind(/^$/), () => language === "fr"
+      ? "La défausse a été remélangée dans le paquet."
+      : "The discard pile was reshuffled into the deck."]
+  ];
+
+  for (const [matcher, formatter] of patterns) {
+    const match = matcher(content);
+    if (match != null) {
+      return formatter(match);
+    }
+  }
+
+  return content;
+}
+
+export function localizeCardNameForUi(cardName: string, language: AppLanguage): string {
+  if (language === "fr") {
+    return cardName;
+  }
+
+  const definition = Object.values(baseCardDefinitionById).find((card) => card.name === cardName);
+  return definition?.localization?.en.name ?? cardName;
+}
+
+export function localizeDealerMessageForUi(content: string, language: AppLanguage): string {
+  const localizeCardName = (cardName: string): string => localizeCardNameForUi(cardName, language);
+
+  const patterns: Array<{ regex: RegExp; format: (match: RegExpMatchArray) => string }> = [
+    { regex: /^(.+) discarded (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} defausse ${localizeCardName(match[2])}.`
+      : `${match[1]} discarded ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) played (.+) against everyone\.$/, format: (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])} contre tout le monde.`
+      : `${match[1]} played ${localizeCardName(match[2])} against everyone.` },
+    { regex: /^(.+) played (.+) on (.+)'s object\.$/, format: (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])} sur l'objet de ${match[3]}.`
+      : `${match[1]} played ${localizeCardName(match[2])} on ${match[3]}'s object.` },
+    { regex: /^(.+) played (.+) on (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])} sur ${match[3]}.`
+      : `${match[1]} played ${localizeCardName(match[2])} on ${match[3]}.` },
+    { regex: /^(.+) played (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} joue ${localizeCardName(match[2])}.`
+      : `${match[1]} played ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) critically resisted (.+)!$/, format: (match) => language === "fr"
+      ? `${match[1]} resiste de facon critique a ${localizeCardName(match[2])} !`
+      : `${match[1]} critically resisted ${localizeCardName(match[2])}!` },
+    { regex: /^(.+) resisted (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} resiste a ${localizeCardName(match[2])}.`
+      : `${match[1]} resisted ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) critically failed the resistance roll\.$/, format: (match) => language === "fr"
+      ? `${match[1]} echoue de facon critique a son jet de resistance.`
+      : `${match[1]} critically failed the resistance roll.` },
+    { regex: /^(.+) canceled (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} annule l'attaque.`
+      : `${match[1]} canceled the attack.` },
+    { regex: /^(.+) reflects (.+) back at (.+)!$/, format: (match) => language === "fr"
+      ? `${match[1]} renvoie ${localizeCardName(match[2])} vers ${match[3]} !`
+      : `${match[1]} reflects ${localizeCardName(match[2])} back at ${match[3]}!` },
+    { regex: /^(.+) had no CA card and resisted automatically\.$/, format: (match) => language === "fr"
+      ? `${match[1]} n'avait pas de CA et a resiste automatiquement.`
+      : `${match[1]} had no CA card and resisted automatically.` },
+    { regex: /^(.+) had no defense .* passed automatically\.$/, format: (match) => language === "fr"
+      ? `${match[1]} n'avait aucune defense et passe automatiquement.`
+      : `${match[1]} had no defense and passed automatically.` },
+    { regex: /^(.+) was restored by (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} est restaure par ${localizeCardName(match[2])}.`
+      : `${match[1]} was restored by ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) has fallen\.$/, format: (match) => language === "fr"
+      ? `${match[1]} tombe au combat.`
+      : `${match[1]} has fallen.` },
+    { regex: /^(.+) is the last wizard standing\.$/, format: (match) => language === "fr"
+      ? `${match[1]} est le dernier magicien debout.`
+      : `${match[1]} is the last wizard standing.` },
+    { regex: /^(.+) loses a turn\.$/, format: (match) => language === "fr"
+      ? `${match[1]} perd un tour.`
+      : `${match[1]} loses a turn.` },
+    { regex: /^(.+) has no AD card for (.+) and passes\.$/, format: (match) => language === "fr"
+      ? `${match[1]} n'a pas de carte AD pour ${localizeCardName(match[2])} et passe.`
+      : `${match[1]} has no AD card for ${localizeCardName(match[2])} and passes.` },
+    { regex: /^(.+) was canceled before resolving\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[1])} est annulee avant sa resolution.`
+      : `${localizeCardName(match[1])} was canceled before resolving.` },
+    { regex: /^Dealer reshuffled the discard pile into the deck\.$/, format: () => language === "fr"
+      ? "La defausse a ete remelangee dans le paquet."
+      : "The discard pile was reshuffled into the deck." }
+  ];
+
+  for (const { regex, format } of patterns) {
+    const match = content.match(regex);
+    if (match != null) {
+      return format(match);
+    }
+  }
+
+  return content;
+}
+
 export function localizeMatchState(match: MatchState, language: AppLanguage): MatchState {
   const localizeCardName = (cardName: string): string => {
     if (language === "fr") {
@@ -538,6 +728,10 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
   return {
     ...match,
     seats: match.seats.map((seat) => localizeSeatState(seat, language)),
+    chatMessages: match.chatMessages.map((message: ChatMessage) => ({
+      ...message,
+      content: message.userId === "dealer" ? localizeDealerMessageForUi(message.content, language) : message.content
+    })),
     game: match.game == null
       ? undefined
       : {

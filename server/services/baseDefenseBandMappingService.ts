@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BaseDefenseBandMappings, DefenseBandRules } from "../../shared/cards/types";
+import type { BaseDefenseBandMappings, DefenseBandRules } from "../../shared/cards/types.js";
 
 const MAPPINGS_PATH = path.resolve(process.cwd(), "shared/cards/manual/base-defense-band-mappings.json");
 

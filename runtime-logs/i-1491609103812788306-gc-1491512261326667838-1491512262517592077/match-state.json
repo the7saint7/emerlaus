@@ -1,0 +1,48 @@
+{
+  "instanceId": "i-1491609103812788306-gc-1491512261326667838-1491512262517592077",
+  "status": "finished",
+  "createdAt": "2026-04-09T01:22:05.384Z",
+  "startedAt": "2026-04-09T01:34:37.777Z",
+  "currentTurnSeatNumber": 1,
+  "currentTurnDisplayName": "ReaI (Bot)",
+  "turnNumber": 35,
+  "pendingAction": null,
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "ReaI (Bot)",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 23,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "the7saint7",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 3,
+      "displayName": "Melly (Bot)",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    }
+  ]
+}

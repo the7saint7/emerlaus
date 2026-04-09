@@ -1,0 +1,186 @@
+{
+  "instanceId": "i-1491391952745140305-gc-854164216272912394-854164216272912398",
+  "status": "in_progress",
+  "createdAt": "2026-04-08T10:59:12.043Z",
+  "startedAt": "2026-04-08T10:59:17.625Z",
+  "currentTurnSeatNumber": 8,
+  "currentTurnDisplayName": "Bot 7",
+  "turnNumber": 18,
+  "pendingAction": {
+    "actorSeatNumber": 8,
+    "targetSeatNumbers": [
+      9,
+      10,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "responseMode": "collective",
+    "responders": [
+      {
+        "seatNumber": 9,
+        "state": "locked",
+        "choice": "resist"
+      },
+      {
+        "seatNumber": 10,
+        "state": "locked",
+        "choice": "mirror"
+      },
+      {
+        "seatNumber": 1,
+        "state": "locked",
+        "choice": "resist"
+      },
+      {
+        "seatNumber": 2,
+        "state": "locked",
+        "choice": "resist"
+      },
+      {
+        "seatNumber": 3,
+        "state": "locked",
+        "choice": "resist"
+      },
+      {
+        "seatNumber": 4,
+        "state": "locked",
+        "choice": "resist"
+      },
+      {
+        "seatNumber": 5,
+        "state": "locked",
+        "choice": "mirror"
+      },
+      {
+        "seatNumber": 6,
+        "state": "locked",
+        "choice": "resistance_accrue"
+      },
+      {
+        "seatNumber": 7,
+        "state": "locked",
+        "choice": "mirror"
+      }
+    ]
+  },
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "the7saint7",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 1,
+      "statusCount": 1,
+      "hp": 98,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "Bot 1",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 3,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 66,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 3,
+      "displayName": "Bot 2",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 18,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 4,
+      "displayName": "Bot 3",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 70,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 5,
+      "displayName": "Bot 4",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 70,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 6,
+      "displayName": "Bot 5",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 70,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 7,
+      "displayName": "Bot 6",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 74,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 8,
+      "displayName": "Bot 7",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 3,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 63,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 9,
+      "displayName": "Bot 8",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 70,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 10,
+      "displayName": "Bot 9",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 250,
+      "isAlive": true
+    }
+  ]
+}

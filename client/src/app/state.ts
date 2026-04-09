@@ -34,11 +34,17 @@ export interface AppState {
   arrowDrag: ArrowDragState | null;
   /** Instance ID of the card currently showing the zoom hover state (empty = none) */
   hoveredCardInstanceId: string;
+  /** Prevent immediate re-hover zoom after dropping a card until the pointer leaves and re-enters. */
+  hoverZoomBlockedCardInstanceId: string;
+  /** Which center stack is currently hovered, used to keep center-card zoom stable across rerenders. */
+  hoveredCenterSlotKind: "" | "attack" | "response";
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
+  cardReferencePreviewCardId: string;
   sacrificeAmountInput: string;
   telepathyPanelScrollTop: number;
   telepathyListScrollTop: number;
+  cardReferenceListScrollTop: number;
   inspectedSeatNumber: number;
   seenGameEventIds: string[];
   seenEventMessageIds: string[];
@@ -47,10 +53,18 @@ export interface AppState {
   confirmingLeave: boolean;
   confirmingKickSeatNumber: number;
   confirmingDiscardCardInstanceId: string;
+  pendingAnnulationChoice:
+    | {
+      cardInstanceId: string;
+      maxCount: number;
+      neededCount: number;
+    }
+    | null;
+  cardReferenceOpen: boolean;
+  eventLogPanelWidth: number;
+  eventLogPanelHeight: number;
   leftMessage: string;
-  chatDraft: string;
   chatExpanded: boolean;
-  chatHidden: boolean;
   eventPlaybackActive: boolean;
   activeActionVisual: {
     actorSeatNumber: number;

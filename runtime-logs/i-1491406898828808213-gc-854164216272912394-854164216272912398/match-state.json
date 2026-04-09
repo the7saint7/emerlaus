@@ -1,0 +1,95 @@
+{
+  "instanceId": "i-1491406898828808213-gc-854164216272912394-854164216272912398",
+  "status": "in_progress",
+  "createdAt": "2026-04-08T11:58:35.991Z",
+  "startedAt": "2026-04-08T11:58:39.042Z",
+  "currentTurnSeatNumber": 5,
+  "currentTurnDisplayName": "Bot 4",
+  "turnNumber": 5,
+  "pendingAction": {
+    "actorSeatNumber": 5,
+    "targetSeatNumbers": [
+      1,
+      3,
+      4
+    ],
+    "responseMode": "collective",
+    "responders": [
+      {
+        "seatNumber": 1,
+        "state": "pending",
+        "choice": "pending"
+      },
+      {
+        "seatNumber": 3,
+        "state": "pending",
+        "choice": "pending"
+      },
+      {
+        "seatNumber": 4,
+        "state": "pending",
+        "choice": "pending"
+      }
+    ]
+  },
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "the7saint7",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "Bot 1",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 80,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 3,
+      "displayName": "Bot 2",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 4,
+      "displayName": "Bot 3",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 5,
+      "displayName": "Bot 4",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 50,
+      "isAlive": true
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import type { MatchState, SeatState } from "./types";
+import type { MatchState, SeatState } from "./types.js";
 
 export function createEmptyMatch(instanceId: string, maxSeats = 10): MatchState {
   return {

@@ -6,6 +6,7 @@ import {
   fetchMatch,
   joinMatch,
   passForcedFollowUp,
+  persistClientLogSnapshot,
   playCard,
   requestAddBot,
   requestKickPlayer,
@@ -14,12 +15,12 @@ import {
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
   requestStartMatch,
-  selectPendingObject,
-  sendChatMessage
+  selectPendingObject
 } from "./api/gameApi";
 import { captureChatDomSnapshot, restoreChatDomState } from "./app/chatDom";
 import type { AppState, DragHoverTarget } from "./app/state";
 import {
+  renderAnnulationChoiceModal,
   renderDiscardConfirmationModal,
   renderKickConfirmationModal,
   renderLeaveConfirmationModal,
@@ -38,7 +39,8 @@ import {
   t,
   type AppLanguage
 } from "./i18n";
-import { renderChatView, renderHiddenChatButton } from "./render/chatView";
+import { renderChatView } from "./render/chatView";
+import { buildEventLogEntries } from "./render/eventLog";
 import { renderLobbyView } from "./render/lobbyView";
 import { renderTableView } from "./render/tableView";
 import { baseCardDefinitionById } from "../../shared/cards";
@@ -48,11 +50,44 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const CARD_FLIGHT_DURATION_MS = 420;
   const CARD_FLIGHT_WIDTH = 112;
   const CARD_FLIGHT_HEIGHT = 156;
+  const DEFAULT_EVENT_LOG_PANEL_WIDTH = 380;
+  const DEFAULT_EVENT_LOG_PANEL_HEIGHT = 420;
   const session = await createDiscordSession();
   const joined = await joinMatch(session.instanceId, session.currentUser);
+  const initialLanguage = loadStoredLanguage();
+  const eventLogSizeStorageKey = `emerlaus.eventLogSize.${session.mode}.${session.currentUser.userId}`;
+
+  function clampEventLogPanelSize(width: number, height: number): { width: number; height: number } {
+    return {
+      width: Math.max(280, Math.min(Math.round(width), window.innerWidth - 36)),
+      height: Math.max(220, Math.min(Math.round(height), window.innerHeight - 110))
+    };
+  }
+
+  const loadStoredEventLogPanelSize = (): { width: number; height: number } => {
+    try {
+      const raw = window.localStorage.getItem(eventLogSizeStorageKey);
+      if (raw == null) {
+        return {
+          width: DEFAULT_EVENT_LOG_PANEL_WIDTH,
+          height: DEFAULT_EVENT_LOG_PANEL_HEIGHT
+        };
+      }
+
+      const parsed = JSON.parse(raw) as { width?: number; height?: number };
+      return clampEventLogPanelSize(
+        Number.isFinite(parsed.width) ? parsed.width! : DEFAULT_EVENT_LOG_PANEL_WIDTH,
+        Number.isFinite(parsed.height) ? parsed.height! : DEFAULT_EVENT_LOG_PANEL_HEIGHT
+      );
+    } catch {
+      return clampEventLogPanelSize(DEFAULT_EVENT_LOG_PANEL_WIDTH, DEFAULT_EVENT_LOG_PANEL_HEIGHT);
+    }
+  };
+
+  const initialEventLogPanelSize = loadStoredEventLogPanelSize();
 
   const state: AppState = {
-    language: loadStoredLanguage(),
+    language: initialLanguage,
     instanceId: session.instanceId,
     playerSessionToken: joined.playerSessionToken,
     match: joined.match,
@@ -64,23 +99,29 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     dragHoverTarget: null,
     arrowDrag: null,
     hoveredCardInstanceId: "",
+    hoverZoomBlockedCardInstanceId: "",
+    hoveredCenterSlotKind: "",
     telepathyPreviewCardInstanceId: "",
     boardResetKeepPreviewCardInstanceId: "",
+    cardReferencePreviewCardId: "",
     sacrificeAmountInput: "0",
     telepathyPanelScrollTop: 0,
     telepathyListScrollTop: 0,
+    cardReferenceListScrollTop: 0,
     inspectedSeatNumber: 0,
     seenGameEventIds: joined.match.game?.eventLog.map((event) => event.id) ?? [],
-    seenEventMessageIds: [],
+    seenEventMessageIds: buildEventLogEntries(joined.match, initialLanguage).map((entry) => entry.id),
     clientDebugLog: [],
     errorMessage: "",
     confirmingLeave: false,
     confirmingKickSeatNumber: 0,
     confirmingDiscardCardInstanceId: "",
+    pendingAnnulationChoice: null,
+    cardReferenceOpen: false,
+    eventLogPanelWidth: initialEventLogPanelSize.width,
+    eventLogPanelHeight: initialEventLogPanelSize.height,
     leftMessage: "",
-    chatDraft: "",
-    chatExpanded: false,
-    chatHidden: true,
+    chatExpanded: true,
     eventPlaybackActive: false,
     activeActionVisual: null,
     centerResponseCards: [],
@@ -96,9 +137,35 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   };
   let eventReplayChain = Promise.resolve();
   let activeReplayBatchCount = 0;
+  let clientLogPersistTimer: number | null = null;
+  let eventLogPanelPersistTimer: number | null = null;
+  let discordSafetyPollInterval: number | null = null;
+  let syncInFlight = false;
+  let deferredSyncRequested = false;
+  let clientLogDirty = false;
+  let lastRealtimeActivityAt = Date.now();
+  let victoryCelebrationVisible = false;
+  let victoryRevealTimer: number | null = null;
+  let victoryRevealWinnerSeatNumber: number | null = null;
+  let eventLogResizeDrag:
+    | {
+      pointerId: number;
+      startX: number;
+      startY: number;
+      startWidth: number;
+      startHeight: number;
+    }
+    | null = null;
 
   const delay = (ms: number): Promise<void> =>
     new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const clearVictoryRevealTimer = (): void => {
+    if (victoryRevealTimer != null) {
+      window.clearTimeout(victoryRevealTimer);
+      victoryRevealTimer = null;
+    }
+  };
 
   interface HandCardVisualSnapshot {
     rect: DOMRect;
@@ -124,13 +191,49 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 
   const logClient = (scope: string, message: string): void => {
+    if (scope === "sync" && message === "Fetching latest match state") {
+      return;
+    }
+
     const entry = `${new Date().toISOString()} [client:${scope}] ${message}`;
     state.clientDebugLog.push(entry);
     if (state.clientDebugLog.length > 300) {
       state.clientDebugLog = state.clientDebugLog.slice(-300);
     }
     console.info(entry);
+    clientLogDirty = true;
+    scheduleClientLogPersist();
   };
+
+  const persistEventLogPanelSize = (): void => {
+    try {
+      window.localStorage.setItem(
+        eventLogSizeStorageKey,
+        JSON.stringify({
+          width: state.eventLogPanelWidth,
+          height: state.eventLogPanelHeight
+        })
+      );
+    } catch {
+      // Ignore local storage failures; the panel will still be resizable for this session.
+    }
+  };
+
+  const scheduleEventLogPanelPersist = (): void => {
+    if (eventLogPanelPersistTimer != null) {
+      return;
+    }
+
+    eventLogPanelPersistTimer = window.setTimeout(() => {
+      eventLogPanelPersistTimer = null;
+      persistEventLogPanelSize();
+    }, 250);
+  };
+
+  window.addEventListener("pagehide", () => {
+    persistEventLogPanelSize();
+    void persistClientLogNow();
+  });
 
   (
     window as typeof window & {
@@ -148,6 +251,30 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+  };
+
+  const persistClientLogNow = async (): Promise<void> => {
+    if (state.playerSessionToken.trim() === "" || !clientLogDirty) {
+      return;
+    }
+
+    try {
+      await persistClientLogSnapshot(state.instanceId, state.playerSessionToken, state.clientDebugLog);
+      clientLogDirty = false;
+    } catch (error) {
+      console.warn("Unable to persist client log snapshot", error);
+    }
+  };
+
+  const scheduleClientLogPersist = (): void => {
+    if (clientLogPersistTimer != null) {
+      return;
+    }
+
+    clientLogPersistTimer = window.setTimeout(() => {
+      clientLogPersistTimer = null;
+      void persistClientLogNow();
+    }, 15000);
   };
 
   const getSeatDisplayName = (seatNumber?: number): string => {
@@ -210,6 +337,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       default:
         return null;
     }
+  };
+
+  const hasActiveLocalInteraction = (): boolean => {
+    return state.draggingCardInstanceId !== "" || state.arrowDrag != null;
   };
 
   const getSeatAnchorRect = (seatNumber?: number): DOMRect | null => {
@@ -345,6 +476,51 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     state.displayedHpBySeat = nextDisplayedHpBySeat;
   };
 
+  const hasUnseenGameEvents = (): boolean =>
+    (state.match?.game?.eventLog ?? []).some((event) => !state.seenGameEventIds.includes(event.id));
+
+  const updateVictoryCelebrationState = (): void => {
+    const winnerSeatNumber = state.match?.game?.winnerSeatNumber ?? null;
+    const canReveal = winnerSeatNumber != null && !state.eventPlaybackActive && !hasUnseenGameEvents();
+
+    if (winnerSeatNumber == null) {
+      clearVictoryRevealTimer();
+      victoryCelebrationVisible = false;
+      victoryRevealWinnerSeatNumber = null;
+      return;
+    }
+
+    if (!canReveal) {
+      clearVictoryRevealTimer();
+      victoryCelebrationVisible = false;
+      victoryRevealWinnerSeatNumber = winnerSeatNumber;
+      return;
+    }
+
+    if (victoryCelebrationVisible && victoryRevealWinnerSeatNumber === winnerSeatNumber) {
+      return;
+    }
+
+    if (victoryRevealTimer != null && victoryRevealWinnerSeatNumber === winnerSeatNumber) {
+      return;
+    }
+
+    clearVictoryRevealTimer();
+    victoryCelebrationVisible = false;
+    victoryRevealWinnerSeatNumber = winnerSeatNumber;
+    victoryRevealTimer = window.setTimeout(() => {
+      victoryRevealTimer = null;
+      if (
+        state.match?.game?.winnerSeatNumber === winnerSeatNumber
+        && !state.eventPlaybackActive
+        && !hasUnseenGameEvents()
+      ) {
+        victoryCelebrationVisible = true;
+        render();
+      }
+    }, 1000);
+  };
+
   const applyMatchState = (nextMatch: MatchState | null): void => {
     const previousPendingInspection = state.match?.game?.pendingHandInspection;
     const previousPendingBoardResetKeep = state.match?.game?.pendingBoardResetKeep;
@@ -360,6 +536,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       state.telepathyPanelScrollTop = 0;
       state.telepathyListScrollTop = 0;
       state.hiddenHandCardInstanceIds = [];
+      state.pendingAnnulationChoice = null;
+      updateVictoryCelebrationState();
       return;
     }
 
@@ -435,6 +613,17 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       state.centerResponseCards = [];
       state.activeCardFlight = null;
     }
+    if (state.pendingAnnulationChoice != null) {
+      const localHand = nextMatch.seats.find((seat) => seat.seatNumber === state.localSeatNumber)?.hand ?? [];
+      const promptStillValid =
+        nextMatch.game?.pendingAction?.responseMode === "collective"
+        && localHand.some((card) => card.instanceId === state.pendingAnnulationChoice?.cardInstanceId);
+      if (!promptStillValid) {
+        state.pendingAnnulationChoice = null;
+      }
+    }
+    syncVisibleEventLog();
+    updateVictoryCelebrationState();
   };
 
   const maybeReplayGameEvents = async (): Promise<void> => {
@@ -622,13 +811,27 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         render();
         await animateCardFlightToCenter(event.card, event.actorSeatNumber, "action");
         context.currentAction = event;
-        state.activeActionVisual = {
-          actorSeatNumber: event.actorSeatNumber,
-          targetSeatNumbers: [...event.targetSeatNumbers],
-          targetObjectInstanceId: event.targetObjectInstanceId,
-          card: event.card,
-          summary: event.summary
-        };
+        const previousActionVisual = state.activeActionVisual;
+        const preserveCollectiveTargetingVisual =
+          previousActionVisual != null
+          && previousActionVisual.card.cardId === event.card.cardId
+          && previousActionVisual.targetSeatNumbers.length > 1
+          && event.targetSeatNumbers.length === 1;
+        state.activeActionVisual = preserveCollectiveTargetingVisual
+          ? {
+              actorSeatNumber: previousActionVisual.actorSeatNumber,
+              targetSeatNumbers: [...previousActionVisual.targetSeatNumbers],
+              targetObjectInstanceId: previousActionVisual.targetObjectInstanceId,
+              card: event.card,
+              summary: previousActionVisual.summary
+            }
+          : {
+              actorSeatNumber: event.actorSeatNumber,
+              targetSeatNumbers: [...event.targetSeatNumbers],
+              targetObjectInstanceId: event.targetObjectInstanceId,
+              card: event.card,
+              summary: event.summary
+            };
         render();
         await showCombatFx(
           event,
@@ -884,6 +1087,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             };
             if (actionStartEvent != null) {
               await replaySingleEvent(actionStartEvent, replayContext);
+              revealEventLogEntriesUpTo(actionStartEvent.createdAt);
             }
 
             const remainingEvents = actionStartEvent == null
@@ -901,6 +1105,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
                     .catch(() => undefined)
                     .then(async () => {
                       await replaySingleEvent(event, replayContext);
+                      revealEventLogEntriesUpTo(event.createdAt);
                     })
                 );
               }
@@ -909,7 +1114,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
             // Three-phase playback to preserve correct animation order:
             //   Phase 1: response choices + resistance rolls (up to last resistance_result)
-            //   Phase 2: attacker's damage dice rolls (server emits these before attack_impact)
+            //   Phase 2: attacker's damage/heal dice rolls
             //   Phase 3: attack impacts (shake/zoom) + hp changes
             const lastResistanceResultIndex = remainingEvents.reduce(
               (lastIndex, event, index) => event.type === "resistance_result" ? index : lastIndex,
@@ -927,11 +1132,20 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
               // later resistance rolls twice, so preserve the server order.
               for (const event of remainingEvents) {
                 await replaySingleEvent(event, replayContext);
+                revealEventLogEntriesUpTo(event.createdAt);
               }
             } else {
               const phase1Events = remainingEvents.slice(0, resistanceBoundary);
-              const phase2Events = remainingEvents.slice(resistanceBoundary, impactBoundary);
-              const phase3Events = remainingEvents.slice(impactBoundary);
+              const postResistanceEvents = remainingEvents.slice(resistanceBoundary);
+              // Area cards such as Carquois de fleches magiques emit
+              // dice_roll + hp_loss pairs without attack_impact. Replay
+              // all dice first so damage does not appear mid-roll.
+              const phase2Events = firstImpactIndex === -1
+                ? postResistanceEvents.filter((event) => event.type === "dice_roll")
+                : remainingEvents.slice(resistanceBoundary, impactBoundary);
+              const phase3Events = firstImpactIndex === -1
+                ? postResistanceEvents.filter((event) => event.type !== "dice_roll")
+                : remainingEvents.slice(impactBoundary);
 
               await runEventsInParallelQueues(phase1Events);
               await runEventsInParallelQueues(phase2Events);
@@ -947,7 +1161,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
                 state.centerResponseCards = [];
               }
               reconcileDisplayedHp();
+              syncVisibleEventLog();
             }
+            updateVictoryCelebrationState();
             render();
           }
         });
@@ -958,6 +1174,45 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     state.match?.seats.find((seat) => seat.seatNumber === state.localSeatNumber)?.hand ?? [];
 
   const getDraggedCard = () => getLocalHand().find((card) => card.instanceId === state.draggingCardInstanceId);
+
+  const getCollectiveAnnulationPrompt = (
+    draggedCard: CardView | undefined
+  ): { maxCount: number; neededCount: number } | null => {
+    if (draggedCard?.cardId !== "annulation") {
+      return null;
+    }
+
+    const pendingAction = state.match?.game?.pendingAction;
+    if (pendingAction == null || pendingAction.responseMode !== "collective") {
+      return null;
+    }
+
+    const requiredCount = pendingAction.card.defenseBand?.annulationCardsRequired ?? 0;
+    if (requiredCount < 2) {
+      return null;
+    }
+
+    const localResponder = pendingAction.responders.find((responder) => responder.seatNumber === state.localSeatNumber);
+    if (localResponder?.state !== "pending") {
+      return null;
+    }
+
+    const alreadyCommitted = pendingAction.responders.reduce((count, responder) => (
+      responder.choice === "annulation"
+        ? count + (responder.committedCardCount ?? responder.cards?.length ?? 0)
+        : count
+    ), 0);
+    const neededCount = Math.max(0, requiredCount - alreadyCommitted);
+    const availableCount = getLocalHand().filter((card) => card.cardId === "annulation").length;
+    if (neededCount < 2 || availableCount < 2) {
+      return null;
+    }
+
+    return {
+      maxCount: Math.min(availableCount, neededCount),
+      neededCount
+    };
+  };
 
   const captureHandCardVisuals = (): Map<string, HandCardVisualSnapshot> => {
     const rects = new Map<string, HandCardVisualSnapshot>();
@@ -985,6 +1240,16 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       return state.draggingCardInstanceId;
     }
     return state.hoveredCardInstanceId;
+  };
+
+  const getEffectiveHoveredCardInstanceId = (): string =>
+    state.hoveredCardInstanceId !== "" && state.hoveredCardInstanceId !== state.hoverZoomBlockedCardInstanceId
+      ? state.hoveredCardInstanceId
+      : "";
+
+  const blockHoverZoomUntilPointerLeaves = (cardInstanceId: string): void => {
+    state.hoveredCardInstanceId = cardInstanceId;
+    state.hoverZoomBlockedCardInstanceId = cardInstanceId;
   };
 
   const clearDragState = (): void => {
@@ -1224,16 +1489,48 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     applyMatchState(await playCard(state.instanceId, state.playerSessionToken, request));
     state.errorMessage = "";
     clearDragState();
+    blockHoverZoomUntilPointerLeaves(request.cardInstanceId);
     render();
     if (previousHandVisuals != null) {
       await animatePersistentHandReflow(previousHandVisuals);
     }
   };
 
+  const submitPendingResponse = async (
+    request: Parameters<typeof respondToPendingAction>[2],
+    responseCardInstanceId?: string
+  ): Promise<void> => {
+    applyMatchState(await respondToPendingAction(state.instanceId, state.playerSessionToken, request));
+    state.errorMessage = "";
+    state.pendingAnnulationChoice = null;
+    clearDragState();
+    if (responseCardInstanceId != null && responseCardInstanceId !== "") {
+      blockHoverZoomUntilPointerLeaves(responseCardInstanceId);
+    }
+  };
+
+  const shouldOfferDiscardOnInvalidDrop = (draggedCard: CardView | undefined): boolean => {
+    if (draggedCard == null || state.match?.status !== "in_progress") {
+      return false;
+    }
+
+    const game = state.match.game;
+    return game?.currentTurnSeatNumber === state.localSeatNumber
+      && game.pendingAction == null
+      && game.forcedFollowUp == null
+      && game.pendingCurseRelease == null;
+  };
+
   const handleDraggedCardDrop = async (): Promise<void> => {
     const draggedCard = getDraggedCard();
     const hoverTarget = state.dragHoverTarget;
     if (draggedCard == null || hoverTarget == null) {
+      if (draggedCard != null && shouldOfferDiscardOnInvalidDrop(draggedCard)) {
+        state.confirmingDiscardCardInstanceId = draggedCard.instanceId;
+        clearDragState();
+        render();
+        return;
+      }
       if (draggedCard != null) {
         await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
       } else {
@@ -1267,15 +1564,31 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
                 ? "mirror"
                 : null;
         if (choice == null) {
+          if (shouldOfferDiscardOnInvalidDrop(draggedCard)) {
+            state.confirmingDiscardCardInstanceId = draggedCard.instanceId;
+            clearDragState();
+            render();
+            return;
+          }
           await animateInvalidDragReturn(draggedCard, state.dragPointerX, state.dragPointerY);
           return;
         }
 
-        applyMatchState(await respondToPendingAction(state.instanceId, state.playerSessionToken, {
-          choice
-        }));
-        state.errorMessage = "";
-        clearDragState();
+        const annulationPrompt = choice === "annulation"
+          ? getCollectiveAnnulationPrompt(draggedCard)
+          : null;
+        if (annulationPrompt != null) {
+          state.pendingAnnulationChoice = {
+            cardInstanceId: draggedCard.instanceId,
+            maxCount: annulationPrompt.maxCount,
+            neededCount: annulationPrompt.neededCount
+          };
+          clearDragState();
+          render();
+          return;
+        }
+
+        await submitPendingResponse({ choice }, draggedCard.instanceId);
       } else if (hoverTarget.kind === "seat" && hoverTarget.seatNumber != null) {
         const previousHandVisuals = captureHandCardVisuals();
         await executePlayRequest({
@@ -1299,6 +1612,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     }
 
     render();
+    if (deferredSyncRequested) {
+      deferredSyncRequested = false;
+      void syncMatch();
+    }
   };
 
   const syncMatch = async (): Promise<void> => {
@@ -1306,8 +1623,31 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       return;
     }
 
-    logClient("sync", "Fetching latest match state");
-    applyMatchState(await fetchMatch(state.instanceId, state.playerSessionToken));
+    if (hasActiveLocalInteraction()) {
+      deferredSyncRequested = true;
+      return;
+    }
+
+    if (syncInFlight) {
+      return;
+    }
+
+    syncInFlight = true;
+
+    try {
+      applyMatchState(await fetchMatch(state.instanceId, state.playerSessionToken));
+      lastRealtimeActivityAt = Date.now();
+    } catch (error) {
+      logClient(
+        "sync",
+        `Sync failed: ${error instanceof Error ? error.message : "Unknown sync error"}`
+      );
+      syncInFlight = false;
+      return;
+    }
+
+    syncInFlight = false;
+
     if (state.match == null) {
       render();
       return;
@@ -1326,22 +1666,37 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     render();
   };
 
-  const handleDocumentPointerDown = (event: PointerEvent): void => {
-    if (!state.chatExpanded || state.confirmingLeave) {
+  const requestSync = (): void => {
+    if (hasActiveLocalInteraction()) {
+      deferredSyncRequested = true;
       return;
     }
 
-    const target = event.target as HTMLElement | null;
-    if (target?.closest("[data-chat-panel='true']") == null) {
-      state.chatExpanded = false;
-      render();
-    }
+    void syncMatch();
+  };
+
+  const handleDocumentPointerDown = (_event: PointerEvent): void => {
   };
 
   let cursorSendAt = 0;
   const CURSOR_THROTTLE_MS = 50;
 
   const handleDocumentPointerMove = (event: PointerEvent): void => {
+    if (eventLogResizeDrag != null) {
+      const nextSize = clampEventLogPanelSize(
+        eventLogResizeDrag.startWidth + (event.clientX - eventLogResizeDrag.startX),
+        eventLogResizeDrag.startHeight - (event.clientY - eventLogResizeDrag.startY)
+      );
+      state.eventLogPanelWidth = nextSize.width;
+      state.eventLogPanelHeight = nextSize.height;
+      const panel = rootElement.querySelector<HTMLElement>("[data-chat-panel='true']");
+      if (panel != null) {
+        panel.style.setProperty("--event-log-panel-width", `${nextSize.width}px`);
+        panel.style.setProperty("--event-log-panel-height", `${nextSize.height}px`);
+      }
+      return;
+    }
+
     // Phase 3: arrow drag for targeting cards
     if (state.arrowDrag != null) {
       state.arrowDrag.pointerX = event.clientX;
@@ -1426,6 +1781,14 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       return;
     }
 
+    if (eventLogResizeDrag != null) {
+      const panel = rootElement.querySelector<HTMLElement>("[data-chat-panel='true']");
+      panel?.classList.remove("chat-panel--resizing");
+      eventLogResizeDrag = null;
+      scheduleEventLogPanelPersist();
+      return;
+    }
+
     // Phase 3: arrow drag release
     if (state.arrowDrag != null) {
       const { cardInstanceId, nearestSeatNumber } = state.arrowDrag;
@@ -1443,9 +1806,30 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.playCard");
           }
           render();
+          if (deferredSyncRequested) {
+            deferredSyncRequested = false;
+            void syncMatch();
+          }
         })();
       } else {
+        const releasedCard = state.match?.seats
+          .find((seat) => seat.seatNumber === state.localSeatNumber)
+          ?.hand?.find((card) => card.instanceId === cardInstanceId);
+        if (shouldOfferDiscardOnInvalidDrop(releasedCard)) {
+          state.confirmingDiscardCardInstanceId = cardInstanceId;
+          clearDragState();
+          render();
+          if (deferredSyncRequested) {
+            deferredSyncRequested = false;
+            void syncMatch();
+          }
+          return;
+        }
         void animatePersistentHandReflow(previousHandVisuals);
+        if (deferredSyncRequested) {
+          deferredSyncRequested = false;
+          void syncMatch();
+        }
       }
       return;
     }
@@ -1478,6 +1862,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     sseEventSource = new EventSource(`/api/matches/${instanceId}/events`);
 
     sseEventSource.addEventListener("message", (event) => {
+      lastRealtimeActivityAt = Date.now();
       try {
         const msg = JSON.parse(event.data as string) as { type: string; seatNumber?: number; targetSeatNumber?: number | null };
         if (msg.type === "cursor_move" && msg.seatNumber != null) {
@@ -1491,10 +1876,11 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       } catch {
         // Not JSON or unknown shape — fall through to state sync
       }
-      void syncMatch();
+      requestSync();
     });
 
     sseEventSource.addEventListener("open", () => {
+      lastRealtimeActivityAt = Date.now();
       logClient("sse", "SSE connected");
       if (sseFallbackPollInterval != null) {
         window.clearInterval(sseFallbackPollInterval);
@@ -1507,7 +1893,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         sseEventSource = null;
         if (sseFallbackPollInterval == null) {
           logClient("sse", "SSE closed, falling back to polling");
-          sseFallbackPollInterval = window.setInterval(() => void syncMatch(), 4000);
+          sseFallbackPollInterval = window.setInterval(() => requestSync(), 4000);
         }
       }
     });
@@ -1529,6 +1915,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.confirmingDiscardCardInstanceId = "";
         state.leftMessage = "";
         state.seenGameEventIds = freshJoin.match.game?.eventLog.map((event) => event.id) ?? [];
+        state.seenEventMessageIds = buildEventLogEntries(freshJoin.match, state.language).map((entry) => entry.id);
         state.clientDebugLog = [];
         logClient("session", "Started fresh browser session after leaving match");
         connectSSE(state.instanceId);
@@ -1543,33 +1930,34 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     render();
   };
 
-  const sendCurrentChatMessage = async (): Promise<void> => {
-    const content = state.chatDraft.trim();
-    if (content.length === 0) {
-      return;
-    }
+  const revealEventLogEntriesUpTo = (createdAt?: string): void => {
+    const eventLogEntries = state.match == null ? [] : buildEventLogEntries(state.match, state.language);
+    let changed = false;
 
-    try {
-      applyMatchState(await sendChatMessage(state.instanceId, state.playerSessionToken, content));
-      state.chatDraft = "";
-      state.chatExpanded = true;
-      state.errorMessage = "";
-    } catch (error) {
-      state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.sendMessage");
-    }
-
-    render();
-  };
-
-  const logNewDealerEvents = (): void => {
-    const dealerMessages = state.match?.chatMessages.filter((message) => message.userId === "dealer") ?? [];
-    for (const message of dealerMessages) {
-      if (state.seenEventMessageIds.includes(message.id)) {
+    for (const entry of eventLogEntries) {
+      if (state.seenEventMessageIds.includes(entry.id)) {
+        continue;
+      }
+      if (createdAt != null && entry.createdAt > createdAt) {
         continue;
       }
 
-      console.info(`[Dealer] ${message.content}`);
-      state.seenEventMessageIds.push(message.id);
+      state.seenEventMessageIds.push(entry.id);
+      changed = true;
+    }
+
+    if (changed) {
+      render();
+    }
+  };
+
+  const syncVisibleEventLog = (): void => {
+    const hasPendingReplay =
+      state.eventPlaybackActive
+      || (state.match?.game?.eventLog ?? []).some((event) => !state.seenGameEventIds.includes(event.id));
+
+    if (!hasPendingReplay) {
+      revealEventLogEntriesUpTo();
     }
   };
 
@@ -1618,7 +2006,18 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       return;
     }
 
-    const pendingAction = state.activeActionVisual ?? state.match.game?.pendingAction;
+    const livePendingAction = state.match.game?.pendingAction;
+    const pendingAction =
+      livePendingAction?.responseMode === "collective"
+      && state.activeActionVisual?.card.cardId === livePendingAction.card.cardId
+        ? {
+            actorSeatNumber: livePendingAction.actorSeatNumber,
+            targetSeatNumbers: [...livePendingAction.targetSeatNumbers],
+            targetObjectInstanceId: livePendingAction.targetObjectInstanceId,
+            card: state.activeActionVisual.card,
+            summary: state.activeActionVisual.summary
+          }
+        : (state.activeActionVisual ?? livePendingAction);
     const centerCard = rootElement.querySelector<HTMLElement>("[data-pending-card-center='true']");
     const tableSurface = rootElement.querySelector<HTMLElement>(".table-surface");
     if (pendingAction == null || centerCard == null || tableSurface == null) {
@@ -1720,9 +2119,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
       return;
     }
-    if (state.hoveredCardInstanceId !== "") {
+    const hoveredCardInstanceId = getEffectiveHoveredCardInstanceId();
+    if (hoveredCardInstanceId !== "") {
       rootElement.querySelector<HTMLElement>(
-        `[data-card-instance-id='${state.hoveredCardInstanceId}']`
+        `[data-card-instance-id='${hoveredCardInstanceId}']`
       )?.classList.add("hand-card--js-hovered");
     }
   };
@@ -1734,6 +2134,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
    */
   const applyHoverSpread = (): void => {
     const SPREAD_PX = 110;
+    const EDGE_SPREAD_MULTIPLIER = 1.5;
     const cards = Array.from(rootElement.querySelectorAll<HTMLElement>(".hand-card"));
     if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
       const spreadAnchorCardInstanceId = getHandSpreadAnchorCardInstanceId();
@@ -1744,30 +2145,49 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         const base = parseFloat(el.dataset.baseFanX ?? "0");
         let offset = 0;
         if (hoveredIndex >= 0 && spreadAnchorCardInstanceId !== "") {
+          const spreadMagnitude =
+            hoveredIndex === 0 || hoveredIndex === cards.length - 1
+              ? SPREAD_PX * EDGE_SPREAD_MULTIPLIER
+              : SPREAD_PX;
           const dist = i - hoveredIndex;
           if (dist !== 0) {
-            offset = Math.sign(dist) * SPREAD_PX;
+            offset = Math.sign(dist) * spreadMagnitude;
           }
         }
         el.style.setProperty("--fan-x", `${(base + offset).toFixed(1)}px`);
       });
       return;
     }
+    const hoveredCardInstanceId = getEffectiveHoveredCardInstanceId();
     const hoveredIndex = cards.findIndex(
-      (el) => el.dataset.cardInstanceId === state.hoveredCardInstanceId
+      (el) => el.dataset.cardInstanceId === hoveredCardInstanceId
     );
     cards.forEach((el, i) => {
       const base = parseFloat(el.dataset.baseFanX ?? "0");
       let offset = 0;
-      if (hoveredIndex >= 0 && state.hoveredCardInstanceId !== "") {
+      if (hoveredIndex >= 0 && hoveredCardInstanceId !== "") {
+        const spreadMagnitude =
+          hoveredIndex === 0 || hoveredIndex === cards.length - 1
+            ? SPREAD_PX * EDGE_SPREAD_MULTIPLIER
+            : SPREAD_PX;
         const dist = i - hoveredIndex;
         if (dist !== 0) {
           // All cards on each side shift by the same flat amount — preserves inter-card spacing
-          offset = Math.sign(dist) * SPREAD_PX;
+          offset = Math.sign(dist) * spreadMagnitude;
         }
       }
       el.style.setProperty("--fan-x", `${(base + offset).toFixed(1)}px`);
     });
+  };
+
+  const applyCenterHoverClass = (): void => {
+    rootElement.querySelectorAll<HTMLElement>(".center-play-slot--js-hovered").forEach((el) => {
+      el.classList.remove("center-play-slot--js-hovered");
+    });
+    if (state.hoveredCenterSlotKind === "") {
+      return;
+    }
+    rootElement.querySelector<HTMLElement>(`[data-center-hover-slot='${state.hoveredCenterSlotKind}']`)?.classList.add("center-play-slot--js-hovered");
   };
 
   const render = (): void => {
@@ -1785,25 +2205,25 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       return;
     }
 
-    logNewDealerEvents();
     const localizedMatch = localizeMatchState(state.match, state.language);
+    const visibleEventLogEntries = buildEventLogEntries(state.match, state.language).filter(
+      (entry) => state.seenEventMessageIds.includes(entry.id)
+    );
 
     const chatMarkup =
       state.match.status === "in_progress"
-        ? state.chatHidden
-          ? renderHiddenChatButton(state.language)
-          : renderChatView({
-              chatMessages: localizedMatch.chatMessages,
-              draft: state.chatDraft,
-              expanded: state.chatExpanded,
-              language: state.language
-            })
+        ? renderChatView({
+            entries: visibleEventLogEntries,
+            language: state.language,
+            panelWidth: state.eventLogPanelWidth,
+            panelHeight: state.eventLogPanelHeight
+          })
         : "";
 
     const eventLogMarkup = "";
     const presentationLockActive =
       state.eventPlaybackActive
-      || (state.match.game?.eventLog ?? []).some((event) => !state.seenGameEventIds.includes(event.id));
+      || hasUnseenGameEvents();
 
     const baseView =
       state.match.status === "lobby"
@@ -1837,6 +2257,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             inspectedSeatNumber: state.inspectedSeatNumber,
             telepathyPreviewCardInstanceId: state.telepathyPreviewCardInstanceId,
             boardResetKeepPreviewCardInstanceId: state.boardResetKeepPreviewCardInstanceId,
+            cardReferencePreviewCardId: state.cardReferencePreviewCardId,
             sacrificeAmountInput: state.sacrificeAmountInput,
             errorMessage: state.errorMessage,
             chatMarkup,
@@ -1846,10 +2267,14 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             activeHealBursts: state.activeHealBursts,
             impactTargetSeatNumbers: state.impactTargetSeatNumbers,
             returningHandCardInstanceId: state.returningHandCardInstanceId,
-            hiddenHandCardInstanceIds: state.hiddenHandCardInstanceIds
+            hiddenHandCardInstanceIds: state.hiddenHandCardInstanceIds,
+            hoveredCardInstanceId: getEffectiveHoveredCardInstanceId(),
+            hoveredCenterSlotKind: state.hoveredCenterSlotKind,
+            cardReferenceOpen: state.cardReferenceOpen,
+            showVictoryCelebration: victoryCelebrationVisible
           });
     const kickTarget = state.match.seats.find((seat) => seat.seatNumber === state.confirmingKickSeatNumber);
-    rootElement.innerHTML = `${renderLanguageToggle(state.language)}${baseView}${renderLeaveConfirmationModal(state.confirmingLeave, state.language)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName, state.language) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "", state.language)}`;
+    rootElement.innerHTML = `${renderLanguageToggle(state.language)}${baseView}${renderLeaveConfirmationModal(state.confirmingLeave, state.language)}${kickTarget != null ? renderKickConfirmationModal(kickTarget.displayName, state.language) : ""}${renderDiscardConfirmationModal(state.confirmingDiscardCardInstanceId !== "", state.language)}${renderAnnulationChoiceModal(state.pendingAnnulationChoice, state.language)}`;
     drawPendingActionTargetOverlay(presentationLockActive);
     updateArrowOverlay();
 
@@ -1861,10 +2286,36 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     if (telepathyList != null) {
       telepathyList.scrollTop = state.telepathyListScrollTop;
     }
+    const cardReferenceList = rootElement.querySelector<HTMLElement>("[data-card-reference-list='true']");
+    if (cardReferenceList != null) {
+      cardReferenceList.scrollTop = state.cardReferenceListScrollTop;
+    }
+    const eventLogResizeHandle = rootElement.querySelector<HTMLElement>("[data-action='resize-event-log']");
+    eventLogResizeHandle?.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const panel = rootElement.querySelector<HTMLElement>("[data-chat-panel='true']");
+      if (panel == null) {
+        return;
+      }
+
+      const clamped = clampEventLogPanelSize(state.eventLogPanelWidth, state.eventLogPanelHeight);
+      state.eventLogPanelWidth = clamped.width;
+      state.eventLogPanelHeight = clamped.height;
+      eventLogResizeDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startWidth: clamped.width,
+        startHeight: clamped.height
+      };
+      panel.classList.add("chat-panel--resizing");
+    });
 
     // Restore the stable hover class and spread positions after every DOM rebuild.
     applyHoverClass();
     applyHoverSpread();
+    applyCenterHoverClass();
 
     // Hand-card hover: mutate DOM directly without re-render so CSS transitions animate.
     rootElement.querySelectorAll<HTMLElement>(".hand-card").forEach((el) => {
@@ -1873,7 +2324,13 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           return;
         }
         const id = el.dataset.cardInstanceId ?? "";
-        if (id === "" || id === state.hoveredCardInstanceId) {
+        if (id === "") {
+          return;
+        }
+        if (id !== state.hoverZoomBlockedCardInstanceId) {
+          state.hoverZoomBlockedCardInstanceId = "";
+        }
+        if (id === state.hoveredCardInstanceId) {
           return;
         }
         state.hoveredCardInstanceId = id;
@@ -1886,12 +2343,36 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       if (state.draggingCardInstanceId !== "" || state.arrowDrag != null) {
         return;
       }
+      state.hoverZoomBlockedCardInstanceId = "";
       if (state.hoveredCardInstanceId === "") {
         return;
       }
       state.hoveredCardInstanceId = "";
       applyHoverClass();
       applyHoverSpread();
+    });
+
+    rootElement.querySelectorAll<HTMLElement>("[data-center-hover-slot]").forEach((el) => {
+      el.addEventListener("pointerenter", () => {
+        const slotKind = el.dataset.centerHoverSlot;
+        if (slotKind !== "attack" && slotKind !== "response") {
+          return;
+        }
+        if (state.hoveredCenterSlotKind === slotKind) {
+          return;
+        }
+        state.hoveredCenterSlotKind = slotKind;
+        applyCenterHoverClass();
+      });
+
+      el.addEventListener("pointerleave", () => {
+        const slotKind = el.dataset.centerHoverSlot;
+        if (slotKind !== state.hoveredCenterSlotKind) {
+          return;
+        }
+        state.hoveredCenterSlotKind = "";
+        applyCenterHoverClass();
+      });
     });
 
     rootElement.querySelectorAll<HTMLButtonElement>("[data-action='set-language']").forEach((button) => {
@@ -2028,6 +2509,33 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       });
     });
 
+    rootElement.querySelector<HTMLButtonElement>("[data-action='open-card-reference']")?.addEventListener("click", () => {
+      state.cardReferenceOpen = true;
+      render();
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='close-card-reference']")?.addEventListener("click", () => {
+      state.cardReferenceOpen = false;
+      render();
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-reference-card']").forEach((button) => {
+      const previewCardId = button.dataset.cardId ?? "";
+      const setPreview = (): void => {
+        if (previewCardId === "" || state.cardReferencePreviewCardId === previewCardId) {
+          return;
+        }
+
+        state.cardReferenceListScrollTop =
+          rootElement.querySelector<HTMLElement>("[data-card-reference-list='true']")?.scrollTop ?? 0;
+        state.cardReferencePreviewCardId = previewCardId;
+        render();
+      };
+
+      button.addEventListener("focus", setPreview);
+      button.addEventListener("click", setPreview);
+    });
+
     rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-board-reset-keep']")?.addEventListener("click", async () => {
       const cardInstanceId = state.boardResetKeepPreviewCardInstanceId;
       if (cardInstanceId === "") {
@@ -2134,6 +2642,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = "";
         state.displayedHpBySeat = buildDisplayedHpBySeat(state.match);
         state.seenGameEventIds = state.match?.game?.eventLog.map((event) => event.id) ?? [];
+        state.seenEventMessageIds = state.match == null ? [] : buildEventLogEntries(state.match, state.language).map((entry) => entry.id);
       } catch (error) {
         state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.startMatch");
       }
@@ -2142,7 +2651,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='refresh']")?.addEventListener("click", () => {
-      void syncMatch();
+      requestSync();
     });
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='pass-forced-follow-up']")?.addEventListener("click", async () => {
@@ -2175,10 +2684,23 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       const lines = (state.match?.game?.debugLog ?? []).map(
         (entry) => `${entry.createdAt} [${entry.source}:${entry.scope}] ${entry.message}`
       );
+      if (session.mode === "discord") {
+        state.errorMessage = `Server log auto-saved to runtime-logs/${state.instanceId}/server.log`;
+        render();
+        return;
+      }
+
       downloadTextFile(`emerlaus-server-log-${state.instanceId}.log`, lines.join("\n"));
     });
 
-    rootElement.querySelector<HTMLButtonElement>("[data-action='download-client-log']")?.addEventListener("click", () => {
+    rootElement.querySelector<HTMLButtonElement>("[data-action='download-client-log']")?.addEventListener("click", async () => {
+      if (session.mode === "discord") {
+        await persistClientLogNow();
+        state.errorMessage = `Client log auto-saved to runtime-logs/${state.instanceId}/`;
+        render();
+        return;
+      }
+
       downloadTextFile(`emerlaus-client-log-${state.instanceId}.log`, state.clientDebugLog.join("\n"));
     });
 
@@ -2213,62 +2735,43 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       void leaveCurrentMatch();
     });
 
-    rootElement.querySelector<HTMLButtonElement>("[data-action='expand-chat']")?.addEventListener("click", () => {
-      state.chatExpanded = true;
-      render();
-      rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']")?.focus();
-    });
-
-    rootElement.querySelector<HTMLButtonElement>("[data-action='collapse-chat']")?.addEventListener("click", () => {
-      state.chatExpanded = false;
-      render();
-    });
-
-    rootElement.querySelector<HTMLButtonElement>("[data-action='hide-chat']")?.addEventListener("click", () => {
-      state.chatHidden = true;
-      render();
-    });
-
-    rootElement.querySelector<HTMLButtonElement>("[data-action='show-chat']")?.addEventListener("click", () => {
-      state.chatHidden = false;
-      render();
-    });
-
-    rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']")?.addEventListener("focus", () => {
-      if (!state.chatExpanded) {
-        state.chatExpanded = true;
-        render();
-        rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']")?.focus();
-      }
-    });
-
-    rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']")?.addEventListener("input", (event) => {
-      state.chatDraft = (event.currentTarget as HTMLTextAreaElement).value;
-    });
-
-    rootElement.querySelector<HTMLFormElement>("[data-chat-form='true']")?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void sendCurrentChatMessage();
-    });
-
-    rootElement.querySelector<HTMLTextAreaElement>("[data-chat-input='true']")?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        void sendCurrentChatMessage();
-      }
-    });
-
     rootElement.querySelector<HTMLButtonElement>("[data-action='respond-pending'][data-choice='pass']")?.addEventListener("click", async (event) => {
       const button = event.currentTarget as HTMLButtonElement;
       button.disabled = true;
       try {
         logClient("response", "Respond pass");
-        applyMatchState(await respondToPendingAction(state.instanceId, state.playerSessionToken, { choice: "pass" }));
-        state.errorMessage = "";
+        await submitPendingResponse({ choice: "pass" });
       } catch (error) {
         state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.passResponse");
       }
       render();
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='annulation-choice-cancel']")?.addEventListener("click", () => {
+      state.pendingAnnulationChoice = null;
+      render();
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='annulation-choice-confirm']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const pendingChoice = state.pendingAnnulationChoice;
+        if (pendingChoice == null) {
+          return;
+        }
+
+        const annulationCount = Math.max(1, Math.min(
+          Number(button.dataset.annulationCount ?? "1") || 1,
+          pendingChoice.maxCount
+        ));
+        button.disabled = true;
+        try {
+          logClient("response", `Respond annulation x${annulationCount}`);
+          await submitPendingResponse({ choice: "annulation", annulationCount }, pendingChoice.cardInstanceId);
+        } catch (error) {
+          state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.playCard");
+        }
+        render();
+      });
     });
 
     rootElement.querySelectorAll<HTMLButtonElement>("[data-action='select-pending-object']").forEach((button) => {
@@ -2308,14 +2811,29 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   connectSSE(state.instanceId);
 
+  if (session.mode === "discord") {
+    discordSafetyPollInterval = window.setInterval(() => {
+      if (Date.now() - lastRealtimeActivityAt >= 8000) {
+        requestSync();
+      }
+    }, 2000);
+  }
+
   const unsubscribe = session.subscribeToParticipantUpdates(() => {
-    void syncMatch();
+    requestSync();
   });
 
   window.addEventListener("beforeunload", () => {
+    persistEventLogPanelSize();
+    if (eventLogPanelPersistTimer != null) {
+      window.clearTimeout(eventLogPanelPersistTimer);
+    }
     sseEventSource?.close();
     if (sseFallbackPollInterval != null) {
       window.clearInterval(sseFallbackPollInterval);
+    }
+    if (discordSafetyPollInterval != null) {
+      window.clearInterval(discordSafetyPollInterval);
     }
     unsubscribe();
     document.removeEventListener("pointerdown", handleDocumentPointerDown);

@@ -8,8 +8,8 @@ import type {
   PendingActionResponderState,
   PlayedCardState,
   ResponseChoiceType
-} from "../../shared/types";
-import type { CardCategoryCode, CardEffect } from "../../shared/cards";
+} from "../../shared/types.js";
+import type { CardCategoryCode, CardEffect } from "../../shared/cards/index.js";
 
 export interface StoredCardInstance {
   instanceId: string;

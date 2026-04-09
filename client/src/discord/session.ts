@@ -1,4 +1,5 @@
 import { DiscordSDK, Events } from "@discord/embedded-app-sdk";
+import { buildAvatarDataUrl, isLegacyExternalAvatarUrl } from "../../../shared/avatar.js";
 import type { LocalUserProfile } from "../../../shared/types";
 import { fetchConfig } from "../api/gameApi";
 
@@ -16,14 +17,19 @@ function isEmbeddedInDiscord(): boolean {
 function buildMockBrowserUser(): LocalUserProfile {
   const stored = window.localStorage.getItem("emerlaus.browser-user");
   if (stored != null) {
-    return JSON.parse(stored) as LocalUserProfile;
+    const parsed = JSON.parse(stored) as LocalUserProfile;
+    if (isLegacyExternalAvatarUrl(parsed.avatarUrl)) {
+      parsed.avatarUrl = buildAvatarDataUrl(parsed.displayName);
+      window.localStorage.setItem("emerlaus.browser-user", JSON.stringify(parsed));
+    }
+    return parsed;
   }
 
   const suffix = Math.floor(Math.random() * 900 + 100);
   const user: LocalUserProfile = {
     userId: `browser-user-${crypto.randomUUID()}`,
     displayName: `Browser Player ${suffix}`,
-    avatarUrl: `https://api.dicebear.com/9.x/thumbs/svg?seed=Browser-${suffix}`
+    avatarUrl: buildAvatarDataUrl(`Browser Player ${suffix}`)
   };
 
   window.localStorage.setItem("emerlaus.browser-user", JSON.stringify(user));
@@ -66,7 +72,7 @@ async function authenticateWithDiscord(
     displayName: auth.user.global_name ?? auth.user.username,
     avatarUrl: auth.user.avatar
       ? `https://cdn.discordapp.com/avatars/${auth.user.id}/${auth.user.avatar}.png?size=128`
-      : `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(auth.user.username)}`
+      : buildAvatarDataUrl(auth.user.username)
   };
 }
 

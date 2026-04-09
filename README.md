@@ -48,7 +48,8 @@ Without Discord credentials, the client runs in browser mock mode so the UI and 
 ## Discord notes
 
 - Create a Discord application and enable Activities.
-- Point your Activity URL to your hosted client.
+- For local Discord testing, use a tunnel that points at the Vite dev server on `http://localhost:5173`.
+- For alpha hosting, deploy the built Express server and built client together so Discord only needs one public base URL.
 - For local testing through Discord, run a tunnel such as:
 
 ```bash
@@ -56,4 +57,6 @@ cloudflared tunnel --url http://localhost:5173
 ```
 
 - Map `/` in the Discord Developer Portal to the tunnel host.
-- The server currently exposes `POST /api/token` for the OAuth code exchange used by the Embedded App SDK flow.
+- The server exposes `POST /api/token` for the OAuth code exchange used by the Embedded App SDK flow.
+- After `npm run build`, `npm start` serves the built client and API from one origin.
+- See `docs/discord-activity-setup.md` for the exact local test and alpha publication flow for this repo.

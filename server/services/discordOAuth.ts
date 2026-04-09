@@ -1,5 +1,5 @@
-import type { DiscordAuthTokenResponse } from "../../shared/types";
-import { config } from "../config";
+import type { DiscordAuthTokenResponse } from "../../shared/types.js";
+import { config } from "../config.js";
 
 export async function exchangeDiscordCode(code: string): Promise<DiscordAuthTokenResponse> {
   const secrets = config.requireDiscordSecrets();
@@ -8,9 +8,11 @@ export async function exchangeDiscordCode(code: string): Promise<DiscordAuthToke
     client_id: secrets.clientId,
     client_secret: secrets.clientSecret,
     grant_type: "authorization_code",
-    code,
-    redirect_uri: secrets.redirectUri
+    code
   });
+  if (secrets.redirectUri != null) {
+    body.set("redirect_uri", secrets.redirectUri);
+  }
 
   const response = await fetch("https://discord.com/api/oauth2/token", {
     method: "POST",

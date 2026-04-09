@@ -1,0 +1,67 @@
+{
+  "instanceId": "i-1491518041102745861-gc-1491512261326667838-1491512262517592077",
+  "status": "in_progress",
+  "createdAt": "2026-04-08T19:20:15.290Z",
+  "startedAt": "2026-04-08T19:22:09.361Z",
+  "currentTurnSeatNumber": 3,
+  "currentTurnDisplayName": "Bot 1",
+  "turnNumber": 42,
+  "pendingAction": {
+    "actorSeatNumber": 3,
+    "targetSeatNumbers": [
+      1,
+      2
+    ],
+    "responseMode": "collective",
+    "responders": [
+      {
+        "seatNumber": 1,
+        "state": "locked",
+        "choice": "pass"
+      },
+      {
+        "seatNumber": 2,
+        "state": "locked",
+        "choice": "mirror"
+      }
+    ]
+  },
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "the7saint7",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 6,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 85,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "ReaI",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 1,
+      "statusCount": 1,
+      "hp": 44,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 3,
+      "displayName": "Bot 1",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 1,
+      "statusCount": 0,
+      "hp": 42,
+      "isAlive": true
+    }
+  ]
+}

@@ -1,4 +1,7 @@
 import express from "express";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   AddBotRequest,
   AnnounceDiceRollRequest,
@@ -14,21 +17,20 @@ import type {
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
-  SendChatMessageRequest,
   StartMatchRequest
-} from "../shared/types";
-import type { SaveBaseDefenseBandMappingRequest } from "../shared/cards/types";
-import type { SaveBaseCardDefinitionRequest } from "../shared/cards/types";
-import { config } from "./config";
+} from "../shared/types.js";
+import type { SaveBaseDefenseBandMappingRequest } from "../shared/cards/types.js";
+import type { SaveBaseCardDefinitionRequest } from "../shared/cards/types.js";
+import { config } from "./config.js";
 import {
   readBaseCardCatalog,
   writeBaseCardDefinition
-} from "./services/baseCardCatalogService";
+} from "./services/baseCardCatalogService.js";
 import {
   readBaseDefenseBandMappings,
   writeBaseDefenseBandMapping
-} from "./services/baseDefenseBandMappingService";
-import { exchangeDiscordCode } from "./services/discordOAuth";
+} from "./services/baseDefenseBandMappingService.js";
+import { exchangeDiscordCode } from "./services/discordOAuth.js";
 import {
   addBot,
   announceDiceRoll,
@@ -46,13 +48,22 @@ import {
   resolveMatchCurseRelease,
   respondMatchAction,
   selectMatchObject,
-  sendChatMessage,
   startMatch
-} from "./services/matchService";
-import { getPlayerSessionUserId } from "./store/playerSessionStore";
-import { addSseConnection, broadcastCursorMove } from "./store/sseStore";
+} from "./services/matchService.js";
+import { persistClientLogSnapshot } from "./services/localLogService.js";
+import { getMatch } from "./store/matchStore.js";
+import { getPlayerSessionUserId } from "./store/playerSessionStore.js";
+import { addSseConnection, broadcastCursorMove } from "./store/sseStore.js";
 
 const app = express();
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const builtClientDir = [
+  path.resolve(currentDir, "../dist/client"),
+  path.resolve(currentDir, "../client"),
+  path.resolve(currentDir, "../../client")
+].find((candidate) => {
+  return existsSync(path.join(candidate, "index.html")) && existsSync(path.join(candidate, "assets"));
+});
 
 app.use(express.json());
 
@@ -250,14 +261,21 @@ app.post("/api/matches/:instanceId/disconnect", (request, response) => {
   }
 });
 
-app.post("/api/matches/:instanceId/chat", (request, response) => {
+app.post("/api/matches/:instanceId/client-log", (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
-    const body = request.body as SendChatMessageRequest;
-    response.json(sendChatMessage(request.params.instanceId, userId, body));
+    const body = request.body as { entries?: unknown };
+    const entries = Array.isArray(body.entries)
+      ? body.entries.filter((entry): entry is string => typeof entry === "string").slice(-300)
+      : [];
+    const displayName =
+      getMatch(request.params.instanceId)?.seats.find((seat) => seat.userId === userId)?.displayName ?? userId;
+
+    persistClientLogSnapshot(request.params.instanceId, userId, displayName, entries);
+    response.status(204).end();
   } catch (error) {
     response.status(400).json({
-      error: error instanceof Error ? error.message : "Unable to send chat message"
+      error: error instanceof Error ? error.message : "Unable to persist client log"
     });
   }
 });
@@ -379,6 +397,37 @@ app.post("/api/matches/:instanceId/forced-follow-up/pass", (request, response) =
   }
 });
 
+if (builtClientDir != null) {
+  const builtAssetsDir = path.join(builtClientDir, "assets");
+  const builtIndexHtml = path.join(builtClientDir, "index.html");
+
+  app.use("/assets", express.static(builtAssetsDir));
+
+  app.get("/", (_request, response) => {
+    response.sendFile(builtIndexHtml);
+  });
+
+  app.get("/index.html", (_request, response) => {
+    response.sendFile(builtIndexHtml);
+  });
+
+  app.use((request, response, next) => {
+    if (
+      request.method !== "GET" ||
+      request.path.startsWith("/api/") ||
+      request.path === "/health" ||
+      path.extname(request.path) !== ""
+    ) {
+      next();
+      return;
+    }
+
+    response.sendFile(builtIndexHtml);
+  });
+}
+
 app.listen(config.port, () => {
-  console.log(`Emerlaus server listening on http://localhost:${config.port}`);
+  const staticMessage =
+    builtClientDir == null ? "no built client detected" : `serving ${builtClientDir}`;
+  console.log(`Emerlaus server listening on http://localhost:${config.port} (${staticMessage})`);
 });

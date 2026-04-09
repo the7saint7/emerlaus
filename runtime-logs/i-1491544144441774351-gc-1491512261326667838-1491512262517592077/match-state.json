@@ -1,0 +1,37 @@
+{
+  "instanceId": "i-1491544144441774351-gc-1491512261326667838-1491512262517592077",
+  "status": "finished",
+  "createdAt": "2026-04-08T21:03:59.073Z",
+  "startedAt": "2026-04-08T21:04:01.444Z",
+  "currentTurnSeatNumber": 1,
+  "currentTurnDisplayName": "the7saint7",
+  "turnNumber": 12,
+  "pendingAction": null,
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "the7saint7",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 2,
+      "statusCount": 0,
+      "hp": 48,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "Bot 1",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "instanceId": "i-1491534960585085220-gc-1491512261326667838-1491512262517592077",
+  "status": "finished",
+  "createdAt": "2026-04-08T20:27:29.585Z",
+  "startedAt": "2026-04-08T20:27:44.742Z",
+  "currentTurnSeatNumber": 7,
+  "currentTurnDisplayName": "Bot 5",
+  "turnNumber": 102,
+  "pendingAction": null,
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "the7saint7 (Bot)",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "Bot 1",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 3,
+      "displayName": "Bot 2",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 4,
+      "displayName": "Bot 3",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 5,
+      "displayName": "ReaI (Bot)",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 1,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 6,
+      "displayName": "Bot 4",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 7,
+      "displayName": "Bot 5",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 2,
+      "objectCount": 2,
+      "statusCount": 0,
+      "hp": 72,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 8,
+      "displayName": "Bot 6",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 9,
+      "displayName": "Bot 7",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    },
+    {
+      "seatNumber": 10,
+      "displayName": "Bot 8",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 0,
+      "isAlive": false
+    }
+  ]
+}

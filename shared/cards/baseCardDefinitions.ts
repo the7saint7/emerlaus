@@ -2,4 +2,4 @@ export {
   baseCardDefinitionById,
   baseCardDefinitions,
   defaultDefenseBandByCategory
-} from "./catalog/base-cards";
+} from "./catalog/base-cards.js";
