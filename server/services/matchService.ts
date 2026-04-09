@@ -11,6 +11,7 @@ import type {
   AddBotRequest,
   AnnounceDiceRollRequest,
   DisconnectRequest,
+  ExpansionKey,
   JoinRequest,
   JoinResponse,
   KickPlayerRequest,
@@ -475,6 +476,19 @@ export function startMatch(instanceId: string, userId: string, _request: StartMa
   appendServerDebugLog(match, "session", `Match session started by ${userId} with ${match.seats.length} seats`);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function updateExpansion(instanceId: string, userId: string, expansion: ExpansionKey, enabled: boolean): MatchState {
+  const match = requireMatch(instanceId);
+  requireHost(match, userId);
+
+  if (match.status !== "lobby") {
+    throw new Error("Expansion settings can only be changed before the game starts");
+  }
+
+  match.enabledExpansions[expansion] = enabled;
+  saveMatch(match);
   return buildPublicMatchState(match, userId);
 }
 

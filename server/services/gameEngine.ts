@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  abondanceDeckCardQuantities,
   baseCardDefinitionById,
   baseCardDefinitions,
   type BaseCardDefinition,
@@ -22,7 +23,8 @@ import type {
   PendingActionResponderState,
   PendingActionState,
   ResponseChoiceType,
-  SeatState
+  SeatState,
+  MatchExpansionSettings
 } from "../../shared/types.js";
 import type {
   StoredCardInstance,
@@ -35,6 +37,97 @@ import type {
 } from "./gameEngineTypes.js";
 
 const ATTACK_CATEGORIES = new Set<CardCategoryCode>(["AD", "AM", "S", "E", "CO"]);
+const MASS_ATTACK_STAFF_CARD_ID = "baton-dattaque-massive";
+
+interface SuccessfulHitDamageModifierConfig {
+  triggerNotation: string;
+  successTotals: number[];
+  mode: "use_total_player_power" | "multiply_damage";
+  damageMultiplier?: number;
+}
+
+interface SuccessfulHitDamageContext {
+  actorSeat: SeatState;
+  damageMultiplier: number;
+}
+
+interface SuccessfulHitKillRollConfig {
+  triggerNotation: string;
+  successTotals: number[];
+}
+
+interface PersistentOwnerTurnMassDamageConfig {
+  damageNotation: string;
+}
+
+const SUCCESSFUL_HIT_DAMAGE_MODIFIER_BY_CARD_ID: Partial<Record<string, SuccessfulHitDamageModifierConfig>> = {
+  "eclair-diabolique": {
+    triggerNotation: "1D12",
+    successTotals: [1],
+    mode: "use_total_player_power"
+  },
+  "fleche-diabolique": {
+    triggerNotation: "1D12",
+    successTotals: [1],
+    mode: "use_total_player_power"
+  },
+  "eclair-empoisonnant": {
+    triggerNotation: "1D10",
+    successTotals: [1],
+    mode: "multiply_damage",
+    damageMultiplier: 2
+  },
+  "eclatement-empoisonne": {
+    triggerNotation: "1D10",
+    successTotals: [1],
+    mode: "multiply_damage",
+    damageMultiplier: 2
+  },
+  "fleche-empoisonnee": {
+    triggerNotation: "1D10",
+    successTotals: [1],
+    mode: "multiply_damage",
+    damageMultiplier: 2
+  },
+  "rayon-empoisonne": {
+    triggerNotation: "1D10",
+    successTotals: [1],
+    mode: "multiply_damage",
+    damageMultiplier: 2
+  },
+  "sphere-de-poison": {
+    triggerNotation: "1D10",
+    successTotals: [1],
+    mode: "multiply_damage",
+    damageMultiplier: 2
+  },
+  "venin-de-vipere": {
+    triggerNotation: "1D10",
+    successTotals: [1],
+    mode: "multiply_damage",
+    damageMultiplier: 2
+  }
+};
+
+const SUCCESSFUL_HIT_KILL_ROLL_BY_CARD_ID: Partial<Record<string, SuccessfulHitKillRollConfig>> = {
+  "espoir-diabolique": {
+    triggerNotation: "1D12",
+    successTotals: [1]
+  },
+  "espoir-mortel": {
+    triggerNotation: "1D10",
+    successTotals: [1]
+  }
+};
+
+const PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID: Partial<Record<string, PersistentOwnerTurnMassDamageConfig>> = {
+  grele: {
+    damageNotation: "1D12"
+  },
+  "tremblement-de-terre": {
+    damageNotation: "1D20"
+  }
+};
 
 function shuffle<T>(items: T[]): T[] {
   const shuffled = [...items];
@@ -71,15 +164,29 @@ function requireDefinition(cardId: string): BaseCardDefinition {
   return definition;
 }
 
-function createDeck(): StoredCardInstance[] {
+function cardConsumesTurnAsNoOp(definition: BaseCardDefinition): boolean {
+  return definition.implementation?.status === "needs_handler" || definition.implementation?.status === "stub";
+}
+
+function appendCardCopies(deck: StoredCardInstance[], cardId: string, count: number): void {
+  for (let index = 0; index < count; index += 1) {
+    deck.push({
+      instanceId: randomUUID(),
+      cardId
+    });
+  }
+}
+
+function createDeck(enabledExpansions: MatchExpansionSettings): StoredCardInstance[] {
   const deck: StoredCardInstance[] = [];
 
   for (const card of baseCardDefinitions) {
-    for (let count = 0; count < card.baseDeckQuantity; count += 1) {
-      deck.push({
-        instanceId: randomUUID(),
-        cardId: card.id
-      });
+    appendCardCopies(deck, card.id, card.baseDeckQuantity);
+  }
+
+  if (enabledExpansions.abondance) {
+    for (const [cardId, count] of Object.entries(abondanceDeckCardQuantities)) {
+      appendCardCopies(deck, cardId, count);
     }
   }
 
@@ -110,6 +217,21 @@ function createSeatState(seatNumber: number): StoredSeatState {
     attackImmunityTurns: 0,
     noRiposteTurnsRemaining: 0
   };
+}
+
+function flattenStoredCardInstance(card: StoredCardInstance): StoredCardInstance[] {
+  const attachedCards = card.attachedCards?.flatMap((attachedCard) => flattenStoredCardInstance(attachedCard)) ?? [];
+  return [
+    {
+      instanceId: card.instanceId,
+      cardId: card.cardId
+    },
+    ...attachedCards
+  ];
+}
+
+function flattenStoredCardInstances(cards: StoredCardInstance[]): StoredCardInstance[] {
+  return cards.flatMap((card) => flattenStoredCardInstance(card));
 }
 
 function getStoredSeat(game: StoredGameState, seatNumber: number): StoredSeatState {
@@ -155,6 +277,12 @@ function clockwiseSeatNumbers(game: StoredGameState, actorSeatNumber: number): n
 
 function isAttackDefinition(definition: BaseCardDefinition): boolean {
   return ATTACK_CATEGORIES.has(definition.category.code);
+}
+
+function isAttackLikeDefinition(definition: BaseCardDefinition): boolean {
+  return isAttackDefinition(definition)
+    || definition.id === MASS_ATTACK_STAFF_CARD_ID
+    || definition.id.startsWith("robe-");
 }
 
 function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number | undefined {
@@ -383,7 +511,7 @@ function drawCards(match: StoredMatchState, seatNumber: number, count: number): 
 }
 
 function discardInstances(game: StoredGameState, instances: StoredCardInstance[]): void {
-  game.discardPile.push(...instances);
+  game.discardPile.push(...flattenStoredCardInstances(instances));
 }
 
 function nextLivingOpponentSeatNumbers(game: StoredGameState, actorSeatNumber: number): number[] {
@@ -517,10 +645,14 @@ function evaluateRoll(
     case "current_hp_fraction":
       return Math.max(1, Math.ceil((targetSeat?.hp ?? 0) * expression.numerator / expression.denominator));
     case "sacrifice_amount":
-      return actorSeat.hp;
+      return actorSeat.hp * (expression.multiplier ?? 1);
     case "total_active_players_times":
       return expression.amount * (match.internalGame == null ? 0 : aliveSeatNumbers(match.internalGame).length);
   }
+}
+
+function resolveChosenSacrificeDamageAmount(chosenAmount: number, expression: Extract<RollExpression, { kind: "sacrifice_amount" }>): number {
+  return chosenAmount * (expression.multiplier ?? 1);
 }
 
 function isTargetDependentRollExpression(expression: RollExpression): boolean {
@@ -602,6 +734,171 @@ function computePowerLevel(match: StoredMatchState, seatNumber: number): number 
   return 1 + modifier;
 }
 
+function getTotalAlivePowerLevel(match: StoredMatchState): number {
+  const game = match.internalGame;
+  if (game == null) {
+    return 0;
+  }
+
+  return aliveSeatNumbers(game)
+    .map((seatNumber) => getPublicSeat(match, seatNumber).powerLevel ?? 1)
+    .reduce((sum, powerLevel) => sum + powerLevel, 0);
+}
+
+function getTemporaryActionPowerBonus(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceDefinition: BaseCardDefinition,
+  sourceZone: "hand" | "object" = "hand"
+): number {
+  const game = match.internalGame;
+  if (
+    game == null
+    || sourceZone !== "hand"
+    || (sourceDefinition.category.code !== "AD" && sourceDefinition.category.code !== "AM")
+  ) {
+    return 0;
+  }
+
+  const actorState = getStoredSeat(game, actorSeatNumber);
+  let bonus = 0;
+  for (const objectInstance of actorState.objects) {
+    if (objectInstance.cardId === "ceinture-de-force-3") {
+      bonus += 3;
+    } else if (objectInstance.cardId === "ceinture-de-force-2") {
+      bonus += 2;
+    }
+  }
+
+  return bonus;
+}
+
+function getActorSeatForAction(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceDefinition: BaseCardDefinition,
+  sourceZone: "hand" | "object" = "hand"
+): SeatState {
+  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  const powerBonus = getTemporaryActionPowerBonus(match, actorSeatNumber, sourceDefinition, sourceZone);
+  if (powerBonus === 0) {
+    return actorSeat;
+  }
+
+  return {
+    ...actorSeat,
+    powerLevel: (actorSeat.powerLevel ?? 1) + powerBonus
+  };
+}
+
+function resolveSuccessfulHitDamageContext(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  definition: BaseCardDefinition,
+  sourceZone: "hand" | "object",
+  targetSeatNumber: number,
+  boxId?: string
+): SuccessfulHitDamageContext {
+  const baseActorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
+  const config = SUCCESSFUL_HIT_DAMAGE_MODIFIER_BY_CARD_ID[definition.id];
+  if (config == null) {
+    return {
+      actorSeat: baseActorSeat,
+      damageMultiplier: 1
+    };
+  }
+
+  const triggerRoll = rollDiceNotationDetailed(config.triggerNotation);
+  publishSeatDiceRoll(match, actorSeatNumber, config.triggerNotation, triggerRoll.total, triggerRoll.values, boxId);
+  appendServerDebugLog(
+    match,
+    "effect",
+    `${definition.name} rolled ${config.triggerNotation} => ${triggerRoll.total} after hitting seat ${targetSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+
+  if (!config.successTotals.includes(triggerRoll.total)) {
+    return {
+      actorSeat: baseActorSeat,
+      damageMultiplier: 1
+    };
+  }
+
+  if (config.mode === "use_total_player_power") {
+    const totalAlivePowerLevel = getTotalAlivePowerLevel(match);
+    appendDealerMessage(
+      match,
+      `${getPublicSeat(match, actorSeatNumber).displayName}'s ${definition.name} uses the total power of all living players (${totalAlivePowerLevel}).`
+    );
+    appendServerDebugLog(
+      match,
+      "effect",
+      `${definition.name} switched to total alive power ${totalAlivePowerLevel} after hitting seat ${targetSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
+    );
+
+    return {
+      actorSeat: {
+        ...baseActorSeat,
+        powerLevel: totalAlivePowerLevel
+      },
+      damageMultiplier: 1
+    };
+  }
+
+  if (config.mode === "multiply_damage") {
+    const damageMultiplier = Math.max(1, config.damageMultiplier ?? 1);
+    appendDealerMessage(
+      match,
+      `${getPublicSeat(match, actorSeatNumber).displayName}'s ${definition.name} deals ${damageMultiplier}x damage.`
+    );
+    appendServerDebugLog(
+      match,
+      "effect",
+      `${definition.name} switched to ${damageMultiplier}x damage after hitting seat ${targetSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
+    );
+
+    return {
+      actorSeat: baseActorSeat,
+      damageMultiplier
+    };
+  }
+
+  return {
+    actorSeat: baseActorSeat,
+    damageMultiplier: 1
+  };
+}
+
+function getSeatHpCap(match: StoredMatchState, seatNumber: number): number | undefined {
+  const game = match.internalGame;
+  if (game == null) {
+    return undefined;
+  }
+
+  const storedSeat = getStoredSeat(game, seatNumber);
+  let cap: number | undefined;
+
+  for (const status of storedSeat.statuses) {
+    if (status.cardId === "limite-de-30-points-de-vie") {
+      cap = cap == null ? 30 : Math.min(cap, 30);
+    }
+  }
+
+  return cap;
+}
+
+function setSeatHp(match: StoredMatchState, seatNumber: number, nextHp: number): { previousHp: number; nextHp: number; delta: number } {
+  const seat = getPublicSeat(match, seatNumber);
+  const previousHp = seat.hp;
+  const hpCap = getSeatHpCap(match, seatNumber);
+  const clampedHp = hpCap == null ? nextHp : Math.min(nextHp, hpCap);
+  seat.hp = clampedHp;
+  return {
+    previousHp,
+    nextHp: clampedHp,
+    delta: clampedHp - previousHp
+  };
+}
+
 function refreshSeatSummaries(match: StoredMatchState): void {
   const game = match.internalGame;
   if (game == null) {
@@ -635,10 +932,96 @@ function buildCardView(
     selectionMode: definition.rules.selectionMode,
     targets: definition.rules.targets,
     defenseBand: definition.defenseBand,
+    attachedCardCount: "attachedCards" in instance ? instance.attachedCards?.length ?? 0 : undefined,
     canPlay,
     disabledReason,
     zone
   };
+}
+
+function getRequiredFollowUpCategory(definition: BaseCardDefinition): CardCategoryCode | undefined {
+  switch (definition.id) {
+    case "ad-points-de-vie":
+      return "AD";
+    case "ca-points-de-vie":
+      return "CA";
+    default:
+      return undefined;
+  }
+}
+
+function resolveFollowUpCategoryHeal(
+  match: StoredMatchState,
+  sourceDefinition: BaseCardDefinition,
+  followUpCard: StoredCardInstance,
+  actorSeatNumber: number,
+  boxId?: string
+): number {
+  if (sourceDefinition.id === "ca-points-de-vie") {
+    return 25;
+  }
+
+  if (sourceDefinition.id !== "ad-points-de-vie") {
+    return 0;
+  }
+
+  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  const followUpDefinition = requireDefinition(followUpCard.cardId);
+  const damageEffects = followUpDefinition.rules.effects.filter(
+    (effect): effect is Extract<CardEffect, { type: "damage" }> => effect.type === "damage"
+  );
+  if (damageEffects.length === 0) {
+    return 0;
+  }
+
+  let totalHeal = 0;
+  for (const effect of damageEffects) {
+    let healAmount = evaluateRoll(match, effect.amount, actorSeat, undefined, actorSeatNumber, boxId);
+    const usesPowerLevel =
+      effect.amount.kind === "dice_per_power"
+      || ("scaleBy" in effect.amount && (effect.amount.scaleBy === "power" || effect.amount.scaleBy === "multiply_power"));
+    if (!usesPowerLevel) {
+      healAmount *= 2;
+    }
+    totalHeal += healAmount;
+  }
+
+  return totalHeal;
+}
+
+function consumeHandCardByCategory(source: StoredCardInstance[], categoryCode: CardCategoryCode): StoredCardInstance {
+  for (let index = source.length - 1; index >= 0; index -= 1) {
+    const candidate = source[index];
+    if (candidate == null || requireDefinition(candidate.cardId).category.code !== categoryCode) {
+      continue;
+    }
+
+    return source.splice(index, 1)[0]!;
+  }
+
+  throw new Error(`Missing required ${categoryCode} card`);
+}
+
+function getSeatMassAttackStaff(seat: StoredSeatState, instanceId?: string): StoredCardInstance | undefined {
+  return seat.objects.find((card) =>
+    card.cardId === MASS_ATTACK_STAFF_CARD_ID && (instanceId == null || card.instanceId === instanceId)
+  );
+}
+
+function getMassAttackStaffLoadedCount(card: StoredCardInstance): number {
+  return card.attachedCards?.length ?? 0;
+}
+
+function rollMassAttackStaffDamage(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  staffCard: StoredCardInstance,
+  boxId?: string
+): number {
+  const notation = `${Math.max(1, 1 + getMassAttackStaffLoadedCount(staffCard))}D6`;
+  const roll = rollDiceNotationDetailed(notation);
+  publishSeatDiceRoll(match, actorSeatNumber, notation, roll.total, roll.values, boxId);
+  return roll.total;
 }
 
 function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, card: StoredCardInstance): { canPlay: boolean; reason?: string } {
@@ -668,6 +1051,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
   }
 
   const definition = requireDefinition(card.cardId);
+  const requiredFollowUpCategory = getRequiredFollowUpCategory(definition);
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
   const requiresTargetObject = definition.rules.effects.some((effect) =>
     effect.type === "remove_target_object" || effect.type === "steal_target_object"
@@ -693,6 +1077,17 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
 
   if (definition.category.code === "CA") {
     return { canPlay: false, reason: "Counter cards are only used as reactions" };
+  }
+
+  if (
+    requiredFollowUpCategory != null
+    && !actorSeat.hand.some((handCard) => requireDefinition(handCard.cardId).category.code === requiredFollowUpCategory)
+  ) {
+    return { canPlay: false, reason: `This card requires a ${requiredFollowUpCategory} card in hand` };
+  }
+
+  if (definition.category.code === "AM" && getSeatMassAttackStaff(actorSeat) != null) {
+    return { canPlay: true };
   }
 
   switch (definition.rules.targets) {
@@ -773,7 +1168,7 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
   if (
     seatState.noRiposteTurnsRemaining > 0 &&
     pendingAction.targetSeatNumbers.includes(seatNumber) &&
-    isAttackDefinition(pendingDefinition)
+    isAttackLikeDefinition(pendingDefinition)
   ) {
     return [
       {
@@ -927,7 +1322,7 @@ function getTargetSeatNumbers(game: StoredGameState, actorSeatNumber: number, re
 
 function isProtectedFromAttack(match: StoredMatchState, targetSeatNumber: number, sourceDefinition: BaseCardDefinition): boolean {
   const game = match.internalGame;
-  if (game == null || !isAttackDefinition(sourceDefinition)) {
+  if (game == null || !isAttackLikeDefinition(sourceDefinition)) {
     return false;
   }
 
@@ -954,6 +1349,104 @@ function damageReductionFromObjects(match: StoredMatchState, seatNumber: number)
   }
 
   return reduction;
+}
+
+function computeMirrorRobeReflection(
+  match: StoredMatchState,
+  targetSeatNumber: number,
+  incomingAmount: number,
+  sourceDefinition: BaseCardDefinition,
+  sourceSeatNumber?: number,
+  boxId?: string
+): number {
+  const game = match.internalGame;
+  if (
+    game == null
+    || incomingAmount <= 0
+    || sourceSeatNumber == null
+    || sourceSeatNumber === targetSeatNumber
+    || !isAttackLikeDefinition(sourceDefinition)
+    || sourceDefinition.id.startsWith("robe-")
+  ) {
+    return 0;
+  }
+
+  const targetState = getStoredSeat(game, targetSeatNumber);
+  const hasMirrorRobe = targetState.objects.some((objectCard) => objectCard.cardId === "robe-miroir");
+  if (!hasMirrorRobe) {
+    return 0;
+  }
+
+  const roll = rollDiceNotationDetailed("1D6");
+  publishSeatDiceRoll(match, targetSeatNumber, "1D6", roll.total, roll.values, boxId);
+  const reflectedAmount = Math.min(incomingAmount, roll.total);
+  if (reflectedAmount <= 0) {
+    return 0;
+  }
+
+  appendDealerMessage(
+    match,
+    `${getPublicSeat(match, targetSeatNumber).displayName}'s Robe miroir reflects ${reflectedAmount} damage back to ${getPublicSeat(match, sourceSeatNumber).displayName}.`
+  );
+  appendServerDebugLog(
+    match,
+    "object",
+    `Seat ${targetSeatNumber}'s Robe miroir reflected ${reflectedAmount} from ${sourceDefinition.name} back to seat ${sourceSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+  return reflectedAmount;
+}
+
+function triggerCounterattackRobe(
+  match: StoredMatchState,
+  targetSeatNumber: number,
+  sourceDefinition: BaseCardDefinition,
+  sourceSeatNumber?: number,
+  boxId?: string
+): void {
+  const game = match.internalGame;
+  if (
+    game == null
+    || sourceSeatNumber == null
+    || sourceSeatNumber === targetSeatNumber
+    || !isAttackLikeDefinition(sourceDefinition)
+    || sourceDefinition.id.startsWith("robe-")
+  ) {
+    return;
+  }
+
+  const targetState = getStoredSeat(game, targetSeatNumber);
+  if (!targetState.objects.some((objectCard) => objectCard.cardId === "robe-de-contre-attaque")) {
+    return;
+  }
+
+  if (!getStoredSeat(game, sourceSeatNumber).alive) {
+    return;
+  }
+
+  const roll = rollDiceNotationDetailed("1D10");
+  publishSeatDiceRoll(match, targetSeatNumber, "1D10", roll.total, roll.values, boxId);
+  if (roll.total <= 0) {
+    return;
+  }
+
+  const counterattackDefinition = requireDefinition("robe-de-contre-attaque");
+  pushPresentationEvent(match, {
+    boxId,
+    type: "attack_impact",
+    actorSeatNumber: targetSeatNumber,
+    targetSeatNumber: sourceSeatNumber,
+    cardName: counterattackDefinition.name
+  });
+  appendDealerMessage(
+    match,
+    `${getPublicSeat(match, targetSeatNumber).displayName}'s ${counterattackDefinition.name} hits ${getPublicSeat(match, sourceSeatNumber).displayName} for ${roll.total}.`
+  );
+  appendServerDebugLog(
+    match,
+    "object",
+    `Seat ${targetSeatNumber}'s ${counterattackDefinition.name} dealt ${roll.total} to seat ${sourceSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+  applyDamage(match, sourceSeatNumber, roll.total, counterattackDefinition, false, boxId, targetSeatNumber);
 }
 
 function moveCardFromHand(source: StoredCardInstance[], instanceId: string): StoredCardInstance {
@@ -1215,7 +1708,7 @@ function executeBoardReset(
   }
 
   if (effect.reshuffleAllOtherCards) {
-    game.deck = shuffle([...game.deck, ...game.discardPile, ...recycled]);
+    game.deck = shuffle([...game.deck, ...game.discardPile, ...flattenStoredCardInstances(recycled)]);
     game.discardPile = [];
   } else {
     discardInstances(game, recycled);
@@ -1231,14 +1724,14 @@ function executeBoardReset(
     }
   }
 
-  actorSeat.hp += effect.attackerHpBonus;
-  if (effect.attackerHpBonus > 0) {
+  const boardResetHp = setSeatHp(match, actorSeatNumber, actorSeat.hp + effect.attackerHpBonus);
+  if (boardResetHp.delta > 0) {
     pushPresentationEvent(match, {
       boxId,
       type: "hp_gain",
       seatNumber: actorSeatNumber,
       cardName: requireDefinition(sourceCard.cardId).name,
-      amount: effect.attackerHpBonus
+      amount: boardResetHp.delta
     });
   }
 
@@ -1301,19 +1794,36 @@ function checkForWinner(match: StoredMatchState): void {
   }
 }
 
-function applyDamage(match: StoredMatchState, targetSeatNumber: number, amount: number, sourceDefinition: BaseCardDefinition, resurrectionBlocked = false, boxId?: string): number {
+function applyDamage(
+  match: StoredMatchState,
+  targetSeatNumber: number,
+  amount: number,
+  sourceDefinition: BaseCardDefinition,
+  resurrectionBlocked = false,
+  boxId?: string,
+  sourceSeatNumber?: number
+): number {
   const targetSeat = getPublicSeat(match, targetSeatNumber);
   if (isProtectedFromAttack(match, targetSeatNumber, sourceDefinition)) {
     appendServerDebugLog(match, "damage", `${sourceDefinition.name} dealt 0 to seat ${targetSeatNumber} because the target is protected`);
     return 0;
   }
 
-  const reducedAmount = Math.max(0, amount - damageReductionFromObjects(match, targetSeatNumber));
+  const absorbedAmount = damageReductionFromObjects(match, targetSeatNumber);
+  const reflectedAmount = computeMirrorRobeReflection(
+    match,
+    targetSeatNumber,
+    amount,
+    sourceDefinition,
+    sourceSeatNumber,
+    boxId
+  );
+  const reducedAmount = Math.max(0, amount - absorbedAmount - reflectedAmount);
   targetSeat.hp -= reducedAmount;
   appendServerDebugLog(
     match,
     "damage",
-    `${sourceDefinition.name} dealt ${reducedAmount} to seat ${targetSeatNumber} (raw ${amount}, hp now ${targetSeat.hp})${boxId != null ? ` [box ${boxId}]` : ""}`
+    `${sourceDefinition.name} dealt ${reducedAmount} to seat ${targetSeatNumber} (raw ${amount}, absorbed ${absorbedAmount}, reflected ${reflectedAmount}, hp now ${targetSeat.hp})${boxId != null ? ` [box ${boxId}]` : ""}`
   );
   if (reducedAmount > 0) {
     pushPresentationEvent(match, {
@@ -1324,39 +1834,89 @@ function applyDamage(match: StoredMatchState, targetSeatNumber: number, amount: 
       amount: reducedAmount
     });
   }
+  if (reflectedAmount > 0 && sourceSeatNumber != null) {
+    const mirrorRobeDefinition = requireDefinition("robe-miroir");
+    applyDamage(match, sourceSeatNumber, reflectedAmount, mirrorRobeDefinition, false, boxId, targetSeatNumber);
+  }
+  triggerCounterattackRobe(match, targetSeatNumber, sourceDefinition, sourceSeatNumber, boxId);
   handleSeatDeath(match, targetSeatNumber, resurrectionBlocked);
   return reducedAmount;
 }
 
-function swapSeatOccupants(match: StoredMatchState, leftSeatNumber: number, rightSeatNumber: number): void {
+function swapSeatOccupants(
+  match: StoredMatchState,
+  leftSeatNumber: number,
+  rightSeatNumber: number,
+  effect: Extract<CardEffect, { type: "swap_bodies" }>
+): void {
   const leftSeat = getPublicSeat(match, leftSeatNumber);
   const rightSeat = getPublicSeat(match, rightSeatNumber);
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+  const leftStoredSeat = getStoredSeat(game, leftSeatNumber);
+  const rightStoredSeat = getStoredSeat(game, rightSeatNumber);
 
-  const leftSnapshot = {
-    controllerType: leftSeat.controllerType,
-    userId: leftSeat.userId,
-    connected: leftSeat.connected,
-    isHost: leftSeat.isHost,
-    difficulty: leftSeat.difficulty,
-    disconnectedUserId: leftSeat.disconnectedUserId
-  };
+  if (effect.swapSeatOrder) {
+    const leftSnapshot = {
+      controllerType: leftSeat.controllerType,
+      userId: leftSeat.userId,
+      connected: leftSeat.connected,
+      isHost: leftSeat.isHost,
+      difficulty: leftSeat.difficulty,
+      disconnectedUserId: leftSeat.disconnectedUserId
+    };
 
-  // Body transfer swaps control of the seats while leaving each seat's visible identity
-  // and gameplay state attached to the body already occupying that seat.
-  leftSeat.controllerType = rightSeat.controllerType;
-  leftSeat.userId = rightSeat.userId;
-  leftSeat.connected = rightSeat.connected;
-  leftSeat.isHost = rightSeat.isHost;
-  leftSeat.difficulty = rightSeat.difficulty;
-  leftSeat.disconnectedUserId = rightSeat.disconnectedUserId;
+    leftSeat.controllerType = rightSeat.controllerType;
+    leftSeat.userId = rightSeat.userId;
+    leftSeat.connected = rightSeat.connected;
+    leftSeat.isHost = rightSeat.isHost;
+    leftSeat.difficulty = rightSeat.difficulty;
+    leftSeat.disconnectedUserId = rightSeat.disconnectedUserId;
 
-  rightSeat.controllerType = leftSnapshot.controllerType;
-  rightSeat.userId = leftSnapshot.userId;
-  rightSeat.connected = leftSnapshot.connected;
-  rightSeat.isHost = leftSnapshot.isHost;
-  rightSeat.difficulty = leftSnapshot.difficulty;
-  rightSeat.disconnectedUserId = leftSnapshot.disconnectedUserId;
-  appendServerDebugLog(match, "swap", `Seat ${leftSeatNumber} and seat ${rightSeatNumber} swapped controllers`);
+    rightSeat.controllerType = leftSnapshot.controllerType;
+    rightSeat.userId = leftSnapshot.userId;
+    rightSeat.connected = leftSnapshot.connected;
+    rightSeat.isHost = leftSnapshot.isHost;
+    rightSeat.difficulty = leftSnapshot.difficulty;
+    rightSeat.disconnectedUserId = leftSnapshot.disconnectedUserId;
+  }
+
+  if (effect.swapHp) {
+    [leftSeat.hp, rightSeat.hp] = [rightSeat.hp, leftSeat.hp];
+  }
+
+  if (effect.swapHand) {
+    [leftStoredSeat.hand, rightStoredSeat.hand] = [rightStoredSeat.hand, leftStoredSeat.hand];
+  }
+
+  if (effect.swapObjects) {
+    [leftStoredSeat.objects, rightStoredSeat.objects] = [rightStoredSeat.objects, leftStoredSeat.objects];
+  }
+
+  if (effect.swapStatuses) {
+    const leftBodyBoundStatuses = leftStoredSeat.statuses.filter((status) => status.bodyBound === true);
+    const rightBodyBoundStatuses = rightStoredSeat.statuses.filter((status) => status.bodyBound === true);
+    const leftTransferableStatuses = leftStoredSeat.statuses.filter((status) => status.bodyBound !== true);
+    const rightTransferableStatuses = rightStoredSeat.statuses.filter((status) => status.bodyBound !== true);
+    leftStoredSeat.statuses = [...rightTransferableStatuses, ...leftBodyBoundStatuses];
+    rightStoredSeat.statuses = [...leftTransferableStatuses, ...rightBodyBoundStatuses];
+  }
+
+  setSeatHp(match, leftSeatNumber, leftSeat.hp);
+  setSeatHp(match, rightSeatNumber, rightSeat.hp);
+
+  appendServerDebugLog(
+    match,
+    "swap",
+    `Seat ${leftSeatNumber} and seat ${rightSeatNumber} swapped`
+    + `${effect.swapSeatOrder ? " controllers" : ""}`
+    + `${effect.swapHp ? " hp" : ""}`
+    + `${effect.swapHand ? " hands" : ""}`
+    + `${effect.swapObjects ? " objects" : ""}`
+    + `${effect.swapStatuses ? " statuses" : ""}`
+  );
 }
 
 function requestObjectOwnerSeatNumber(
@@ -1456,6 +2016,16 @@ function computeResistanceThreshold(match: StoredMatchState, seatNumber: number,
     const definition = requireDefinition(statusInstance.cardId);
     for (const effect of definition.rules.effects) {
       if (effect.type === "modify_resistance" && effect.duration === "until_removed") {
+        if (definition.id === "hydromel") {
+          const pendingAction = game.pendingAction;
+          if (
+            pendingAction == null
+            || pendingAction.actorSeatNumber === seatNumber
+            || !isAttackLikeDefinition(requireDefinition(pendingAction.storedCard.cardId))
+          ) {
+            continue;
+          }
+        }
         modifier += effect.amount;
       }
     }
@@ -1496,7 +2066,7 @@ function canAttemptResistance(
     return false;
   }
 
-  if (isAttackDefinition(definition) && getStoredSeat(match.internalGame!, targetSeatNumber).noRiposteTurnsRemaining > 0) {
+  if (isAttackLikeDefinition(definition) && getStoredSeat(match.internalGame!, targetSeatNumber).noRiposteTurnsRemaining > 0) {
     return false;
   }
 
@@ -1607,6 +2177,99 @@ function adjustDamageForResistance(
   return adjustedAmount;
 }
 
+function resolveSuccessfulHitKillRoll(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  definition: BaseCardDefinition,
+  targetSeatNumbers: number[],
+  boxId?: string
+): void {
+  const game = match.internalGame;
+  if (game == null || targetSeatNumbers.length === 0) {
+    return;
+  }
+
+  const config = SUCCESSFUL_HIT_KILL_ROLL_BY_CARD_ID[definition.id];
+  if (config == null) {
+    return;
+  }
+
+  const roll = rollDiceNotationDetailed(config.triggerNotation);
+  publishSeatDiceRoll(match, actorSeatNumber, config.triggerNotation, roll.total, roll.values, boxId);
+  appendServerDebugLog(
+    match,
+    "effect",
+    `${definition.name} rolled ${config.triggerNotation} => ${roll.total} against targets ${targetSeatNumbers.join(", ")}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+
+  if (!config.successTotals.includes(roll.total)) {
+    appendDealerMessage(match, `${getPublicSeat(match, actorSeatNumber).displayName}'s ${definition.name} failed to trigger.`);
+    return;
+  }
+
+  appendDealerMessage(
+    match,
+    targetSeatNumbers.length === 1
+      ? `${definition.name} triggers and kills ${getPublicSeat(match, targetSeatNumbers[0]).displayName}!`
+      : `${definition.name} triggers and destroys every affected opponent!`
+  );
+  for (const targetSeatNumber of targetSeatNumbers) {
+    if (!getStoredSeat(game, targetSeatNumber).alive) {
+      continue;
+    }
+
+    const targetSeat = getPublicSeat(match, targetSeatNumber);
+    targetSeat.hp = 0;
+    handleSeatDeath(match, targetSeatNumber, false);
+  }
+}
+
+function resolvePersistentOwnerTurnMassDamageTick(
+  match: StoredMatchState,
+  ownerSeatNumber: number,
+  definition: BaseCardDefinition,
+  boxId?: string
+): void {
+  const game = match.internalGame;
+  const config = PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id];
+  if (game == null || config == null) {
+    return;
+  }
+
+  const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, ownerSeatNumber);
+  const affectedTargetSeatNumbers = targetSeatNumbers.filter((targetSeatNumber) =>
+    !isProtectedFromAttack(match, targetSeatNumber, definition)
+  );
+  const roll = rollDiceNotationDetailed(config.damageNotation);
+  publishSeatDiceRoll(match, ownerSeatNumber, config.damageNotation, roll.total, roll.values, boxId);
+  appendServerDebugLog(
+    match,
+    "effect",
+    `${definition.name} rolled ${config.damageNotation} => ${roll.total} against targets ${targetSeatNumbers.join(", ")}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+
+  if (affectedTargetSeatNumbers.length === 0) {
+    appendServerDebugLog(match, "effect", `${definition.name} found no valid opponents after protections were applied`);
+    return;
+  }
+
+  appendDealerMessage(
+    match,
+    `${getPublicSeat(match, ownerSeatNumber).displayName}'s ${definition.name} deals ${roll.total} to all affected opponents.`
+  );
+
+  for (const targetSeatNumber of affectedTargetSeatNumbers) {
+    pushPresentationEvent(match, {
+      boxId,
+      type: "attack_impact",
+      actorSeatNumber: ownerSeatNumber,
+      targetSeatNumber,
+      cardName: definition.name
+    });
+    applyDamage(match, targetSeatNumber, roll.total, definition, false, boxId, ownerSeatNumber);
+  }
+}
+
 function consumeHandCardsById(source: StoredCardInstance[], cardId: string, count: number): StoredCardInstance[] {
   const removed: StoredCardInstance[] = [];
 
@@ -1645,7 +2308,14 @@ const OBJECT_SLOT_LIMITS: Record<string, number> = {
   other: 1
 };
 
-function movePersistentCard(match: StoredMatchState, actorSeatNumber: number, targetSeatNumbers: number[], card: StoredCardInstance, definition: BaseCardDefinition): void {
+function movePersistentCard(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  targetSeatNumbers: number[],
+  card: StoredCardInstance,
+  definition: BaseCardDefinition,
+  sourceZone: "hand" | "object" = "hand"
+): void {
   const game = match.internalGame;
   if (game == null) {
     return;
@@ -1662,7 +2332,7 @@ function movePersistentCard(match: StoredMatchState, actorSeatNumber: number, ta
       const replaced = existing[0];
       const idx = seat.objects.indexOf(replaced);
       seat.objects.splice(idx, 1);
-      game.discardPile.push(replaced);
+      discardInstances(game, [replaced]);
       appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} replaced ${requireDefinition(replaced.cardId).name} with ${definition.name}`);
     }
 
@@ -1687,6 +2357,42 @@ function movePersistentCard(match: StoredMatchState, actorSeatNumber: number, ta
     const seat = getStoredSeat(game, actorSeatNumber);
     seat.objects.push(card);
     appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} placed ${definition.name} in play`);
+    return;
+  }
+
+  if (definition.id === "hydromel") {
+    const seat = getStoredSeat(game, actorSeatNumber);
+    seat.statuses.push({
+      instanceId: card.instanceId,
+      cardId: card.cardId,
+      sourceSeatNumber: actorSeatNumber
+    });
+    appendServerDebugLog(match, "status", `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves`);
+    return;
+  }
+
+  if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
+    const seat = getStoredSeat(game, actorSeatNumber);
+    const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
+    const remainingTurnTriggers = Math.max(0, (actorSeat.powerLevel ?? 1) - 1);
+    if (remainingTurnTriggers === 0) {
+      discardInstances(game, [card]);
+      appendServerDebugLog(match, "status", `Seat ${actorSeatNumber}'s ${definition.name} resolved immediately and was discarded`);
+      return;
+    }
+
+    seat.statuses.push({
+      instanceId: card.instanceId,
+      cardId: card.cardId,
+      sourceSeatNumber: actorSeatNumber,
+      remainingTurnTriggers,
+      bodyBound: true
+    });
+    appendServerDebugLog(
+      match,
+      "status",
+      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves with ${remainingTurnTriggers} remaining turn trigger(s)`
+    );
     return;
   }
 
@@ -1732,14 +2438,15 @@ function applyEffect(
   targetObjectInstanceId?: string,
   boxId?: string,
   damageMultiplier = 1,
-  objectChoiceFinalizeActorSeatNumber?: number
+  objectChoiceFinalizeActorSeatNumber?: number,
+  sourceZone: "hand" | "object" = "hand"
 ): boolean {
   const game = match.internalGame;
   if (game == null) {
     throw new Error("Game not initialized");
   }
 
-  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
   const actorState = getStoredSeat(game, actorSeatNumber);
 
   switch (effect.type) {
@@ -1760,7 +2467,7 @@ function applyEffect(
           ?? sharedDamageAmount
           ?? evaluateRoll(match, effect.amount, actorSeat, targetSeat, actorSeatNumber, boxId)
         ) * damageMultiplier;
-        applyDamage(match, targetSeatNumber, amount, definition, false, boxId);
+        applyDamage(match, targetSeatNumber, amount, definition, false, boxId, actorSeatNumber);
       }
 
       if (sacrificeAmount != null) {
@@ -1773,26 +2480,30 @@ function applyEffect(
       appendServerDebugLog(match, "effect", `${definition.name} resolves heal${boxId != null ? ` [box ${boxId}]` : ""}`);
       if (effect.target === "self") {
         const healAmount = evaluateRoll(match, effect.amount, actorSeat, actorSeat, actorSeatNumber, boxId);
-        actorSeat.hp += healAmount;
-        pushPresentationEvent(match, {
-          boxId,
-          type: "hp_gain",
-          seatNumber: actorSeatNumber,
-          cardName: definition.name,
-          amount: healAmount
-        });
+        const healResult = setSeatHp(match, actorSeatNumber, actorSeat.hp + healAmount);
+        if (healResult.delta > 0) {
+          pushPresentationEvent(match, {
+            boxId,
+            type: "hp_gain",
+            seatNumber: actorSeatNumber,
+            cardName: definition.name,
+            amount: healResult.delta
+          });
+        }
       } else {
         const aliveOpponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
         for (const targetSeatNumber of aliveOpponents) {
           const healAmount = evaluateRoll(match, effect.amount, actorSeat, getPublicSeat(match, targetSeatNumber), actorSeatNumber, boxId);
-          getPublicSeat(match, targetSeatNumber).hp += healAmount;
-          pushPresentationEvent(match, {
-            boxId,
-            type: "hp_gain",
-            seatNumber: targetSeatNumber,
-            cardName: definition.name,
-            amount: healAmount
-          });
+          const healResult = setSeatHp(match, targetSeatNumber, getPublicSeat(match, targetSeatNumber).hp + healAmount);
+          if (healResult.delta > 0) {
+            pushPresentationEvent(match, {
+              boxId,
+              type: "hp_gain",
+              seatNumber: targetSeatNumber,
+              cardName: definition.name,
+              amount: healResult.delta
+            });
+          }
         }
       }
       break;
@@ -1801,16 +2512,18 @@ function applyEffect(
       for (const targetSeatNumber of targetSeatNumbers) {
         const targetSeat = getPublicSeat(match, targetSeatNumber);
         const amount = evaluateRoll(match, effect.amount, actorSeat, effect.powerSource === "target" ? targetSeat : actorSeat, actorSeatNumber, boxId) * damageMultiplier;
-        const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, boxId);
-        actorSeat.hp += dealt;
-        if (dealt > 0) {
-          pushPresentationEvent(match, {
-            boxId,
-            type: "hp_gain",
-            seatNumber: actorSeatNumber,
-            cardName: definition.name,
-            amount: dealt
-          });
+        const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, boxId, actorSeatNumber);
+        if (dealt > 0 && getStoredSeat(game, actorSeatNumber).alive) {
+          const lifestealResult = setSeatHp(match, actorSeatNumber, actorSeat.hp + dealt);
+          if (lifestealResult.delta > 0) {
+            pushPresentationEvent(match, {
+              boxId,
+              type: "hp_gain",
+              seatNumber: actorSeatNumber,
+              cardName: definition.name,
+              amount: lifestealResult.delta
+            });
+          }
         }
       }
       break;
@@ -1818,32 +2531,33 @@ function applyEffect(
       appendServerDebugLog(match, "effect", `${definition.name} sets HP for ${targetSeatNumbers.join(", ")}${boxId != null ? ` [box ${boxId}]` : ""}`);
       for (const targetSeatNumber of targetSeatNumbers) {
         const targetSeat = getPublicSeat(match, targetSeatNumber);
-        const previousHp = targetSeat.hp;
-        const nextHp = evaluateRoll(match, effect.amount, actorSeat, targetSeat, actorSeatNumber, boxId);
-        targetSeat.hp = nextHp;
-        const delta = nextHp - previousHp;
+        const evaluatedHp = evaluateRoll(match, effect.amount, actorSeat, targetSeat, actorSeatNumber, boxId);
+        const requestedHp = definition.id === "limite-de-30-points-de-vie"
+          ? Math.min(targetSeat.hp, evaluatedHp)
+          : evaluatedHp;
+        const hpResult = setSeatHp(match, targetSeatNumber, requestedHp);
 
         appendServerDebugLog(
           match,
           "effect",
-          `${definition.name} set seat ${targetSeatNumber} HP ${previousHp} -> ${nextHp}${boxId != null ? ` [box ${boxId}]` : ""}`
+          `${definition.name} set seat ${targetSeatNumber} HP ${hpResult.previousHp} -> ${hpResult.nextHp}${boxId != null ? ` [box ${boxId}]` : ""}`
         );
 
-        if (delta < 0) {
+        if (hpResult.delta < 0) {
           pushPresentationEvent(match, {
             boxId,
             type: "hp_loss",
             seatNumber: targetSeatNumber,
             cardName: definition.name,
-            amount: Math.abs(delta)
+            amount: Math.abs(hpResult.delta)
           });
-        } else if (delta > 0) {
+        } else if (hpResult.delta > 0) {
           pushPresentationEvent(match, {
             boxId,
             type: "hp_gain",
             seatNumber: targetSeatNumber,
             cardName: definition.name,
-            amount: delta
+            amount: hpResult.delta
           });
         }
 
@@ -1917,7 +2631,12 @@ function applyEffect(
       // O-category cards stay in play as objects; computeResistanceThreshold already
       // reads the modifier from storedSeat.objects, so no separate status entry is needed.
       // SO-category curses/statuses are added by movePersistentCard; avoid duplicating them here.
-      if (effect.duration === "until_removed" && definition.category.code !== "O" && definition.category.code !== "SO") {
+      if (
+        effect.duration === "until_removed"
+        && definition.category.code !== "O"
+        && definition.category.code !== "SO"
+        && definition.id !== "hydromel"
+      ) {
         for (const targetSeatNumber of targetSeatNumbers) {
           getStoredSeat(game, targetSeatNumber).statuses.push({
             instanceId: randomUUID(),
@@ -1982,7 +2701,7 @@ function applyEffect(
       break;
     case "swap_bodies":
       if (targetSeatNumbers[0] != null) {
-        swapSeatOccupants(match, actorSeatNumber, targetSeatNumbers[0]);
+        swapSeatOccupants(match, actorSeatNumber, targetSeatNumbers[0], effect);
       }
       break;
     case "board_reset": {
@@ -2011,14 +2730,14 @@ function applyEffect(
       actorState.attackImmunityTurns = Math.max(actorState.attackImmunityTurns, effect.durationTurns);
       if (effect.bonusHeal != null) {
         const bonusHealAmount = evaluateRoll(match, effect.bonusHeal, actorSeat, actorSeat, actorSeatNumber, boxId);
-        actorSeat.hp += bonusHealAmount;
-        if (bonusHealAmount > 0) {
+        const bonusHealResult = setSeatHp(match, actorSeatNumber, actorSeat.hp + bonusHealAmount);
+        if (bonusHealResult.delta > 0) {
           pushPresentationEvent(match, {
             boxId,
             type: "hp_gain",
             seatNumber: actorSeatNumber,
             cardName: definition.name,
-            amount: bonusHealAmount
+            amount: bonusHealResult.delta
           });
         }
       }
@@ -2048,6 +2767,88 @@ function applyEffect(
   return false;
 }
 
+function maybeQueueMassAttackStaffTurnAction(
+  match: StoredMatchState,
+  seatNumber: number,
+  skipAfterAction: boolean
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const staffCard = getSeatMassAttackStaff(seatState);
+  if (staffCard == null) {
+    return false;
+  }
+
+  const definition = requireDefinition(staffCard.cardId);
+  const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, seatNumber)
+    .filter((targetSeatNumber) => !isProtectedFromAttack(match, targetSeatNumber, definition));
+  if (targetSeatNumbers.length === 0) {
+    appendServerDebugLog(match, "object", `Seat ${seatNumber}'s ${definition.name} found no valid targets at start of turn`);
+    return false;
+  }
+
+  beginObjectPendingAction(
+    match,
+    seatNumber,
+    staffCard,
+    definition,
+    targetSeatNumbers,
+    `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} fires at everyone.`,
+    {
+      mode: skipAfterAction ? "advance_turn_without_play" : "resume_turn",
+      seatNumber
+    }
+  );
+  appendServerDebugLog(
+    match,
+    "object",
+    `Seat ${seatNumber}'s ${definition.name} fired with ${getMassAttackStaffLoadedCount(staffCard)} stored AM card(s)`
+  );
+  return true;
+}
+
+function resolvePersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const persistentStatuses = seatState.statuses.filter((status) =>
+    PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[status.cardId] != null
+  );
+
+  for (const status of persistentStatuses) {
+    const definition = requireDefinition(status.cardId);
+    resolvePersistentOwnerTurnMassDamageTick(match, seatNumber, definition);
+
+    const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
+    if (nextRemainingTurnTriggers > 0) {
+      status.remainingTurnTriggers = nextRemainingTurnTriggers;
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${seatNumber}'s ${definition.name} will trigger ${nextRemainingTurnTriggers} more time(s)`
+      );
+      continue;
+    }
+
+    seatState.statuses = seatState.statuses.filter((candidate) => candidate.instanceId !== status.instanceId);
+    discardInstances(game, [{ instanceId: status.instanceId, cardId: status.cardId }]);
+    appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} ends.`);
+    appendServerDebugLog(match, "status", `Seat ${seatNumber}'s ${definition.name} expired after its final trigger`);
+
+    checkForWinner(match);
+    if (match.status === "finished") {
+      return;
+    }
+  }
+}
+
 function startNextTurn(match: StoredMatchState, previousSeatNumber: number): void {
   const game = match.internalGame;
   if (game == null) {
@@ -2066,13 +2867,20 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
 
   while (safety < ordered.length) {
     const candidateSeat = getStoredSeat(game, ordered[nextIndex]);
-    if (candidateSeat.skipTurnsRemaining > 0) {
-      candidateSeat.skipTurnsRemaining -= 1;
-      appendDealerMessage(match, `${getPublicSeat(match, candidateSeat.seatNumber).displayName} loses a turn.`);
-      appendServerDebugLog(match, "turn", `Seat ${candidateSeat.seatNumber} skipped turn (${candidateSeat.skipTurnsRemaining} skips remaining)`);
-      nextIndex = (nextIndex + 1) % ordered.length;
-      safety += 1;
-      continue;
+    const hydromelStatuses = candidateSeat.statuses.filter((status) => status.cardId === "hydromel");
+    if (hydromelStatuses.length > 0) {
+      candidateSeat.statuses = candidateSeat.statuses.filter((status) => status.cardId !== "hydromel");
+      discardInstances(game, hydromelStatuses.map((status) => ({ instanceId: status.instanceId, cardId: status.cardId })));
+      candidateSeat.skipTurnsRemaining += hydromelStatuses.length;
+      appendDealerMessage(
+        match,
+        `${getPublicSeat(match, candidateSeat.seatNumber).displayName} discards Hydromel and will lose ${hydromelStatuses.length === 1 ? "that turn" : `${hydromelStatuses.length} turns`}.`
+      );
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${candidateSeat.seatNumber} discarded ${hydromelStatuses.length} Hydromel status card(s) and gains ${hydromelStatuses.length} skip turn(s)`
+      );
     }
 
     if (candidateSeat.noRiposteTurnsRemaining > 0) {
@@ -2102,9 +2910,33 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
         }
       }
     }
+
+    const losesTurn = candidateSeat.skipTurnsRemaining > 0;
+    if (losesTurn) {
+      candidateSeat.skipTurnsRemaining -= 1;
+    }
+
     game.pendingCurseRelease = undefined;
-    maybeQueueMaledictionRelease(match, candidateSeat.seatNumber);
     appendServerDebugLog(match, "turn", `Turn advanced to seat ${candidateSeat.seatNumber} (turn ${game.turnNumber})`);
+
+    resolvePersistentOwnerTurnMassDamageStatuses(match, candidateSeat.seatNumber);
+    if (match.status === "finished") {
+      return;
+    }
+
+    if (maybeQueueMassAttackStaffTurnAction(match, candidateSeat.seatNumber, losesTurn)) {
+      return;
+    }
+
+    if (losesTurn) {
+      appendDealerMessage(match, `${getPublicSeat(match, candidateSeat.seatNumber).displayName} loses a turn.`);
+      appendServerDebugLog(match, "turn", `Seat ${candidateSeat.seatNumber} skipped turn (${candidateSeat.skipTurnsRemaining} skips remaining)`);
+      nextIndex = (nextIndex + 1) % ordered.length;
+      safety += 1;
+      continue;
+    }
+
+    maybeQueueCurseRelease(match, candidateSeat.seatNumber);
     return;
   }
 }
@@ -2131,7 +2963,7 @@ export function passTurnWithoutPlaying(match: StoredMatchState, seatNumber: numb
 }
 
 export function initializeMatchGame(match: StoredMatchState): void {
-  const deck = createDeck();
+  const deck = createDeck(match.enabledExpansions);
   const minimumHandSize = determineMinimumHandSize(deck.length);
   const orderedSeats = sortBySeatNumber(match.seats);
 
@@ -2254,6 +3086,7 @@ export function buildPublicMatchState(match: StoredMatchState, viewerUserId?: st
     instanceId: match.instanceId,
     status: match.status,
     maxSeats: match.maxSeats,
+    enabledExpansions: { ...match.enabledExpansions },
     seats: sortBySeatNumber(match.seats).map((seat) => buildPublicSeat(match, seat, viewerSeatNumber)),
     chatMessages: [...match.chatMessages],
     game: buildPublicGameState(match, viewerSeatNumber),
@@ -2274,7 +3107,12 @@ function buildPendingActionPublicState(match: StoredMatchState): PendingActionSt
     targetSeatNumbers: [...pendingAction.targetSeatNumbers],
     responderSeatNumbers: [...pendingAction.responderSeatNumbers],
     targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-    card: buildCardView(pendingAction.storedCard, requireDefinition(pendingAction.storedCard.cardId), "discard", false),
+    card: buildCardView(
+      pendingAction.storedCard,
+      requireDefinition(pendingAction.storedCard.cardId),
+      pendingAction.sourceZone === "object" ? "object" : "discard",
+      false
+    ),
     summary: pendingAction.summary,
     responseMode: pendingAction.responseMode,
     fromMirror: pendingAction.fromMirror,
@@ -2386,31 +3224,45 @@ function buildPendingCurseReleasePublicState(match: StoredMatchState): GameState
   };
 }
 
-function maybeQueueMaledictionRelease(match: StoredMatchState, seatNumber: number): boolean {
+function maybeQueueCurseRelease(match: StoredMatchState, seatNumber: number): boolean {
   const game = match.internalGame;
   if (game == null) {
     return false;
   }
 
   const seatState = getStoredSeat(game, seatNumber);
-  const maledictionStatus = seatState.statuses.find((status) => status.cardId === "malediction");
-  if (maledictionStatus == null) {
+  const releasableStatus = seatState.statuses.find((status) => {
+    const definition = requireDefinition(status.cardId);
+    return (
+      definition.category.code === "SO"
+      && definition.rules.staysInPlay
+      && definition.defenseBand?.annulationAllowed === true
+      && (definition.defenseBand.annulationCardsRequired ?? 0) > 0
+    );
+  });
+  if (releasableStatus == null) {
     return false;
   }
 
+  const releaseDefinition = requireDefinition(releasableStatus.cardId);
+  const releaseCardCount = Math.max(1, releaseDefinition.defenseBand?.annulationCardsRequired ?? 1);
   const annulationCount = seatState.hand.filter((card) => card.cardId === "annulation").length;
-  if (annulationCount < 2) {
+  if (annulationCount < releaseCardCount) {
     return false;
   }
 
   game.pendingCurseRelease = {
     seatNumber,
-    statusInstanceId: maledictionStatus.instanceId,
-    sourceCardId: maledictionStatus.cardId,
+    statusInstanceId: releasableStatus.instanceId,
+    sourceCardId: releasableStatus.cardId,
     releaseCardId: "annulation",
-    releaseCardCount: 2
+    releaseCardCount
   };
-  appendServerDebugLog(match, "curse", `Seat ${seatNumber} may discard 2 Annulation to remove Malediction`);
+  appendServerDebugLog(
+    match,
+    "curse",
+    `Seat ${seatNumber} may discard ${releaseCardCount} Annulation to remove ${releaseDefinition.name}`
+  );
   return true;
 }
 
@@ -2533,6 +3385,7 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
     storedCard: pendingAction.storedCard,
     summary: newSummary,
     responseMode: "per_target",
+    sourceZone: pendingAction.sourceZone ?? "hand",
     fromMirror: true,
     mirrorOriginActorSeatNumber: originActorSeatNumber,
     responders: targetAlive
@@ -2548,7 +3401,12 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
     createdAt: new Date().toISOString(),
     actorSeatNumber: mirrorPlayerSeatNumber,
     targetSeatNumbers: [reflectTargetSeatNumber],
-    card: buildCardView(pendingAction.storedCard, definition, "discard", false),
+    card: buildCardView(
+      pendingAction.storedCard,
+      definition,
+      pendingAction.sourceZone === "object" ? "object" : "discard",
+      false
+    ),
     summary: newSummary
   });
 
@@ -2617,6 +3475,62 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
   }
 }
 
+function beginObjectPendingAction(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceCard: StoredCardInstance,
+  definition: BaseCardDefinition,
+  targetSeatNumbers: number[],
+  summary: string,
+  continuation: StoredPendingActionState["continuation"]
+): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const responderSeatNumbers = targetSeatNumbers.filter((seatNumber) => getStoredSeat(game, seatNumber).alive);
+  const boxId = randomUUID();
+  appendDealerMessage(match, summary);
+  pushGameEvent(match, {
+    id: randomUUID(),
+    boxId,
+    type: "action_start",
+    createdAt: new Date().toISOString(),
+    actorSeatNumber,
+    targetSeatNumbers: [...targetSeatNumbers],
+    card: buildCardView(sourceCard, definition, "object", false),
+    summary
+  });
+  appendServerDebugLog(
+    match,
+    "box",
+    `Opened box ${boxId} for seat ${actorSeatNumber} using ${definition.name} from object with responders ${responderSeatNumbers.length > 0 ? responderSeatNumbers.join(", ") : "none"}`
+  );
+
+  game.pendingAction = {
+    boxId,
+    actorSeatNumber,
+    targetSeatNumbers: [...targetSeatNumbers],
+    responderSeatNumbers,
+    storedCard: sourceCard,
+    summary,
+    responseMode: "collective",
+    responders: responderSeatNumbers.map((seatNumber) => ({
+      seatNumber,
+      state: "pending",
+      choice: "pending",
+      consumedCards: []
+    })),
+    sourceZone: "object",
+    continuation,
+    createdAt: new Date().toISOString()
+  };
+
+  refreshSeatSummaries(match);
+  autoRespondIfNeeded(match);
+}
+
 function beginPendingAction(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -2662,6 +3576,7 @@ function beginPendingAction(
     storedCard: removedCard,
     summary,
     responseMode: determineResponseMode(definition),
+    sourceZone: "hand",
     sharedSacrificeAmount: undefined,
     responders: responderSeatNumbers.map((seatNumber) => ({
       seatNumber,
@@ -2689,6 +3604,44 @@ function beginPendingAction(
   autoRespondIfNeeded(match);
 }
 
+function resolvePendingActionContinuation(
+  match: StoredMatchState,
+  pendingAction: StoredPendingActionState
+): boolean {
+  const game = match.internalGame;
+  const continuation = pendingAction.continuation;
+  if (game == null || continuation == null) {
+    return false;
+  }
+
+  checkForWinner(match);
+  if (match.status === "finished") {
+    refreshSeatSummaries(match);
+    return true;
+  }
+
+  if (continuation.mode === "resume_turn") {
+    game.pendingCurseRelease = undefined;
+    maybeQueueCurseRelease(match, continuation.seatNumber);
+    appendServerDebugLog(
+      match,
+      "turn",
+      `Seat ${continuation.seatNumber} resumes their turn after ${requireDefinition(pendingAction.storedCard.cardId).name}`
+    );
+  } else {
+    appendDealerMessage(match, `${getPublicSeat(match, continuation.seatNumber).displayName} loses a turn.`);
+    appendServerDebugLog(
+      match,
+      "turn",
+      `Seat ${continuation.seatNumber} skipped the rest of the turn after ${requireDefinition(pendingAction.storedCard.cardId).name}`
+    );
+    startNextTurn(match, continuation.seatNumber);
+  }
+
+  refreshSeatSummaries(match);
+  return true;
+}
+
 function resolvePerDamageEffectResponder(match: StoredMatchState, responder: StoredPendingActionResponderState): void {
   const game = match.internalGame;
   const pendingAction = game?.pendingAction;
@@ -2698,7 +3651,12 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
 
   const definition = requireDefinition(pendingAction.storedCard.cardId);
   const targetSeatNumber = responder.seatNumber;
-  const actorSeat = getPublicSeat(match, pendingAction.actorSeatNumber);
+  const actorSeat = getActorSeatForAction(
+    match,
+    pendingAction.actorSeatNumber,
+    definition,
+    pendingAction.sourceZone ?? "hand"
+  );
   let anyEffectLanded = false;
 
   const damageEffects = definition.rules.effects.filter(
@@ -2720,7 +3678,10 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
         effect,
         [targetSeatNumber],
         pendingAction.targetObjectInstanceId,
-        pendingAction.boxId
+        pendingAction.boxId,
+        1,
+        undefined,
+        pendingAction.sourceZone ?? "hand"
       );
       if (pausedForObjectChoice) {
         return;
@@ -2749,7 +3710,11 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
     const targetSeat = getPublicSeat(match, targetSeatNumber);
     const baseAmount = shouldEvaluateDamage
       ? effect.amount.kind === "sacrifice_amount"
-        ? (pendingAction.sharedSacrificeAmount ?? evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId))
+        ? (
+          pendingAction.sharedSacrificeAmount != null
+            ? resolveChosenSacrificeDamageAmount(pendingAction.sharedSacrificeAmount, effect.amount)
+            : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId)
+        )
         : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId)
       : 0;
     const amount = shouldEvaluateDamage
@@ -2769,7 +3734,7 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
 
     appendServerDebugLog(match, "resolve", `Applying ${definition.name} hit ${damageEffectIndex}/${damageEffects.length} damage ${amount} to seat ${targetSeatNumber}`);
     if (amount > 0) {
-      applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId);
+      applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, pendingAction.actorSeatNumber);
     }
 
     if (effect.amount.kind === "sacrifice_amount" && pendingAction.responders[0]?.seatNumber === targetSeatNumber) {
@@ -2794,12 +3759,16 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
   const definition = requireDefinition(pendingAction.storedCard.cardId);
   const targetSeatNumber = responder.seatNumber;
+  const shouldDeferCollectiveMirrorHit =
+    pendingAction.fromMirror === true
+    && game.pausedSequentialAction?.responseMode === "collective"
+    && definition.rules.effects.some((effect) => effect.type === "damage" || effect.type === "lifesteal");
   if (!getStoredSeat(game, targetSeatNumber).alive) {
     discardInstances(game, responder.consumedCards);
     return;
   }
 
-  if (pendingAction.fromMirror === true && game.pausedSequentialAction?.responseMode === "collective") {
+  if (shouldDeferCollectiveMirrorHit) {
     appendServerDebugLog(
       match,
       "mirror",
@@ -2900,6 +3869,21 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
   }
 
   if (!resisted || definition.defenseBand?.resistance.color === "yellow") {
+    if (!resisted && SUCCESSFUL_HIT_KILL_ROLL_BY_CARD_ID[definition.id] != null) {
+      resolveSuccessfulHitKillRoll(match, pendingAction.actorSeatNumber, definition, [targetSeatNumber], pendingAction.boxId);
+    }
+
+    const successfulHitDamageContext = !resisted
+      ? resolveSuccessfulHitDamageContext(
+        match,
+        pendingAction.actorSeatNumber,
+        definition,
+        pendingAction.sourceZone ?? "hand",
+        targetSeatNumber,
+        pendingAction.boxId
+      )
+      : undefined;
+
     for (const effect of definition.rules.effects) {
       if (effect.type !== "damage" && effect.type !== "lifesteal") {
         if (!resisted) {
@@ -2920,10 +3904,19 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         continue;
       }
 
-      const actorSeat = getPublicSeat(match, pendingAction.actorSeatNumber);
+      const actorSeat = successfulHitDamageContext?.actorSeat ?? getActorSeatForAction(
+        match,
+        pendingAction.actorSeatNumber,
+        definition,
+        pendingAction.sourceZone ?? "hand"
+      );
       const targetSeat = getPublicSeat(match, targetSeatNumber);
       const baseAmount = effect.type === "damage" && effect.amount.kind === "sacrifice_amount"
-        ? (pendingAction.sharedSacrificeAmount ?? evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId))
+        ? (
+          pendingAction.sharedSacrificeAmount != null
+            ? resolveChosenSacrificeDamageAmount(pendingAction.sharedSacrificeAmount, effect.amount)
+            : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId)
+        )
         : evaluateRoll(
           match,
           effect.amount,
@@ -2939,7 +3932,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         resisted,
         criticalSuccess,
         fatalFailure
-      );
+      ) * (successfulHitDamageContext?.damageMultiplier ?? 1);
 
       if (amount > 0) {
         pushPresentationEvent(match, {
@@ -2952,16 +3945,20 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
       }
 
       appendServerDebugLog(match, "resolve", `Applying ${definition.name} ${effect.type} ${amount} to seat ${targetSeatNumber}`);
-      const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId);
+      const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, pendingAction.actorSeatNumber);
       if (effect.type === "lifesteal" && dealt > 0) {
-        actorSeat.hp += dealt;
-        pushPresentationEvent(match, {
-          boxId: pendingAction.boxId,
-          type: "hp_gain",
-          seatNumber: pendingAction.actorSeatNumber,
-          cardName: definition.name,
-          amount: dealt
-        });
+      if (dealt > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
+        const lifestealResult = setSeatHp(match, pendingAction.actorSeatNumber, actorSeat.hp + dealt);
+        if (lifestealResult.delta > 0) {
+          pushPresentationEvent(match, {
+            boxId: pendingAction.boxId,
+            type: "hp_gain",
+            seatNumber: pendingAction.actorSeatNumber,
+            cardName: definition.name,
+            amount: lifestealResult.delta
+          });
+        }
+      }
       }
 
       if (effect.type === "damage" && effect.amount.kind === "sacrifice_amount" && pendingAction.responders[0]?.seatNumber === targetSeatNumber) {
@@ -3001,7 +3998,12 @@ function finalizePendingAction(match: StoredMatchState): void {
     // Mirror chain link resolved — resume the paused outer action if there is one
     const pausedAction = game.pausedSequentialAction;
     const reflectedTargetSeatNumber = pendingAction.targetSeatNumbers[0];
+    const shouldDeferCollectiveMirrorHit =
+      requireDefinition(pendingAction.storedCard.cardId).rules.effects.some(
+        (effect) => effect.type === "damage" || effect.type === "lifesteal"
+      );
     if (
+      shouldDeferCollectiveMirrorHit &&
       pausedAction?.responseMode === "collective" &&
       reflectedTargetSeatNumber != null &&
       getStoredSeat(game, reflectedTargetSeatNumber).alive
@@ -3045,19 +4047,27 @@ function finalizePendingAction(match: StoredMatchState): void {
   }
 
   if (!definition.rules.staysInPlay) {
-    game.discardPile.push(pendingAction.storedCard);
+    discardInstances(game, [pendingAction.storedCard]);
   }
 
   game.lastPlayedCard = {
     actorSeatNumber: pendingAction.actorSeatNumber,
     targetSeatNumbers: [...pendingAction.targetSeatNumbers],
     targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-    card: buildCardView(pendingAction.storedCard, definition, "discard", false),
+    card: buildCardView(
+      pendingAction.storedCard,
+      definition,
+      pendingAction.sourceZone === "object" ? "object" : "discard",
+      false
+    ),
     mode: "active",
     summary: pendingAction.summary,
     resolvedAt: new Date().toISOString()
   };
   game.pendingAction = undefined;
+  if (resolvePendingActionContinuation(match, pendingAction)) {
+    return;
+  }
   finalizeResolvedAction(match, pendingAction.actorSeatNumber, pendingAction.boxId);
 }
 
@@ -3101,7 +4111,9 @@ function resolvePendingAction(match: StoredMatchState): void {
   if (collectiveCanceled) {
     const cancelingSeatNumber = pendingAction.responders.find((responder) => responder.choice === "annulation")?.seatNumber;
     discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
-    game.discardPile.push(pendingAction.storedCard);
+    if (pendingAction.sourceZone !== "object") {
+      discardInstances(game, [pendingAction.storedCard]);
+    }
     if (cancelingSeatNumber != null) {
       appendServerDebugLog(
         match,
@@ -3118,12 +4130,20 @@ function resolvePendingAction(match: StoredMatchState): void {
       actorSeatNumber: pendingAction.actorSeatNumber,
       targetSeatNumbers: [...pendingAction.targetSeatNumbers],
       targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-      card: buildCardView(pendingAction.storedCard, definition, "discard", false),
+      card: buildCardView(
+        pendingAction.storedCard,
+        definition,
+        pendingAction.sourceZone === "object" ? "object" : "discard",
+        false
+      ),
       mode: "active",
       summary: pendingAction.summary,
       resolvedAt: new Date().toISOString()
     };
     game.pendingAction = undefined;
+    if (resolvePendingActionContinuation(match, pendingAction)) {
+      return;
+    }
     finalizeResolvedAction(match, pendingAction.actorSeatNumber, pendingAction.boxId);
     return;
   }
@@ -3143,6 +4163,45 @@ function resolvePendingAction(match: StoredMatchState): void {
   const deferredMirrorHits = (pendingAction.deferredMirrorHits ?? []).filter((hit) =>
     getStoredSeat(game, hit.targetSeatNumber).alive
   );
+  const actorState = getStoredSeat(game, pendingAction.actorSeatNumber);
+  const requiredFollowUpCategory = getRequiredFollowUpCategory(definition);
+  if (requiredFollowUpCategory != null) {
+    const consumedFollowUpCard = consumeHandCardByCategory(actorState.hand, requiredFollowUpCategory);
+    discardInstances(game, [consumedFollowUpCard]);
+    appendServerDebugLog(
+      match,
+      "play_card",
+      `Seat ${pendingAction.actorSeatNumber} discarded ${requireDefinition(consumedFollowUpCard.cardId).name} to complete ${definition.name}`
+    );
+    const followUpHeal = resolveFollowUpCategoryHeal(
+      match,
+      definition,
+      consumedFollowUpCard,
+      pendingAction.actorSeatNumber,
+      pendingAction.boxId
+    );
+    if (followUpHeal > 0) {
+      const healResult = setSeatHp(
+        match,
+        pendingAction.actorSeatNumber,
+        getPublicSeat(match, pendingAction.actorSeatNumber).hp + followUpHeal
+      );
+      if (healResult.delta > 0) {
+        pushPresentationEvent(match, {
+          boxId: pendingAction.boxId,
+          type: "hp_gain",
+          seatNumber: pendingAction.actorSeatNumber,
+          cardName: definition.name,
+          amount: healResult.delta
+        });
+      }
+      appendServerDebugLog(
+        match,
+        "effect",
+        `${definition.name} converted ${requireDefinition(consumedFollowUpCard.cardId).name} into ${healResult.delta} HP`
+      );
+    }
+  }
 
   const resistedTargets = new Set<number>();
   const fatalResistanceTargets = new Set<number>();
@@ -3227,6 +4286,45 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
   }
 
+  if (SUCCESSFUL_HIT_KILL_ROLL_BY_CARD_ID[definition.id] != null) {
+    const resolvedTargetSeatNumbers = pendingAction.targetSeatNumbers.filter(
+      (seatNumber) =>
+        !canceledTargets.has(seatNumber) &&
+        !mirroredTargets.has(seatNumber) &&
+        !resistedTargets.has(seatNumber) &&
+        getStoredSeat(game, seatNumber).alive
+    );
+    resolveSuccessfulHitKillRoll(match, pendingAction.actorSeatNumber, definition, resolvedTargetSeatNumbers, pendingAction.boxId);
+  }
+
+  if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
+    resolvePersistentOwnerTurnMassDamageTick(match, pendingAction.actorSeatNumber, definition, pendingAction.boxId);
+  }
+
+  const successfulHitDamageContextBySeatNumber = new Map<number, SuccessfulHitDamageContext>();
+  for (const targetSeatNumber of pendingAction.targetSeatNumbers) {
+    if (
+      canceledTargets.has(targetSeatNumber) ||
+      mirroredTargets.has(targetSeatNumber) ||
+      resistedTargets.has(targetSeatNumber) ||
+      !getStoredSeat(game, targetSeatNumber).alive
+    ) {
+      continue;
+    }
+
+    successfulHitDamageContextBySeatNumber.set(
+      targetSeatNumber,
+      resolveSuccessfulHitDamageContext(
+        match,
+        pendingAction.actorSeatNumber,
+        definition,
+        pendingAction.sourceZone ?? "hand",
+        targetSeatNumber,
+        pendingAction.boxId
+      )
+    );
+  }
+
   for (const effect of definition.rules.effects) {
     if (effect.type !== "damage" && effect.type !== "lifesteal") {
       const remainingTargets = pendingAction.targetSeatNumbers.filter(
@@ -3243,7 +4341,10 @@ function resolvePendingAction(match: StoredMatchState): void {
         effect,
         remainingTargets,
         pendingAction.targetObjectInstanceId,
-        pendingAction.boxId
+        pendingAction.boxId,
+        1,
+        undefined,
+        pendingAction.sourceZone ?? "hand"
       );
       if (pausedForObjectChoice) {
         return;
@@ -3251,7 +4352,12 @@ function resolvePendingAction(match: StoredMatchState): void {
       continue;
     }
 
-    const actorSeat = getPublicSeat(match, pendingAction.actorSeatNumber);
+    const defaultActorSeat = getActorSeatForAction(
+      match,
+      pendingAction.actorSeatNumber,
+      definition,
+      pendingAction.sourceZone ?? "hand"
+    );
     const hpLossTargetSeatNumbers = pendingAction.targetSeatNumbers.filter((targetSeatNumber) => {
       if (canceledTargets.has(targetSeatNumber) || mirroredTargets.has(targetSeatNumber) || !getStoredSeat(game, targetSeatNumber).alive) {
         return false;
@@ -3268,19 +4374,25 @@ function resolvePendingAction(match: StoredMatchState): void {
       hpLossApplicationSeatNumbers.length > 0
       && !isTargetDependentRollExpression(effect.amount);
     const sharedDamageBase = usesSharedDamageBase
-      ? effect.type === "damage" && effect.amount.kind === "sacrifice_amount"
-        ? (pendingAction.sharedSacrificeAmount ?? evaluateRoll(
-          match,
-          effect.amount,
-          actorSeat,
-          hpLossApplicationSeatNumbers.length > 0 ? getPublicSeat(match, hpLossApplicationSeatNumbers[0]) : undefined,
-          pendingAction.actorSeatNumber,
-          pendingAction.boxId
-        ))
+      ? definition.id === MASS_ATTACK_STAFF_CARD_ID
+        ? rollMassAttackStaffDamage(match, pendingAction.actorSeatNumber, pendingAction.storedCard, pendingAction.boxId)
+        : effect.type === "damage" && effect.amount.kind === "sacrifice_amount"
+        ? (
+          pendingAction.sharedSacrificeAmount != null
+            ? resolveChosenSacrificeDamageAmount(pendingAction.sharedSacrificeAmount, effect.amount)
+            : evaluateRoll(
+              match,
+              effect.amount,
+              defaultActorSeat,
+              hpLossApplicationSeatNumbers.length > 0 ? getPublicSeat(match, hpLossApplicationSeatNumbers[0]) : undefined,
+              pendingAction.actorSeatNumber,
+              pendingAction.boxId
+            )
+        )
         : evaluateRoll(
           match,
           effect.amount,
-          actorSeat,
+          defaultActorSeat,
           hpLossApplicationSeatNumbers.length > 0 ? getPublicSeat(match, hpLossApplicationSeatNumbers[0]) : undefined,
           pendingAction.actorSeatNumber,
           pendingAction.boxId
@@ -3303,6 +4415,8 @@ function resolvePendingAction(match: StoredMatchState): void {
       }
 
       const targetSeat = getPublicSeat(match, targetSeatNumber);
+      const successfulHitDamageContext = successfulHitDamageContextBySeatNumber.get(targetSeatNumber);
+      const actorSeat = successfulHitDamageContext?.actorSeat ?? defaultActorSeat;
       const willTakeHpLossAfterResistance = effectMayApplyHpLossAfterResistance(definition, effect, resistedTargets.has(targetSeatNumber));
       if (willTakeHpLossAfterResistance) {
         pushPresentationEvent(match, {
@@ -3330,10 +4444,10 @@ function resolvePendingAction(match: StoredMatchState): void {
         resistedTargets.has(targetSeatNumber),
         criticalSuccessTargets.has(targetSeatNumber),
         fatalResistanceTargets.has(targetSeatNumber)
-      );
+      ) * (successfulHitDamageContext?.damageMultiplier ?? 1);
 
-      const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId);
-      if (effect.type === "lifesteal" && dealt > 0) {
+      const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, pendingAction.actorSeatNumber);
+      if (effect.type === "lifesteal" && dealt > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
         healBySeatNumber.set(
           pendingAction.actorSeatNumber,
           (healBySeatNumber.get(pendingAction.actorSeatNumber) ?? 0) + dealt
@@ -3368,8 +4482,8 @@ function resolvePendingAction(match: StoredMatchState): void {
           "resolve",
           `Applying deferred mirror ${definition.name} ${effect.type} ${amount} to seat ${hit.targetSeatNumber}`
         );
-        const dealt = applyDamage(match, hit.targetSeatNumber, amount, definition, false, pendingAction.boxId);
-        if (effect.type === "lifesteal" && dealt > 0) {
+        const dealt = applyDamage(match, hit.targetSeatNumber, amount, definition, false, pendingAction.boxId, hit.sourceSeatNumber);
+        if (effect.type === "lifesteal" && dealt > 0 && getStoredSeat(game, hit.sourceSeatNumber).alive) {
           healBySeatNumber.set(
             hit.sourceSeatNumber,
             (healBySeatNumber.get(hit.sourceSeatNumber) ?? 0) + dealt
@@ -3384,26 +4498,29 @@ function resolvePendingAction(match: StoredMatchState): void {
           continue;
         }
 
-        getPublicSeat(match, seatNumber).hp += healAmount;
-        pushPresentationEvent(match, {
-          boxId: pendingAction.boxId,
-          type: "hp_gain",
-          seatNumber,
-          cardName: definition.name,
-          amount: healAmount
-        });
+        const healResult = setSeatHp(match, seatNumber, getPublicSeat(match, seatNumber).hp + healAmount);
+        if (healResult.delta > 0) {
+          pushPresentationEvent(match, {
+            boxId: pendingAction.boxId,
+            type: "hp_gain",
+            seatNumber,
+            cardName: definition.name,
+            amount: healResult.delta
+          });
+        }
       }
     }
 
     if (effect.type === "damage" && effect.amount.kind === "sacrifice_amount" && sharedDamageBase != null) {
-      actorSeat.hp -= sharedDamageBase;
-      if (sharedDamageBase > 0) {
+      const sacrificedHp = pendingAction.sharedSacrificeAmount ?? sharedDamageBase;
+      getPublicSeat(match, pendingAction.actorSeatNumber).hp -= sacrificedHp;
+      if (sacrificedHp > 0) {
         pushPresentationEvent(match, {
           boxId: pendingAction.boxId,
           type: "hp_loss",
           seatNumber: pendingAction.actorSeatNumber,
           cardName: definition.name,
-          amount: sharedDamageBase
+          amount: sacrificedHp
         });
       }
       handleSeatDeath(match, pendingAction.actorSeatNumber, false);
@@ -3417,27 +4534,38 @@ function resolvePendingAction(match: StoredMatchState): void {
   );
 
   if (definition.rules.staysInPlay) {
-    movePersistentCard(
-      match,
-      pendingAction.actorSeatNumber,
-      resolvedTargetSeatNumbers,
-      pendingAction.storedCard,
-      definition
-    );
+    if (pendingAction.sourceZone !== "object") {
+      movePersistentCard(
+        match,
+        pendingAction.actorSeatNumber,
+        resolvedTargetSeatNumbers,
+        pendingAction.storedCard,
+        definition,
+        pendingAction.sourceZone ?? "hand"
+      );
+    }
   } else {
-    game.discardPile.push(pendingAction.storedCard);
+    discardInstances(game, [pendingAction.storedCard]);
   }
 
   game.lastPlayedCard = {
     actorSeatNumber: pendingAction.actorSeatNumber,
     targetSeatNumbers: [...pendingAction.targetSeatNumbers],
     targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-    card: buildCardView(pendingAction.storedCard, definition, "discard", false),
+    card: buildCardView(
+      pendingAction.storedCard,
+      definition,
+      pendingAction.sourceZone === "object" ? "object" : "discard",
+      false
+    ),
     mode: "active",
     summary: pendingAction.summary,
     resolvedAt: new Date().toISOString()
   };
   game.pendingAction = undefined;
+  if (resolvePendingActionContinuation(match, pendingAction)) {
+    return;
+  }
   finalizeResolvedAction(match, pendingAction.actorSeatNumber, pendingAction.boxId);
 }
 
@@ -3703,27 +4831,37 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
   if (pendingAction != null) {
     discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
     if (definition.rules.staysInPlay) {
-      movePersistentCard(
-        match,
-        pendingAction.actorSeatNumber,
-        [...pendingAction.targetSeatNumbers],
-        pendingAction.storedCard,
-        definition
-      );
+      if (pendingAction.sourceZone !== "object") {
+        movePersistentCard(
+          match,
+          pendingAction.actorSeatNumber,
+          [...pendingAction.targetSeatNumbers],
+          pendingAction.storedCard,
+          definition
+        );
+      }
     } else {
-      game.discardPile.push(pendingAction.storedCard);
+      discardInstances(game, [pendingAction.storedCard]);
     }
 
     game.lastPlayedCard = {
       actorSeatNumber: pendingAction.actorSeatNumber,
       targetSeatNumbers: [...pendingAction.targetSeatNumbers],
       targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-      card: buildCardView(pendingAction.storedCard, definition, "discard", false),
+      card: buildCardView(
+        pendingAction.storedCard,
+        definition,
+        pendingAction.sourceZone === "object" ? "object" : "discard",
+        false
+      ),
       mode: "active",
       summary: pendingAction.summary,
       resolvedAt: new Date().toISOString()
     };
     game.pendingAction = undefined;
+    if (resolvePendingActionContinuation(match, pendingAction)) {
+      return;
+    }
     finalizeResolvedAction(match, pendingAction.actorSeatNumber, pendingAction.boxId);
     return;
   }
@@ -3894,6 +5032,37 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     throw new Error("Play an AD card for Colère du magicien or pass the forced follow-up");
   }
 
+  const targetOwnedMassAttackStaff =
+    request.mode === "active" && forcedFollowUp == null && request.targetObjectInstanceId != null
+      ? getSeatMassAttackStaff(actorState, request.targetObjectInstanceId)
+      : undefined;
+  if (targetOwnedMassAttackStaff != null) {
+    if (definition.category.code !== "AM") {
+      throw new Error("Only AM cards can be loaded onto BÃ¢ton dâ€™attaque massive");
+    }
+
+    const removedCard = moveCardFromHand(actorState.hand, handCard.instanceId);
+    targetOwnedMassAttackStaff.attachedCards = [...(targetOwnedMassAttackStaff.attachedCards ?? []), removedCard];
+    const summary = `${actorSeat.displayName} loaded ${definition.name} onto ${requireDefinition(targetOwnedMassAttackStaff.cardId).name}.`;
+    appendDealerMessage(match, summary);
+    appendServerDebugLog(
+      match,
+      "object",
+      `Seat ${actorSeat.seatNumber} loaded ${definition.name} onto ${requireDefinition(targetOwnedMassAttackStaff.cardId).name} (${getMassAttackStaffLoadedCount(targetOwnedMassAttackStaff)} stored AM)`
+    );
+    game.lastPlayedCard = {
+      actorSeatNumber: actorSeat.seatNumber,
+      targetSeatNumbers: [],
+      targetObjectInstanceId: targetOwnedMassAttackStaff.instanceId,
+      card: buildCardView(removedCard, definition, "discard", false),
+      mode: "active",
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    finalizeResolvedAction(match, actorSeat.seatNumber);
+    return;
+  }
+
   const playState = canPlayCardActively(match, actorSeat.seatNumber, handCard);
   if (request.mode === "active" && !playState.canPlay) {
     throw new Error(playState.reason ?? "That card cannot be played right now");
@@ -3924,6 +5093,16 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     throw new Error("That target is protected and cannot be attacked right now");
   }
 
+  if (
+    request.mode === "active"
+    && definition.category.code === "AM"
+    && request.targetObjectInstanceId == null
+    && forcedFollowUp == null
+    && effectiveTargetSeatNumbers.length === 0
+  ) {
+    throw new Error("No valid opponent target");
+  }
+
   const removedCard = moveCardFromHand(actorState.hand, handCard.instanceId);
   const summary = describePlay(match, actorSeat.seatNumber, definition, request, effectiveTargetSeatNumbers);
   appendServerDebugLog(
@@ -3931,6 +5110,28 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     "play_card",
     `Seat ${actorSeat.seatNumber} plays ${definition.name} (${request.mode})${request.targetSeatNumber != null ? ` -> seat ${request.targetSeatNumber}` : ""}${request.targetObjectInstanceId != null ? ` -> object ${request.targetObjectInstanceId}` : ""}`
   );
+
+  if (request.mode === "active" && cardConsumesTurnAsNoOp(definition)) {
+    game.discardPile.push(removedCard);
+    appendDealerMessage(match, summary);
+    appendDealerMessage(match, `[TEMP] ${definition.name} effect is not implemented yet.`);
+    appendServerDebugLog(
+      match,
+      "play_card",
+      `${definition.name} consumed the turn as a no-op because its effect is not implemented yet`
+    );
+    game.lastPlayedCard = {
+      actorSeatNumber: actorSeat.seatNumber,
+      targetSeatNumbers: effectiveTargetSeatNumbers,
+      targetObjectInstanceId: request.targetObjectInstanceId,
+      card: buildCardView(removedCard, definition, "discard", false),
+      mode: request.mode,
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    finalizeResolvedAction(match, actorSeat.seatNumber);
+    return;
+  }
 
   if (request.mode === "inactive") {
     game.discardPile.push(removedCard);
@@ -3940,6 +5141,22 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
       card: buildCardView(removedCard, definition, "discard", false),
+      mode: request.mode,
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    finalizeResolvedAction(match, actorSeat.seatNumber);
+    return;
+  }
+
+  if (definition.id === MASS_ATTACK_STAFF_CARD_ID) {
+    movePersistentCard(match, actorSeat.seatNumber, effectiveTargetSeatNumbers, removedCard, definition);
+    appendDealerMessage(match, summary);
+    game.lastPlayedCard = {
+      actorSeatNumber: actorSeat.seatNumber,
+      targetSeatNumbers: effectiveTargetSeatNumbers,
+      targetObjectInstanceId: request.targetObjectInstanceId,
+      card: buildCardView(removedCard, definition, "object", false),
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -3988,7 +5205,8 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
       request.targetObjectInstanceId,
       boxId,
       damageMultiplier,
-      finalizeActorSeatNumber
+      finalizeActorSeatNumber,
+      "hand"
     );
     if (pausedForObjectChoice) {
       if (definition.rules.staysInPlay) {

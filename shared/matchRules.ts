@@ -1,10 +1,11 @@
-import type { MatchState, SeatState } from "./types.js";
+import { defaultMatchExpansionSettings, type MatchState, type SeatState } from "./types.js";
 
 export function createEmptyMatch(instanceId: string, maxSeats = 10): MatchState {
   return {
     instanceId,
     status: "lobby",
     maxSeats,
+    enabledExpansions: { ...defaultMatchExpansionSettings },
     seats: [],
     chatMessages: [],
     createdAt: new Date().toISOString()

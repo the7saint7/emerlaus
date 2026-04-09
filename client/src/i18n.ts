@@ -57,6 +57,11 @@ type TranslationKey =
   | "lobby.startMatch"
   | "lobby.openSeat"
   | "lobby.seatAvailable"
+  | "lobby.expansions"
+  | "lobby.expansionsHint"
+  | "lobby.expansionDisabled"
+  | "lobby.expansionEnabled"
+  | "lobby.expansionOff"
   | "seat.label"
   | "seat.bot"
   | "seat.connected"
@@ -102,6 +107,12 @@ type TranslationKey =
   | "reference.title"
   | "reference.body"
   | "reference.close"
+  | "reference.searchLabel"
+  | "reference.searchPlaceholder"
+  | "reference.decksLabel"
+  | "reference.deckBase"
+  | "reference.deckAbondance"
+  | "reference.empty"
   | "boardReset.title"
   | "boardReset.inProgress"
   | "boardReset.body"
@@ -203,6 +214,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.startMatch": "Start Match",
     "lobby.openSeat": "Open Seat",
     "lobby.seatAvailable": "Available for a player or a bot.",
+    "lobby.expansions": "Expansion Decks",
+    "lobby.expansionsHint": "The host can toggle Abondance here. The other expansion decks remain disabled for now.",
+    "lobby.expansionDisabled": "Disabled",
+    "lobby.expansionEnabled": "Enabled",
+    "lobby.expansionOff": "Off",
     "seat.label": "Seat {seatNumber}",
     "seat.bot": "Bot • {difficulty}",
     "seat.connected": "Connected",
@@ -248,6 +264,12 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.title": "Card Reference",
     "reference.body": "Browse the full card catalog. Select a card on the left to read it clearly.",
     "reference.close": "Close",
+    "reference.searchLabel": "Search by name",
+    "reference.searchPlaceholder": "Type a card name",
+    "reference.decksLabel": "Decks",
+    "reference.deckBase": "Base",
+    "reference.deckAbondance": "Abondance",
+    "reference.empty": "No cards match this search.",
     "boardReset.title": "Choose {count} card{plural} to keep",
     "boardReset.inProgress": "Intervention divine in progress",
     "boardReset.body": "Select the {selectionLabel} that {stayVerb} in your hand before the rest of the board is cleared and reshuffled.",
@@ -346,6 +368,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.startMatch": "Démarrer la partie",
     "lobby.openSeat": "Siège libre",
     "lobby.seatAvailable": "Disponible pour un joueur ou un bot.",
+    "lobby.expansions": "Extensions",
+    "lobby.expansionsHint": "L'hote peut activer Abondance ici. Les autres extensions restent desactivees pour le moment.",
+    "lobby.expansionDisabled": "Desactivee",
+    "lobby.expansionEnabled": "Activee",
+    "lobby.expansionOff": "Inactive",
     "seat.label": "Siège {seatNumber}",
     "seat.bot": "Bot • {difficulty}",
     "seat.connected": "Connecté",
@@ -391,6 +418,12 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.title": "Reference des cartes",
     "reference.body": "Parcourez tout le catalogue. Selectionnez une carte a gauche pour la lire clairement.",
     "reference.close": "Fermer",
+    "reference.searchLabel": "Rechercher par nom",
+    "reference.searchPlaceholder": "Ecrire un nom de carte",
+    "reference.decksLabel": "Paquets",
+    "reference.deckBase": "Base",
+    "reference.deckAbondance": "Abondance",
+    "reference.empty": "Aucune carte ne correspond a cette recherche.",
     "boardReset.title": "Choisissez {count} carte{plural} à garder",
     "boardReset.inProgress": "Intervention divine en cours",
     "boardReset.body": "Sélectionnez {selectionLabel} qui {stayVerb} dans votre main avant que le reste du plateau soit vidé et brassé à nouveau.",

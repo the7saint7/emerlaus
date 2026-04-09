@@ -3,6 +3,37 @@ import type { CardCategoryCode, DefenseBandRules } from "./cards/index.js";
 export type MatchStatus = "lobby" | "in_progress" | "finished";
 
 export type ControllerType = "human" | "bot";
+export type ExpansionKey =
+  | "sorcellerie"
+  | "invocation"
+  | "abondance"
+  | "puissance"
+  | "communion"
+  | "destin"
+  | "compagnons"
+  | "allies";
+
+export interface MatchExpansionSettings {
+  sorcellerie: boolean;
+  invocation: boolean;
+  abondance: boolean;
+  puissance: boolean;
+  communion: boolean;
+  destin: boolean;
+  compagnons: boolean;
+  allies: boolean;
+}
+
+export const defaultMatchExpansionSettings: MatchExpansionSettings = {
+  sorcellerie: false,
+  invocation: false,
+  abondance: false,
+  puissance: false,
+  communion: false,
+  destin: false,
+  compagnons: false,
+  allies: false
+};
 
 export type CardSelectionMode = "none" | "confirm" | "target";
 export type ResponseChoiceType = "pending" | "pass" | "resist" | "annulation" | "resistance_accrue" | "mirror";
@@ -56,6 +87,7 @@ export interface CardView {
   selectionMode: CardSelectionMode;
   targets: CardTargetMode;
   defenseBand: DefenseBandRules | null;
+  attachedCardCount?: number;
   canPlay: boolean;
   disabledReason?: string;
   zone: "hand" | "object" | "status" | "discard";
@@ -230,6 +262,7 @@ export interface MatchState {
   instanceId: string;
   status: MatchStatus;
   maxSeats: number;
+  enabledExpansions: MatchExpansionSettings;
   seats: SeatState[];
   chatMessages: ChatMessage[];
   game?: GameState;
@@ -261,6 +294,11 @@ export interface AddBotRequest {
 }
 
 export interface StartMatchRequest {
+}
+
+export interface UpdateExpansionRequest {
+  expansion: ExpansionKey;
+  enabled: boolean;
 }
 
 export interface KickPlayerRequest {

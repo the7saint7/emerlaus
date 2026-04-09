@@ -41,9 +41,13 @@ export interface AppState {
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
   cardReferencePreviewCardId: string;
+  cardReferenceSearchQuery: string;
+  cardReferenceShowBase: boolean;
+  cardReferenceShowAbondance: boolean;
   sacrificeAmountInput: string;
   telepathyPanelScrollTop: number;
   telepathyListScrollTop: number;
+  cardReferencePanelScrollTop: number;
   cardReferenceListScrollTop: number;
   inspectedSeatNumber: number;
   seenGameEventIds: string[];

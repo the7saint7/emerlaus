@@ -238,6 +238,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
+  margin-bottom: 18px;
 }
 
 .lobby-seat {
@@ -260,6 +261,62 @@ h2 {
   object-fit: cover;
   border: 2px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.lobby-expansions {
+  display: grid;
+  gap: 16px;
+}
+
+.lobby-expansions__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lobby-expansions__header p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.lobby-expansions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.expansion-toggle {
+  display: inline-grid;
+  gap: 4px;
+  min-width: 144px;
+  padding: 12px 16px;
+  border: 1px solid rgba(240, 230, 201, 0.14);
+  border-radius: 16px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.expansion-toggle--enabled {
+  border-color: rgba(217, 180, 89, 0.4);
+  background: rgba(217, 180, 89, 0.12);
+}
+
+.expansion-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.expansion-toggle__name {
+  font-weight: 700;
+}
+
+.expansion-toggle__state {
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .table-shell {
@@ -1143,6 +1200,7 @@ h2 {
 }
 
 .seat-inline-object__art {
+  position: relative;
   width: 100%;
   height: 100%;
   transition: transform 160ms ease;
@@ -1231,6 +1289,7 @@ h2 {
 }
 
 .seat-object-card__art {
+  position: relative;
   width: 100%;
   height: 100%;
   transition: transform 160ms ease;
@@ -1351,10 +1410,30 @@ h2 {
 }
 
 .local-object-card__art {
+  position: relative;
   width: 100%;
   height: 100%;
   transition: transform 120ms ease;
   transform-origin: center center;
+}
+
+.object-stack-count {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 2;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(11, 17, 12, 0.82);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 1px 0 rgba(0, 0, 0, 0.75);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
 }
 
 .local-object-card img {
@@ -2416,6 +2495,70 @@ h2 {
   align-items: start;
 }
 
+.card-reference-search {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.card-reference-search__label {
+  font-size: 0.9rem;
+  color: rgba(248, 238, 213, 0.88);
+}
+
+.card-reference-search__input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 230, 201, 0.14);
+  background: rgba(12, 20, 13, 0.94);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.card-reference-search__input:focus {
+  outline: 2px solid rgba(214, 174, 83, 0.68);
+  outline-offset: 1px;
+}
+
+.card-reference-filters {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.card-reference-filters__label {
+  font-size: 0.9rem;
+  color: rgba(248, 238, 213, 0.88);
+}
+
+.card-reference-filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.card-reference-filter {
+  border: 1px solid rgba(240, 230, 201, 0.14);
+  border-radius: 999px;
+  padding: 10px 14px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.card-reference-filter:hover {
+  transform: translateY(-1px);
+  border-color: rgba(241, 215, 148, 0.42);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.card-reference-filter--active {
+  border-color: rgba(217, 180, 89, 0.42);
+  background: rgba(217, 180, 89, 0.14);
+}
+
 .card-reference-list {
   max-height: 68vh;
 }
@@ -2532,6 +2675,31 @@ h2 {
   margin: 0 0 8px;
 }
 
+.mapper-preview-block summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.mapper-preview-block summary::-webkit-details-marker {
+  display: none;
+}
+
+.mapper-preview-block summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 10px;
+  transition: transform 160ms ease;
+}
+
+.mapper-preview-block[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.mapper-preview-block summary + pre {
+  margin-top: 14px;
+}
+
 .mapper-card-meta,
 .mapper-status {
   color: var(--muted);
@@ -2580,6 +2748,21 @@ h2 {
 .card-editor-picker {
   width: min(100%, 360px);
   margin-top: 1rem;
+}
+
+.card-editor-deck-picker {
+  display: grid;
+  gap: 8px;
+  margin-top: 1rem;
+  width: min(100%, 360px);
+}
+
+.card-editor-deck-picker label {
+  font-size: 0.9rem;
+}
+
+.card-editor-deck-picker .card-editor-picker {
+  margin-top: 0;
 }
 
 .card-editor-image-nav {

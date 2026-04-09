@@ -1,0 +1,37 @@
+{
+  "instanceId": "smoke-ceaf5ba8-abe9-4b54-a3d3-c10fa28f3959",
+  "status": "in_progress",
+  "createdAt": "2026-04-09T18:28:50.637Z",
+  "startedAt": "2026-04-09T18:28:50.639Z",
+  "currentTurnSeatNumber": 2,
+  "currentTurnDisplayName": "Bob",
+  "turnNumber": 2,
+  "pendingAction": null,
+  "pendingObjectChoice": null,
+  "pendingCurseRelease": null,
+  "forcedFollowUp": null,
+  "seats": [
+    {
+      "seatNumber": 1,
+      "displayName": "Alice",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 1,
+      "statusCount": 1,
+      "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 2,
+      "displayName": "Bob",
+      "controllerType": "human",
+      "connected": true,
+      "handCount": 0,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 43,
+      "isAlive": true
+    }
+  ]
+}

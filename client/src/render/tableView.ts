@@ -1,6 +1,6 @@
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { CardView, MatchState, PendingActionResponderState, SeatState } from "../../../shared/types";
-import { baseCardDefinitions } from "../../../shared/cards";
+import { allCardDefinitions } from "../../../shared/cards";
 import type { ArrowDragState, DragHoverTarget } from "../app/state";
 import type { AppLanguage } from "../i18n";
 import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, t } from "../i18n";
@@ -57,6 +57,9 @@ interface TableViewParams {
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
   cardReferencePreviewCardId: string;
+  cardReferenceSearchQuery: string;
+  cardReferenceShowBase: boolean;
+  cardReferenceShowAbondance: boolean;
   sacrificeAmountInput: string;
   errorMessage: string;
   chatMarkup: string;
@@ -152,17 +155,45 @@ function isSeatTargetable(selectedCard: CardView | undefined, seat: SeatState, l
   return selectedCard.targets === "single_opponent" || selectedCard.targets === "single_player_or_object";
 }
 
-function isObjectTargetable(selectedCard: CardView | undefined): boolean {
+function canLoadMassAttackStaff(
+  selectedCard: CardView | undefined,
+  objectCard: CardView,
+  ownerSeatNumber: number,
+  localSeatNumber: number
+): boolean {
+  return selectedCard?.canPlay === true
+    && selectedCard.categoryCode === "AM"
+    && ownerSeatNumber === localSeatNumber
+    && objectCard.cardId === "baton-dattaque-massive";
+}
+
+function isObjectTargetable(
+  selectedCard: CardView | undefined,
+  objectCard: CardView,
+  ownerSeatNumber: number,
+  localSeatNumber: number
+): boolean {
   if (selectedCard == null || !selectedCard.canPlay) {
     return false;
   }
 
-  return selectedCard.targets === "target_object" || selectedCard.targets === "single_player_or_object";
+  return canLoadMassAttackStaff(selectedCard, objectCard, ownerSeatNumber, localSeatNumber)
+    || selectedCard.targets === "target_object"
+    || selectedCard.targets === "single_player_or_object";
 }
 
-function objectCardMatchesSelectedTargeting(selectedCard: CardView | undefined, objectCard: CardView): boolean {
-  if (!isObjectTargetable(selectedCard) || objectCard.categoryCode !== "O") {
+function objectCardMatchesSelectedTargeting(
+  selectedCard: CardView | undefined,
+  objectCard: CardView,
+  ownerSeatNumber: number,
+  localSeatNumber: number
+): boolean {
+  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber) || objectCard.categoryCode !== "O") {
     return false;
+  }
+
+  if (canLoadMassAttackStaff(selectedCard, objectCard, ownerSeatNumber, localSeatNumber)) {
+    return true;
   }
 
   if (selectedCard?.cardId === "dissipation-dun-anneau") {
@@ -170,6 +201,14 @@ function objectCardMatchesSelectedTargeting(selectedCard: CardView | undefined, 
   }
 
   return true;
+}
+
+function renderAttachedCardCountBadge(card: CardView): string {
+  if ((card.attachedCardCount ?? 0) <= 0) {
+    return "";
+  }
+
+  return `<span class="object-stack-count">+${card.attachedCardCount}</span>`;
 }
 
 function responseLabel(choice: PendingActionResponderState["choice"], language: AppLanguage): string {
@@ -210,21 +249,27 @@ function isHoverTarget(hoverTarget: DragHoverTarget | null, kind: DragHoverTarge
     && (objectInstanceId == null || hoverTarget.objectInstanceId === objectInstanceId);
 }
 
-function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, language: AppLanguage): string {
+function renderSeatCards(
+  seat: SeatState,
+  draggedCard: CardView | undefined,
+  hoverTarget: DragHoverTarget | null,
+  localSeatNumber: number,
+  language: AppLanguage
+): string {
   const objects = seat.objects ?? [];
   const statuses = seat.statuses ?? [];
-  const objectTargetable = isObjectTargetable(draggedCard);
 
   return `
     <div class="seat-card-strip">
       ${objects.map((card) => `
         <button
-          class="seat-object-card ${objectCardMatchesSelectedTargeting(draggedCard, card) ? "seat-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-object-card--hovered" : ""}"
+          class="seat-object-card ${objectCardMatchesSelectedTargeting(draggedCard, card, seat.seatNumber, localSeatNumber) ? "seat-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-object-card--hovered" : ""}"
           data-object-instance-id="${card.instanceId}"
-          ${objectCardMatchesSelectedTargeting(draggedCard, card) ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
+          ${objectCardMatchesSelectedTargeting(draggedCard, card, seat.seatNumber, localSeatNumber) ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
         >
           <div class="seat-object-card__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+            ${renderAttachedCardCountBadge(card)}
           </div>
           ${renderCardTooltip(card, language)}
         </button>
@@ -241,24 +286,29 @@ function renderSeatCards(seat: SeatState, draggedCard: CardView | undefined, hov
   `;
 }
 
-function renderSeatInlineObjects(seat: SeatState, draggedCard: CardView | undefined, hoverTarget: DragHoverTarget | null, language: AppLanguage): string {
+function renderSeatInlineObjects(
+  seat: SeatState,
+  draggedCard: CardView | undefined,
+  hoverTarget: DragHoverTarget | null,
+  localSeatNumber: number,
+  language: AppLanguage
+): string {
   const objects = seat.objects ?? [];
   if (objects.length === 0) {
     return "";
   }
 
-  const objectTargetable = isObjectTargetable(draggedCard);
-
   return `
     <div class="seat-inline-objects">
       ${objects.map((card) => `
         <button
-          class="seat-inline-object ${objectCardMatchesSelectedTargeting(draggedCard, card) ? "seat-inline-object--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-inline-object--hovered" : ""}"
+          class="seat-inline-object ${objectCardMatchesSelectedTargeting(draggedCard, card, seat.seatNumber, localSeatNumber) ? "seat-inline-object--targetable" : ""} ${isHoverTarget(hoverTarget, "object", seat.seatNumber, card.instanceId) ? "seat-inline-object--hovered" : ""}"
           data-object-instance-id="${card.instanceId}"
-          ${objectCardMatchesSelectedTargeting(draggedCard, card) ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
+          ${objectCardMatchesSelectedTargeting(draggedCard, card, seat.seatNumber, localSeatNumber) ? `data-drop-target="object" data-seat-number="${seat.seatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
         >
           <div class="seat-inline-object__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+            ${renderAttachedCardCountBadge(card)}
           </div>
           ${renderCardTooltip(card, language)}
         </button>
@@ -313,11 +363,11 @@ function renderOpponentSeat(
           ${currentTurnSeatNumber === seat.seatNumber ? `<span class="seat-turn-indicator seat-turn-indicator--thinking">${t(language ?? "en", "table.thinking")}<span class="seat-thinking-dots" aria-hidden="true">...</span></span>` : ""}
           ${pendingResponder != null ? `<span class="seat-response-chip seat-response-chip--${pendingResponder.choice}">${responseLabel(pendingResponder.choice, language ?? "en")}</span>` : ""}
         </div>
-        ${renderSeatInlineObjects(seat, draggedCard, hoverTarget, language ?? "en")}
+        ${renderSeatInlineObjects(seat, draggedCard, hoverTarget, localSeatNumber, language ?? "en")}
       </div>
       ${damageBurstAmount != null ? `<div class="seat-damage-burst">-${damageBurstAmount}</div>` : ""}
       ${healBurstActive ? renderHealBurst() : ""}
-      ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget, language ?? "en")}
+      ${renderSeatCards({ ...seat, objects: [] }, draggedCard, hoverTarget, localSeatNumber, language ?? "en")}
       ${inspectable ? `<button class="action-button action-button--secondary seat-inspect-button" data-action="inspect-seat" data-seat-number="${seat.seatNumber}">${inspectedSeatNumber === seat.seatNumber ? t(language ?? "en", "chat.close") : t(language ?? "en", "table.player")}</button>` : ""}
       ${showKickButton ? `<button class="action-button action-button--danger seat-kick-button" data-action="kick-seat" data-seat-number="${seat.seatNumber}">${t(language ?? "en", "table.kickPlayer")}</button>` : ""}
     </article>
@@ -426,18 +476,17 @@ function renderLocalObjects(objects: CardView[], draggedCard: CardView | undefin
     return "";
   }
 
-  const objectTargetable = isObjectTargetable(draggedCard);
-
   return `
     <div class="${stripClass}">
       ${objects.map((card) => `
         <article
-          class="local-object-card ${objectCardMatchesSelectedTargeting(draggedCard, card) ? "local-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", localSeatNumber, card.instanceId) ? "local-object-card--hovered" : ""}"
+          class="local-object-card ${objectCardMatchesSelectedTargeting(draggedCard, card, localSeatNumber, localSeatNumber) ? "local-object-card--targetable" : ""} ${isHoverTarget(hoverTarget, "object", localSeatNumber, card.instanceId) ? "local-object-card--hovered" : ""}"
           data-object-instance-id="${card.instanceId}"
-          ${objectCardMatchesSelectedTargeting(draggedCard, card) ? `data-drop-target="object" data-seat-number="${localSeatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
+          ${objectCardMatchesSelectedTargeting(draggedCard, card, localSeatNumber, localSeatNumber) ? `data-drop-target="object" data-seat-number="${localSeatNumber}" data-object-instance-id="${card.instanceId}"` : ""}
         >
           <div class="local-object-card__art">
             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+            ${renderAttachedCardCountBadge(card)}
           </div>
           ${renderCardTooltip(card, language)}
         </article>
@@ -821,7 +870,7 @@ function renderVictoryCelebration(match: MatchState, language: AppLanguage, enab
 }
 
 function renderDevDrawPanel(language: AppLanguage): string {
-  const optionsMarkup = [...baseCardDefinitions]
+  const optionsMarkup = [...allCardDefinitions]
     .sort((a, b) => {
       const left = a.localization?.[language]?.name ?? a.name;
       const right = b.localization?.[language]?.name ?? b.name;
@@ -909,7 +958,7 @@ function renderTelepathyInspectionModal(
     : revealedHand.find((card) => card.instanceId === telepathyPreviewCardInstanceId) ?? revealedHand[0];
   return `
     <section class="telepathy-overlay">
-      <article class="telepathy-panel">
+      <article class="telepathy-panel" data-modal-panel-scroll="true">
         <div class="telepathy-panel__header">
           <div>
             <p class="eyebrow">${escapeHtml(pendingInspection.cardName)}</p>
@@ -935,7 +984,7 @@ function renderTelepathyInspectionModal(
                   </div>
                 `}
               </div>
-              <div class="telepathy-list">
+              <div class="telepathy-list" data-modal-list-scroll="true">
                 ${revealedHand.map((card) => `
                   <button
                     type="button"
@@ -982,7 +1031,7 @@ function renderBoardResetKeepModal(
 
   return `
     <section class="telepathy-overlay">
-      <article class="telepathy-panel">
+      <article class="telepathy-panel" data-modal-panel-scroll="true">
         <div class="telepathy-panel__header">
           <div>
             <p class="eyebrow">${escapeHtml(pendingKeep.cardName)}</p>
@@ -1008,7 +1057,7 @@ function renderBoardResetKeepModal(
                   </div>
                 `}
               </div>
-              <div class="telepathy-list">
+              <div class="telepathy-list" data-modal-list-scroll="true">
                 ${keepableCards.map((card) => `
                   <button
                     type="button"
@@ -1099,6 +1148,9 @@ function renderPendingSacrificeChoiceModal(
 function renderCardReferenceModal(
   language: AppLanguage,
   previewCardId: string,
+  searchQuery: string,
+  showBase: boolean,
+  showAbondance: boolean,
   open: boolean
 ): string {
   if (!open) {
@@ -1106,7 +1158,9 @@ function renderCardReferenceModal(
   }
 
   const collator = new Intl.Collator(language, { sensitivity: "base" });
-  const catalogCards = baseCardDefinitions.map((definition) => {
+  const trimmedSearchQuery = searchQuery.trim();
+  const normalizedSearchQuery = trimmedSearchQuery.toLocaleLowerCase(language);
+  const catalogCards = allCardDefinitions.map((definition) => {
     const localizedText = definition.localization?.[language];
     return {
       cardId: definition.id,
@@ -1119,8 +1173,21 @@ function renderCardReferenceModal(
       ),
       categoryCode: definition.category.code,
       categoryLabel: getLocalizedCategoryLabel(definition.category.code, language),
-      defenseBand: definition.defenseBand
+      defenseBand: definition.defenseBand,
+      includedDecks: definition.includedDecks
     };
+  }).filter((card) => {
+    const inBase = card.includedDecks.includes("Jeu de base");
+    const inAbondance = card.includedDecks.includes("Abondance");
+    if ((!showBase || !inBase) && (!showAbondance || !inAbondance)) {
+      return false;
+    }
+
+    if (normalizedSearchQuery === "") {
+      return true;
+    }
+
+    return card.name.toLocaleLowerCase(language).includes(normalizedSearchQuery);
   }).sort((left, right) => {
     const categoryComparison = collator.compare(left.categoryLabel, right.categoryLabel);
     if (categoryComparison !== 0) {
@@ -1135,12 +1202,44 @@ function renderCardReferenceModal(
     ?? catalogCards[0];
 
   if (previewCard == null) {
-    return "";
+    return `
+      <section class="telepathy-overlay">
+        <article class="telepathy-panel card-reference-panel" data-card-reference-panel="true">
+          <div class="telepathy-panel__header">
+            <div>
+              <p class="eyebrow">${t(language, "reference.title")}</p>
+              <h2>${t(language, "reference.title")}</h2>
+              <p>${t(language, "reference.body")}</p>
+            </div>
+            <button type="button" class="action-button action-button--secondary" data-action="close-card-reference">${t(language, "reference.close")}</button>
+          </div>
+          <div class="card-reference-search">
+            <label class="card-reference-search__label" for="card-reference-search-input">${t(language, "reference.searchLabel")}</label>
+            <input
+              id="card-reference-search-input"
+              class="card-reference-search__input"
+              data-action="edit-reference-search"
+              type="text"
+              value="${escapeHtml(searchQuery)}"
+              placeholder="${escapeHtml(t(language, "reference.searchPlaceholder"))}"
+            />
+          </div>
+          <div class="card-reference-filters">
+            <span class="card-reference-filters__label">${t(language, "reference.decksLabel")}</span>
+            <div class="card-reference-filters__row">
+              <button type="button" class="card-reference-filter ${showBase ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="base">${t(language, "reference.deckBase")}</button>
+              <button type="button" class="card-reference-filter ${showAbondance ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="abondance">${t(language, "reference.deckAbondance")}</button>
+            </div>
+          </div>
+          <p class="telepathy-empty">${t(language, "reference.empty")}</p>
+        </article>
+      </section>
+    `;
   }
 
   return `
     <section class="telepathy-overlay">
-      <article class="telepathy-panel card-reference-panel">
+      <article class="telepathy-panel card-reference-panel" data-card-reference-panel="true">
         <div class="telepathy-panel__header">
           <div>
             <p class="eyebrow">${t(language, "reference.title")}</p>
@@ -1148,6 +1247,24 @@ function renderCardReferenceModal(
             <p>${t(language, "reference.body")}</p>
           </div>
           <button type="button" class="action-button action-button--secondary" data-action="close-card-reference">${t(language, "reference.close")}</button>
+        </div>
+        <div class="card-reference-search">
+          <label class="card-reference-search__label" for="card-reference-search-input">${t(language, "reference.searchLabel")}</label>
+          <input
+            id="card-reference-search-input"
+            class="card-reference-search__input"
+            data-action="edit-reference-search"
+            type="text"
+            value="${escapeHtml(searchQuery)}"
+            placeholder="${escapeHtml(t(language, "reference.searchPlaceholder"))}"
+          />
+        </div>
+        <div class="card-reference-filters">
+          <span class="card-reference-filters__label">${t(language, "reference.decksLabel")}</span>
+          <div class="card-reference-filters__row">
+            <button type="button" class="card-reference-filter ${showBase ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="base">${t(language, "reference.deckBase")}</button>
+            <button type="button" class="card-reference-filter ${showAbondance ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="abondance">${t(language, "reference.deckAbondance")}</button>
+          </div>
         </div>
         <div class="card-reference-grid">
           <div class="card-reference-list telepathy-list" data-card-reference-list="true">
@@ -1213,6 +1330,9 @@ export function renderTableView({
   telepathyPreviewCardInstanceId,
   boardResetKeepPreviewCardInstanceId,
   cardReferencePreviewCardId,
+  cardReferenceSearchQuery,
+  cardReferenceShowBase,
+  cardReferenceShowAbondance,
   sacrificeAmountInput,
   errorMessage,
   chatMarkup,
@@ -1361,7 +1481,7 @@ export function renderTableView({
         ${renderTelepathyInspectionModal(localizedMatch, localSeatNumber, telepathyPreviewCardInstanceId)}
         ${renderBoardResetKeepModal(localizedMatch, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
         ${renderPendingSacrificeChoiceModal(localizedMatch, localSeatNumber, sacrificeAmountInput)}
-        ${renderCardReferenceModal(language, cardReferencePreviewCardId, cardReferenceOpen)}
+        ${renderCardReferenceModal(language, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceOpen)}
         ${chatMarkup}
         ${renderDragPreview(normalDragPreviewCard, dragPointerX, dragPointerY)}
         ${renderReturnCardFlight(activeReturnCardFlight)}

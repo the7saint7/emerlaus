@@ -14,12 +14,15 @@ import type { CardCategoryCode, CardEffect } from "../../shared/cards/index.js";
 export interface StoredCardInstance {
   instanceId: string;
   cardId: string;
+  attachedCards?: StoredCardInstance[];
 }
 
 export interface StoredSeatStatus {
   instanceId: string;
   cardId: string;
   sourceSeatNumber: number;
+  remainingTurnTriggers?: number;
+  bodyBound?: boolean;
 }
 
 export interface StoredSeatState {
@@ -43,8 +46,13 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   storedCard: StoredCardInstance;
   responders: StoredPendingActionResponderState[];
   createdAt: string;
+  sourceZone?: "hand" | "object";
   sharedSacrificeAmount?: number;
   deferredMirrorHits?: Array<{ sourceSeatNumber: number; targetSeatNumber: number }>;
+  continuation?: {
+    mode: "resume_turn" | "advance_turn_without_play";
+    seatNumber: number;
+  };
 }
 
 export interface StoredGameState {

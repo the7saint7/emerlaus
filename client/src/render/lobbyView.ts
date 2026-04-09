@@ -12,6 +12,17 @@ interface LobbyViewParams {
   language: AppLanguage;
 }
 
+const EXPANSION_DECKS = [
+  { key: "sorcellerie", label: "Sorcellerie", available: false },
+  { key: "invocation", label: "Invocation", available: false },
+  { key: "abondance", label: "Abondance", available: true },
+  { key: "puissance", label: "Puissance", available: false },
+  { key: "communion", label: "Communion", available: false },
+  { key: "destin", label: "Destin", available: false },
+  { key: "compagnons", label: "Compagnons", available: false },
+  { key: "allies", label: "Alliés", available: false }
+] as const;
+
 export function renderLobbyView({
   match,
   localSeatNumber,
@@ -23,6 +34,28 @@ export function renderLobbyView({
   const localSeat = getLocalSeat(match, localSeatNumber);
   const hostSeat = match.seats.find((seat) => seat.isHost);
   const amHost = localSeat?.isHost === true;
+  const expansionToggleMarkup = EXPANSION_DECKS.map((deck) => {
+    const isEnabled = match.enabledExpansions[deck.key];
+    const isInteractive = amHost && deck.available;
+    const stateLabel = !deck.available
+      ? t(language, "lobby.expansionDisabled")
+      : isEnabled
+        ? t(language, "lobby.expansionEnabled")
+        : t(language, "lobby.expansionOff");
+    return `
+      <button
+        type="button"
+        class="expansion-toggle ${isEnabled ? "expansion-toggle--enabled" : ""}"
+        data-action="${deck.available ? "toggle-expansion" : ""}"
+        data-expansion-key="${deck.key}"
+        aria-pressed="${isEnabled ? "true" : "false"}"
+        ${isInteractive ? "" : "disabled"}
+      >
+        <span class="expansion-toggle__name">${deck.label}</span>
+        <span class="expansion-toggle__state">${stateLabel}</span>
+      </button>
+    `;
+  }).join("");
 
   const seatCards = Array.from({ length: match.maxSeats }, (_value, index) => {
     const seatNumber = index + 1;
@@ -88,6 +121,19 @@ export function renderLobbyView({
 
       <section class="lobby-grid">
         ${seatCards}
+      </section>
+
+      <section class="control-card lobby-expansions">
+        <div class="lobby-expansions__header">
+          <div>
+            <h2>${t(language, "lobby.expansions")}</h2>
+            <p>${t(language, "lobby.expansionsHint")}</p>
+          </div>
+          <span class="status-pill">${amHost ? t(language, "lobby.hostControl") : t(language, "lobby.hostWaiting")}</span>
+        </div>
+        <div class="lobby-expansions__row">
+          ${expansionToggleMarkup}
+        </div>
       </section>
     </main>
   `;

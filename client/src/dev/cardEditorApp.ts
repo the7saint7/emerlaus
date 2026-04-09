@@ -3,6 +3,7 @@ import type {
   CardCategoryCode,
   CardEffect,
   CardRules,
+  DevCardCatalogId,
   DefenseBandRules,
   RollExpression,
   RollScaleMode
@@ -10,9 +11,15 @@ import type {
 import { fetchBaseCardCatalog, saveBaseCardDefinition } from "./cardEditorApi";
 import { renderCardEditorView } from "./renderCardEditorView";
 
+const EDITOR_DECK_OPTIONS = [
+  { id: "base", label: "Jeu de base" },
+  { id: "abondance", label: "Abondance" }
+] satisfies Array<{ id: DevCardCatalogId; label: string }>;
+
 interface EditorState {
-  cards: BaseCardDefinition[];
-  currentIndex: number;
+  cardsByDeck: Partial<Record<DevCardCatalogId, BaseCardDefinition[]>>;
+  currentIndexByDeck: Record<DevCardCatalogId, number>;
+  selectedDeck: DevCardCatalogId;
   statusMessage: string;
   isSaving: boolean;
 }
@@ -30,14 +37,28 @@ const CATEGORY_LABELS: Record<CardCategoryCode, string> = {
   SO: "Sorts objets"
 };
 
+const SELECTED_DECK_STORAGE_KEY = "emerlaus.cardEditor.selectedDeck";
 const SELECTED_CARD_STORAGE_KEY = "emerlaus.cardEditor.selectedCardId";
 
-function rememberSelectedCard(cardId: string): void {
-  window.sessionStorage.setItem(SELECTED_CARD_STORAGE_KEY, cardId);
+function rememberSelectedDeck(deck: DevCardCatalogId): void {
+  window.sessionStorage.setItem(SELECTED_DECK_STORAGE_KEY, deck);
 }
 
-function rememberedCardIndex(cards: BaseCardDefinition[]): number {
-  const rememberedCardId = window.sessionStorage.getItem(SELECTED_CARD_STORAGE_KEY);
+function rememberedDeck(): DevCardCatalogId {
+  const value = window.sessionStorage.getItem(SELECTED_DECK_STORAGE_KEY);
+  return value === "abondance" ? "abondance" : "base";
+}
+
+function selectedCardStorageKey(deck: DevCardCatalogId): string {
+  return `${SELECTED_CARD_STORAGE_KEY}.${deck}`;
+}
+
+function rememberSelectedCard(deck: DevCardCatalogId, cardId: string): void {
+  window.sessionStorage.setItem(selectedCardStorageKey(deck), cardId);
+}
+
+function rememberedCardIndex(deck: DevCardCatalogId, cards: BaseCardDefinition[]): number {
+  const rememberedCardId = window.sessionStorage.getItem(selectedCardStorageKey(deck));
   if (rememberedCardId == null) {
     return 0;
   }
@@ -48,6 +69,14 @@ function rememberedCardIndex(cards: BaseCardDefinition[]): number {
 
 function cloneCard(card: BaseCardDefinition): BaseCardDefinition {
   return JSON.parse(JSON.stringify(card)) as BaseCardDefinition;
+}
+
+function getDeckCards(state: EditorState): BaseCardDefinition[] {
+  return state.cardsByDeck[state.selectedDeck] ?? [];
+}
+
+function getCurrentCard(state: EditorState): BaseCardDefinition | undefined {
+  return getDeckCards(state)[state.currentIndexByDeck[state.selectedDeck]];
 }
 
 function ensureDefenseBand(card: BaseCardDefinition): DefenseBandRules {
@@ -344,28 +373,94 @@ function applyFieldUpdate(card: BaseCardDefinition, field: string, element: HTML
 }
 
 export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<void> {
-  const cards = (await fetchBaseCardCatalog()).map(cloneCard);
+  const initialDeck = rememberedDeck();
+  const initialCards = (await fetchBaseCardCatalog(initialDeck)).map(cloneCard);
   const state: EditorState = {
-    cards,
-    currentIndex: rememberedCardIndex(cards),
-    statusMessage: "Edit a card and save it into shared/cards/catalog/base-cards.ts.",
+    cardsByDeck: {
+      [initialDeck]: initialCards
+    },
+    currentIndexByDeck: {
+      base: initialDeck === "base" ? rememberedCardIndex("base", initialCards) : 0,
+      abondance: initialDeck === "abondance" ? rememberedCardIndex("abondance", initialCards) : 0
+    },
+    selectedDeck: initialDeck,
+    statusMessage: `Edit a card and save it into the ${EDITOR_DECK_OPTIONS.find((option) => option.id === initialDeck)?.label ?? initialDeck} catalog.`,
     isSaving: false
   };
 
+  const loadDeck = async (deck: DevCardCatalogId): Promise<void> => {
+    if (state.cardsByDeck[deck] != null) {
+      return;
+    }
+
+    const cards = (await fetchBaseCardCatalog(deck)).map(cloneCard);
+    state.cardsByDeck[deck] = cards;
+    state.currentIndexByDeck[deck] = rememberedCardIndex(deck, cards);
+  };
+
   const render = (): void => {
-    const card = state.cards[state.currentIndex];
+    const cards = getDeckCards(state);
+    const card = getCurrentCard(state);
+    if (card == null) {
+      rootElement.innerHTML = `
+        <main class="mapper-screen card-editor-screen">
+          <section class="mapper-topbar">
+            <div>
+              <p class="eyebrow">Dev Only</p>
+              <h1>Card Rule Editor</h1>
+              <p class="hero-copy">${state.statusMessage}</p>
+            </div>
+          </section>
+        </main>
+      `;
+      return;
+    }
+
     rootElement.innerHTML = renderCardEditorView({
-      cards: state.cards,
+      cards,
       card,
-      currentIndex: state.currentIndex,
+      currentIndex: state.currentIndexByDeck[state.selectedDeck],
+      deckOptions: EDITOR_DECK_OPTIONS,
+      selectedDeck: state.selectedDeck,
       statusMessage: state.statusMessage,
       isSaving: state.isSaving
     });
 
+    rootElement.querySelector<HTMLSelectElement>("[data-card-editor-action='pick-deck']")?.addEventListener("change", async (event) => {
+      const nextDeck = (event.currentTarget as HTMLSelectElement).value as DevCardCatalogId;
+      if (nextDeck !== "base" && nextDeck !== "abondance") {
+        return;
+      }
+
+      state.isSaving = false;
+      state.selectedDeck = nextDeck;
+      rememberSelectedDeck(nextDeck);
+      state.statusMessage = `Loading ${EDITOR_DECK_OPTIONS.find((option) => option.id === nextDeck)?.label ?? nextDeck}...`;
+      render();
+
+      try {
+        await loadDeck(nextDeck);
+        const activeCards = state.cardsByDeck[nextDeck] ?? [];
+        if (activeCards.length > 0) {
+          state.currentIndexByDeck[nextDeck] = Math.min(
+            state.currentIndexByDeck[nextDeck] ?? 0,
+            activeCards.length - 1
+          );
+          rememberSelectedCard(nextDeck, activeCards[state.currentIndexByDeck[nextDeck]].id);
+        }
+        state.statusMessage = `Editing ${EDITOR_DECK_OPTIONS.find((option) => option.id === nextDeck)?.label ?? nextDeck} cards.`;
+      } catch (error) {
+        state.statusMessage = error instanceof Error ? error.message : "Unable to load card catalog";
+      } finally {
+        render();
+      }
+    });
+
     rootElement.querySelector<HTMLSelectElement>("[data-card-editor-action='pick-card']")?.addEventListener("change", (event) => {
-      state.currentIndex = Number((event.currentTarget as HTMLSelectElement).value);
-      rememberSelectedCard(state.cards[state.currentIndex].id);
-      state.statusMessage = `Viewing ${state.cards[state.currentIndex].name}`;
+      const cardsForDeck = getDeckCards(state);
+      state.currentIndexByDeck[state.selectedDeck] = Number((event.currentTarget as HTMLSelectElement).value);
+      rememberSelectedCard(state.selectedDeck, cardsForDeck[state.currentIndexByDeck[state.selectedDeck]].id);
+      state.statusMessage = `Viewing ${cardsForDeck[state.currentIndexByDeck[state.selectedDeck]].name}`;
       render();
     });
 
@@ -389,26 +484,30 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
     });
 
     const saveCurrent = async (advance: boolean): Promise<void> => {
-      const cardToSave = state.cards[state.currentIndex];
+      const currentDeck = state.selectedDeck;
+      const cardsForDeck = getDeckCards(state);
+      const currentIndex = state.currentIndexByDeck[currentDeck];
+      const cardToSave = cardsForDeck[currentIndex];
       const selectedAfterSaveIndex = advance
-        ? (state.currentIndex + 1) % state.cards.length
-        : state.currentIndex;
-      const selectedAfterSaveCardId = state.cards[selectedAfterSaveIndex].id;
+        ? (currentIndex + 1) % cardsForDeck.length
+        : currentIndex;
+      const selectedAfterSaveCardId = cardsForDeck[selectedAfterSaveIndex].id;
 
-      rememberSelectedCard(selectedAfterSaveCardId);
+      rememberSelectedCard(currentDeck, selectedAfterSaveCardId);
       state.isSaving = true;
       state.statusMessage = `Saving ${cardToSave.name}...`;
       render();
 
       try {
-        state.cards = (await saveBaseCardDefinition(cardToSave)).map(cloneCard);
-        const restoredIndex = state.cards.findIndex((card) => card.id === selectedAfterSaveCardId);
-        state.currentIndex = restoredIndex === -1 ? 0 : restoredIndex;
+        const savedCards = (await saveBaseCardDefinition(currentDeck, cardToSave)).map(cloneCard);
+        state.cardsByDeck[currentDeck] = savedCards;
+        const restoredIndex = savedCards.findIndex((candidate) => candidate.id === selectedAfterSaveCardId);
+        state.currentIndexByDeck[currentDeck] = restoredIndex === -1 ? 0 : restoredIndex;
         state.statusMessage = advance
-          ? `Saved ${cardToSave.name}; moved to ${state.cards[state.currentIndex].name}`
-          : `Saved ${state.cards[state.currentIndex].name}`;
+          ? `Saved ${cardToSave.name}; moved to ${savedCards[state.currentIndexByDeck[currentDeck]].name}`
+          : `Saved ${savedCards[state.currentIndexByDeck[currentDeck]].name}`;
       } catch (error) {
-        rememberSelectedCard(cardToSave.id);
+        rememberSelectedCard(currentDeck, cardToSave.id);
         state.statusMessage = error instanceof Error ? error.message : "Unable to save card";
       } finally {
         state.isSaving = false;
@@ -418,18 +517,20 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
 
     rootElement.querySelectorAll<HTMLButtonElement>("[data-card-editor-action='prev']").forEach((button) => {
       button.addEventListener("click", () => {
-        state.currentIndex = (state.currentIndex - 1 + state.cards.length) % state.cards.length;
-        rememberSelectedCard(state.cards[state.currentIndex].id);
-        state.statusMessage = `Viewing ${state.cards[state.currentIndex].name}`;
+        const cardsForDeck = getDeckCards(state);
+        state.currentIndexByDeck[state.selectedDeck] = (state.currentIndexByDeck[state.selectedDeck] - 1 + cardsForDeck.length) % cardsForDeck.length;
+        rememberSelectedCard(state.selectedDeck, cardsForDeck[state.currentIndexByDeck[state.selectedDeck]].id);
+        state.statusMessage = `Viewing ${cardsForDeck[state.currentIndexByDeck[state.selectedDeck]].name}`;
         render();
       });
     });
 
     rootElement.querySelectorAll<HTMLButtonElement>("[data-card-editor-action='next']").forEach((button) => {
       button.addEventListener("click", () => {
-        state.currentIndex = (state.currentIndex + 1) % state.cards.length;
-        rememberSelectedCard(state.cards[state.currentIndex].id);
-        state.statusMessage = `Viewing ${state.cards[state.currentIndex].name}`;
+        const cardsForDeck = getDeckCards(state);
+        state.currentIndexByDeck[state.selectedDeck] = (state.currentIndexByDeck[state.selectedDeck] + 1) % cardsForDeck.length;
+        rememberSelectedCard(state.selectedDeck, cardsForDeck[state.currentIndexByDeck[state.selectedDeck]].id);
+        state.statusMessage = `Viewing ${cardsForDeck[state.currentIndexByDeck[state.selectedDeck]].name}`;
         render();
       });
     });

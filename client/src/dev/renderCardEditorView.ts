@@ -2,6 +2,7 @@ import type {
   BaseCardDefinition,
   CardCategoryCode,
   CardEffect,
+  DevCardCatalogId,
   DefenseBandRules,
   RollExpression
 } from "../../../shared/cards/types";
@@ -10,6 +11,8 @@ export interface CardEditorViewParams {
   cards: BaseCardDefinition[];
   card: BaseCardDefinition;
   currentIndex: number;
+  deckOptions: Array<{ id: DevCardCatalogId; label: string }>;
+  selectedDeck: DevCardCatalogId;
   statusMessage: string;
   isSaving: boolean;
 }
@@ -283,6 +286,8 @@ export function renderCardEditorView({
   cards,
   card,
   currentIndex,
+  deckOptions,
+  selectedDeck,
   statusMessage,
   isSaving
 }: CardEditorViewParams): string {
@@ -296,6 +301,14 @@ export function renderCardEditorView({
           <p class="eyebrow">Dev Only</p>
           <h1>Card Rule Editor</h1>
           <p class="hero-copy">Edit the centralized TypeScript card catalog. Formula fields update the first damage/heal/lifesteal effect.</p>
+          <div class="card-editor-deck-picker">
+            <label for="card-editor-deck">Deck</label>
+            <select id="card-editor-deck" class="card-editor-picker" data-card-editor-action="pick-deck">
+              ${deckOptions.map((option) => `
+                <option value="${option.id}" ${selected(option.id, selectedDeck)}>${escapeHtml(option.label)}</option>
+              `).join("")}
+            </select>
+          </div>
         </div>
         <div class="mapper-stats">
           <span class="status-pill">${currentIndex + 1} / ${cards.length}</span>
@@ -324,7 +337,7 @@ export function renderCardEditorView({
           <header class="mapper-card-header">
             <div>
               <h2>${escapeHtml(card.name)}</h2>
-              <p class="mapper-card-meta">${escapeHtml(card.id)} · Base qty ${card.baseDeckQuantity}</p>
+              <p class="mapper-card-meta">${escapeHtml(card.id)} · Deck ${escapeHtml(deckOptions.find((option) => option.id === selectedDeck)?.label ?? selectedDeck)} · Base qty ${card.baseDeckQuantity}</p>
             </div>
             <a class="mapper-source-link" href="${card.sourceUrl ?? "#"}" target="_blank" rel="noreferrer">Source</a>
           </header>
@@ -399,10 +412,10 @@ export function renderCardEditorView({
           <h3>Primary Formula</h3>
           ${renderFormulaFields(card)}
 
-          <section class="mapper-preview-block">
-            <h3>Current Card JSON</h3>
+          <details class="mapper-preview-block mapper-preview-block--collapsible">
+            <summary>Current Card JSON</summary>
             <pre>${escapeHtml(JSON.stringify(card, null, 2))}</pre>
-          </section>
+          </details>
 
           <p class="mapper-status">${escapeHtml(statusMessage)}</p>
 

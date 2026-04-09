@@ -10,6 +10,7 @@ import {
   playCard,
   requestAddBot,
   requestKickPlayer,
+  requestUpdateExpansion,
   respondToPendingAction,
   resolvePendingBoardResetKeep,
   resolvePendingSacrificeChoice,
@@ -44,7 +45,7 @@ import { buildEventLogEntries } from "./render/eventLog";
 import { renderLobbyView } from "./render/lobbyView";
 import { renderTableView } from "./render/tableView";
 import { baseCardDefinitionById } from "../../shared/cards";
-import type { CardView, GameEvent, MatchState } from "../../shared/types";
+import type { CardView, ExpansionKey, GameEvent, MatchState } from "../../shared/types";
 
 export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const CARD_FLIGHT_DURATION_MS = 420;
@@ -104,9 +105,13 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     telepathyPreviewCardInstanceId: "",
     boardResetKeepPreviewCardInstanceId: "",
     cardReferencePreviewCardId: "",
+    cardReferenceSearchQuery: "",
+    cardReferenceShowBase: true,
+    cardReferenceShowAbondance: true,
     sacrificeAmountInput: "0",
     telepathyPanelScrollTop: 0,
     telepathyListScrollTop: 0,
+    cardReferencePanelScrollTop: 0,
     cardReferenceListScrollTop: 0,
     inspectedSeatNumber: 0,
     seenGameEventIds: joined.match.game?.eventLog.map((event) => event.id) ?? [],
@@ -2192,6 +2197,28 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
   const render = (): void => {
     const chatSnapshot = captureChatDomSnapshot(rootElement);
+    const activeElement = document.activeElement;
+    const shouldRestoreReferenceSearchFocus =
+      activeElement instanceof HTMLInputElement
+      && activeElement.dataset.action === "edit-reference-search";
+    const referenceSearchSelectionStart = shouldRestoreReferenceSearchFocus
+      ? activeElement.selectionStart ?? activeElement.value.length
+      : null;
+    const referenceSearchSelectionEnd = shouldRestoreReferenceSearchFocus
+      ? activeElement.selectionEnd ?? activeElement.value.length
+      : null;
+    state.telepathyPanelScrollTop =
+      rootElement.querySelector<HTMLElement>("[data-modal-panel-scroll='true']")?.scrollTop
+      ?? state.telepathyPanelScrollTop;
+    state.telepathyListScrollTop =
+      rootElement.querySelector<HTMLElement>("[data-modal-list-scroll='true']")?.scrollTop
+      ?? state.telepathyListScrollTop;
+    state.cardReferencePanelScrollTop =
+      rootElement.querySelector<HTMLElement>("[data-card-reference-panel='true']")?.scrollTop
+      ?? state.cardReferencePanelScrollTop;
+    state.cardReferenceListScrollTop =
+      rootElement.querySelector<HTMLElement>("[data-card-reference-list='true']")?.scrollTop
+      ?? state.cardReferenceListScrollTop;
 
     if (state.leftMessage !== "") {
       diceController.hide();
@@ -2258,6 +2285,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             telepathyPreviewCardInstanceId: state.telepathyPreviewCardInstanceId,
             boardResetKeepPreviewCardInstanceId: state.boardResetKeepPreviewCardInstanceId,
             cardReferencePreviewCardId: state.cardReferencePreviewCardId,
+            cardReferenceSearchQuery: state.cardReferenceSearchQuery,
+            cardReferenceShowBase: state.cardReferenceShowBase,
+            cardReferenceShowAbondance: state.cardReferenceShowAbondance,
             sacrificeAmountInput: state.sacrificeAmountInput,
             errorMessage: state.errorMessage,
             chatMarkup,
@@ -2278,13 +2308,17 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     drawPendingActionTargetOverlay(presentationLockActive);
     updateArrowOverlay();
 
-    const telepathyPanel = rootElement.querySelector<HTMLElement>(".telepathy-panel");
+    const telepathyPanel = rootElement.querySelector<HTMLElement>("[data-modal-panel-scroll='true']");
     if (telepathyPanel != null) {
       telepathyPanel.scrollTop = state.telepathyPanelScrollTop;
     }
-    const telepathyList = rootElement.querySelector<HTMLElement>(".telepathy-list");
+    const telepathyList = rootElement.querySelector<HTMLElement>("[data-modal-list-scroll='true']");
     if (telepathyList != null) {
       telepathyList.scrollTop = state.telepathyListScrollTop;
+    }
+    const cardReferencePanel = rootElement.querySelector<HTMLElement>("[data-card-reference-panel='true']");
+    if (cardReferencePanel != null) {
+      cardReferencePanel.scrollTop = state.cardReferencePanelScrollTop;
     }
     const cardReferenceList = rootElement.querySelector<HTMLElement>("[data-card-reference-list='true']");
     if (cardReferenceList != null) {
@@ -2402,6 +2436,29 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       render();
     });
 
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-expansion']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const expansion = button.dataset.expansionKey as ExpansionKey | undefined;
+        if (expansion == null || state.match == null) {
+          return;
+        }
+
+        try {
+          const nextEnabled = !state.match.enabledExpansions[expansion];
+          logClient("lobby", `Host toggled expansion ${expansion} -> ${nextEnabled}`);
+          applyMatchState(await requestUpdateExpansion(state.instanceId, state.playerSessionToken, {
+            expansion,
+            enabled: nextEnabled
+          }));
+          state.errorMessage = "";
+        } catch (error) {
+          state.errorMessage = error instanceof Error ? error.message : "Unable to update expansion";
+        }
+
+        render();
+      });
+    });
+
     rootElement.querySelectorAll<HTMLButtonElement>("[data-action='drag-card']").forEach((button) => {
       button.addEventListener("pointerdown", (event) => {
         if (event.button !== 0) {
@@ -2479,8 +2536,6 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           return;
         }
 
-        state.telepathyPanelScrollTop = rootElement.querySelector<HTMLElement>(".telepathy-panel")?.scrollTop ?? 0;
-        state.telepathyListScrollTop = rootElement.querySelector<HTMLElement>(".telepathy-list")?.scrollTop ?? 0;
         state.telepathyPreviewCardInstanceId = previewCardInstanceId;
         render();
       };
@@ -2526,8 +2581,6 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           return;
         }
 
-        state.cardReferenceListScrollTop =
-          rootElement.querySelector<HTMLElement>("[data-card-reference-list='true']")?.scrollTop ?? 0;
         state.cardReferencePreviewCardId = previewCardId;
         render();
       };
@@ -2535,6 +2588,41 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       button.addEventListener("focus", setPreview);
       button.addEventListener("click", setPreview);
     });
+
+    rootElement.querySelector<HTMLInputElement>("[data-action='edit-reference-search']")?.addEventListener("input", (event) => {
+      const target = event.currentTarget as HTMLInputElement;
+      state.cardReferenceSearchQuery = target.value;
+      state.cardReferencePanelScrollTop = 0;
+      state.cardReferenceListScrollTop = 0;
+      render();
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-reference-deck']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const deck = button.dataset.referenceDeck;
+        if (deck === "base") {
+          state.cardReferenceShowBase = !state.cardReferenceShowBase;
+        } else if (deck === "abondance") {
+          state.cardReferenceShowAbondance = !state.cardReferenceShowAbondance;
+        } else {
+          return;
+        }
+
+        state.cardReferencePanelScrollTop = 0;
+        state.cardReferenceListScrollTop = 0;
+        render();
+      });
+    });
+
+    if (shouldRestoreReferenceSearchFocus) {
+      const referenceSearchInput = rootElement.querySelector<HTMLInputElement>("[data-action='edit-reference-search']");
+      if (referenceSearchInput != null) {
+        referenceSearchInput.focus();
+        if (referenceSearchSelectionStart != null && referenceSearchSelectionEnd != null) {
+          referenceSearchInput.setSelectionRange(referenceSearchSelectionStart, referenceSearchSelectionEnd);
+        }
+      }
+    }
 
     rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-board-reset-keep']")?.addEventListener("click", async () => {
       const cardInstanceId = state.boardResetKeepPreviewCardInstanceId;

@@ -19,6 +19,8 @@ export interface SaveBaseDefenseBandMappingRequest {
   mapping: DefenseBandRules;
 }
 
+export type DevCardCatalogId = "base" | "abondance";
+
 export type RollScaleMode = "power" | "target_power" | "multiply_power" | "multiply_target_power";
 
 export type RollExpression =
@@ -26,7 +28,7 @@ export type RollExpression =
   | { kind: "dice_per_power"; notation: string; powerSource: "self" | "target"; powerBonus?: number }
   | { kind: "fixed"; amount: number; scaleBy?: RollScaleMode; bonusPerPower?: number; powerBonus?: number }
   | { kind: "current_hp_fraction"; numerator: number; denominator: number }
-  | { kind: "sacrifice_amount" }
+  | { kind: "sacrifice_amount"; multiplier?: number }
   | { kind: "total_active_players_times"; amount: number };
 
 export type CardEffect =

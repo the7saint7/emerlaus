@@ -1,4 +1,4 @@
-import type { BaseCardDefinition, SaveBaseCardDefinitionRequest } from "../../../shared/cards/types";
+import type { BaseCardDefinition, DevCardCatalogId, SaveBaseCardDefinitionRequest } from "../../../shared/cards/types";
 
 const RETRY_DELAYS_MS = [250, 600, 1200, 2000];
 
@@ -49,13 +49,13 @@ async function fetchWithTransientRetry<T>(input: RequestInfo | URL, init?: Reque
   throw lastError instanceof Error ? lastError : new Error("Request failed");
 }
 
-export async function fetchBaseCardCatalog(): Promise<BaseCardDefinition[]> {
-  return fetchWithTransientRetry<BaseCardDefinition[]>("/api/dev/base-cards");
+export async function fetchBaseCardCatalog(deck: DevCardCatalogId): Promise<BaseCardDefinition[]> {
+  return fetchWithTransientRetry<BaseCardDefinition[]>(`/api/dev/base-cards?deck=${encodeURIComponent(deck)}`);
 }
 
-export async function saveBaseCardDefinition(card: BaseCardDefinition): Promise<BaseCardDefinition[]> {
+export async function saveBaseCardDefinition(deck: DevCardCatalogId, card: BaseCardDefinition): Promise<BaseCardDefinition[]> {
   const payload: SaveBaseCardDefinitionRequest = { card };
-  return fetchWithTransientRetry<BaseCardDefinition[]>(`/api/dev/base-cards/${card.id}`, {
+  return fetchWithTransientRetry<BaseCardDefinition[]>(`/api/dev/base-cards/${card.id}?deck=${encodeURIComponent(deck)}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

@@ -10,6 +10,7 @@ import type {
   JoinRequest,
   KickPlayerRequest,
   MatchConfigResponse,
+  UpdateExpansionRequest,
   PendingBoardResetKeepRequest,
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
@@ -21,6 +22,7 @@ import type {
 } from "../shared/types.js";
 import type { SaveBaseDefenseBandMappingRequest } from "../shared/cards/types.js";
 import type { SaveBaseCardDefinitionRequest } from "../shared/cards/types.js";
+import type { DevCardCatalogId } from "../shared/cards/types.js";
 import { config } from "./config.js";
 import {
   readBaseCardCatalog,
@@ -48,6 +50,7 @@ import {
   resolveMatchCurseRelease,
   respondMatchAction,
   selectMatchObject,
+  updateExpansion,
   startMatch
 } from "./services/matchService.js";
 import { persistClientLogSnapshot } from "./services/localLogService.js";
@@ -85,7 +88,11 @@ app.get("/api/dev/base-defense-band-mappings", (_request, response) => {
 
 app.get("/api/dev/base-cards", (_request, response) => {
   try {
-    response.json(readBaseCardCatalog());
+    const catalogId = (_request.query.deck as DevCardCatalogId | undefined) ?? "base";
+    if (catalogId !== "base" && catalogId !== "abondance") {
+      throw new Error(`Unknown card catalog: ${catalogId}`);
+    }
+    response.json(readBaseCardCatalog(catalogId));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to read base card catalog"
@@ -96,7 +103,11 @@ app.get("/api/dev/base-cards", (_request, response) => {
 app.post("/api/dev/base-cards/:cardId", (request, response) => {
   try {
     const body = request.body as SaveBaseCardDefinitionRequest;
-    response.json(writeBaseCardDefinition(request.params.cardId, body.card));
+    const catalogId = (request.query.deck as DevCardCatalogId | undefined) ?? "base";
+    if (catalogId !== "base" && catalogId !== "abondance") {
+      throw new Error(`Unknown card catalog: ${catalogId}`);
+    }
+    response.json(writeBaseCardDefinition(catalogId, request.params.cardId, body.card));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to save base card"
@@ -209,6 +220,18 @@ app.post("/api/matches/:instanceId/host/start", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to start match"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/host/expansion", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as UpdateExpansionRequest;
+    response.json(updateExpansion(request.params.instanceId, userId, body.expansion, body.enabled));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to update expansion"
     });
   }
 });

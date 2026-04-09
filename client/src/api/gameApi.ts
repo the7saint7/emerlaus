@@ -5,6 +5,7 @@ import type {
   LocalUserProfile,
   MatchConfigResponse,
   MatchState,
+  UpdateExpansionRequest,
   PendingBoardResetKeepRequest,
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
@@ -72,6 +73,20 @@ export async function requestStartMatch(instanceId: string, playerSessionToken: 
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify({})
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function requestUpdateExpansion(
+  instanceId: string,
+  playerSessionToken: string,
+  request: UpdateExpansionRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/host/expansion`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
   });
 
   return parseJson<MatchState>(response);
