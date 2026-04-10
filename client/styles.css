@@ -1106,7 +1106,8 @@ h2 {
 
 .table-seat--dead .seat-meta,
 .table-seat--dead .seat-meta span,
-.table-seat--dead .seat-turn-indicator {
+.table-seat--dead .seat-turn-indicator,
+.table-seat--dead .seat-response-chip {
   color: rgba(216, 230, 238, 0.78);
   text-shadow: none;
 }

@@ -96,6 +96,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     match: joined.match,
     localSeatNumber: joined.localSeatNumber,
     displayedHpBySeat: Object.fromEntries(joined.match.seats.map((seat) => [seat.seatNumber, seat.hp])),
+    displayedAliveBySeat: Object.fromEntries(
+      joined.match.seats.map((seat) => [seat.seatNumber, seat.isAlive !== false])
+    ),
     draggingCardInstanceId: "",
     dragPointerX: 0,
     dragPointerY: 0,
@@ -449,6 +452,14 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     return Object.fromEntries(match.seats.map((seat) => [seat.seatNumber, seat.hp ?? 0]));
   };
 
+  const buildDisplayedAliveBySeat = (match: MatchState | null): Record<number, boolean> => {
+    if (match == null) {
+      return {};
+    }
+
+    return Object.fromEntries(match.seats.map((seat) => [seat.seatNumber, seat.isAlive !== false]));
+  };
+
   const reconcileDisplayedHp = (): void => {
     if (state.match == null) {
       state.displayedHpBySeat = {};
@@ -469,6 +480,11 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     const nextDisplayedHpBySeat: Record<number, number> = {};
     for (const seat of state.match.seats) {
       const actualHp = seat.hp ?? 0;
+      if (seat.isAlive === false) {
+        nextDisplayedHpBySeat[seat.seatNumber] = 0;
+        continue;
+      }
+
       const currentDisplayedHp = state.displayedHpBySeat[seat.seatNumber] ?? actualHp;
 
       if (actualHp >= currentDisplayedHp) {
@@ -485,6 +501,34 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     }
 
     state.displayedHpBySeat = nextDisplayedHpBySeat;
+  };
+
+  const reconcileDisplayedAlive = (): void => {
+    if (state.match == null) {
+      state.displayedAliveBySeat = {};
+      return;
+    }
+
+    const playbackInProgress = state.eventPlaybackActive || hasUnseenGameEvents();
+    const nextDisplayedAliveBySeat: Record<number, boolean> = {};
+    for (const seat of state.match.seats) {
+      const actualAlive = seat.isAlive !== false;
+      const currentDisplayedAlive = state.displayedAliveBySeat[seat.seatNumber] ?? actualAlive;
+
+      if (actualAlive) {
+        nextDisplayedAliveBySeat[seat.seatNumber] = true;
+        continue;
+      }
+
+      if (!currentDisplayedAlive) {
+        nextDisplayedAliveBySeat[seat.seatNumber] = false;
+        continue;
+      }
+
+      nextDisplayedAliveBySeat[seat.seatNumber] = playbackInProgress;
+    }
+
+    state.displayedAliveBySeat = nextDisplayedAliveBySeat;
   };
 
   const hasUnseenGameEvents = (): boolean =>
@@ -543,6 +587,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     state.opponentCursors = {};
     if (nextMatch == null) {
       state.displayedHpBySeat = {};
+      state.displayedAliveBySeat = {};
       state.centerResponseCards = [];
       state.activeCardFlight = null;
       state.telepathyPreviewCardInstanceId = "";
@@ -682,6 +727,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     }
 
     reconcileDisplayedHp();
+    reconcileDisplayedAlive();
     if (!state.eventPlaybackActive && nextMatch.game?.pendingAction == null) {
       state.centerResponseCards = [];
       state.activeCardFlight = null;
@@ -1064,6 +1110,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             ?? state.match?.seats.find((seat) => seat.seatNumber === event.seatNumber)?.hp
             ?? 0;
           state.displayedHpBySeat[event.seatNumber] = Math.max(0, currentDisplayedHp - amount);
+          const authoritativeSeat = state.match?.seats.find((seat) => seat.seatNumber === event.seatNumber);
+          if ((state.displayedHpBySeat[event.seatNumber] ?? 0) <= 0 && authoritativeSeat?.isAlive === false) {
+            state.displayedAliveBySeat[event.seatNumber] = false;
+          }
         }
         await showCombatFx(
           event,
@@ -1234,6 +1284,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
                 state.centerResponseCards = [];
               }
               reconcileDisplayedHp();
+              reconcileDisplayedAlive();
               syncVisibleEventLog();
             }
             updateVictoryCelebrationState();
@@ -1988,6 +2039,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.playerSessionToken = freshJoin.playerSessionToken;
         applyMatchState(freshJoin.match);
         state.localSeatNumber = freshJoin.localSeatNumber;
+        state.displayedHpBySeat = buildDisplayedHpBySeat(freshJoin.match);
+        state.displayedAliveBySeat = buildDisplayedAliveBySeat(freshJoin.match);
         clearDragState();
         state.confirmingDiscardCardInstanceId = "";
         state.leftMessage = "";
@@ -2339,6 +2392,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             match: localizedMatch,
             localSeatNumber: state.localSeatNumber,
             displayedHpBySeat: state.displayedHpBySeat,
+            displayedAliveBySeat: state.displayedAliveBySeat,
             presentationLockActive,
             activeActionVisual: localizeActiveActionVisual(state.activeActionVisual),
             centerResponseCards: localizeCardList(state.centerResponseCards),
@@ -2920,6 +2974,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         applyMatchState(await requestStartMatch(state.instanceId, state.playerSessionToken));
         state.errorMessage = "";
         state.displayedHpBySeat = buildDisplayedHpBySeat(state.match);
+        state.displayedAliveBySeat = buildDisplayedAliveBySeat(state.match);
         state.seenGameEventIds = state.match?.game?.eventLog.map((event) => event.id) ?? [];
         state.seenEventMessageIds = state.match == null ? [] : buildEventLogEntries(state.match, state.language).map((entry) => entry.id);
       } catch (error) {

@@ -291,6 +291,17 @@ function targetMustHaveObjectOnTable(definition: BaseCardDefinition): boolean {
   return definition.id === "transfert-dobjets";
 }
 
+function singleOpponentTargetRequiresEligibleObject(definition: BaseCardDefinition): boolean {
+  if (targetMustHaveObjectOnTable(definition)) {
+    return true;
+  }
+
+  return definition.rules.effects.some((effect) =>
+    (effect.type === "remove_target_object" && effect.chance == null)
+    || effect.type === "steal_target_object"
+  );
+}
+
 function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number | undefined {
   const game = match.internalGame;
   if (game == null) {
@@ -298,15 +309,11 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
   }
 
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
-  const requiresTargetObject = definition.rules.effects.some((effect) =>
-    effect.type === "remove_target_object" || effect.type === "steal_target_object"
-  );
+  const requiresTargetObject = singleOpponentTargetRequiresEligibleObject(definition);
   const opponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber)
     .filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
   const eligibleOpponents = requiresTargetObject
     ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
-    : targetMustHaveObjectOnTable(definition)
-      ? opponents.filter((seatNumber) => getStoredSeat(game, seatNumber).objects.length > 0)
     : opponents;
   if (!isAttackDefinition(definition) || Math.random() >= 0.5) {
     return pickRandom(eligibleOpponents);
@@ -1175,9 +1182,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
   const requiredFollowUpCategory = getRequiredFollowUpCategory(definition);
   const requiredExtraPlayStarterCategory = getRequiredExtraPlayStarterCategory(definition);
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
-  const requiresTargetObject = definition.rules.effects.some((effect) =>
-    effect.type === "remove_target_object" || effect.type === "steal_target_object"
-  );
+  const requiresTargetObject = singleOpponentTargetRequiresEligibleObject(definition);
   const livingOpponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
   const attackableOpponents = livingOpponents.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
   const attackableOpponentsWithObjects = attackableOpponents.filter((seatNumber) => getStoredSeat(game, seatNumber).objects.length > 0);
@@ -3093,7 +3098,15 @@ function applyEffect(
       appendServerDebugLog(match, "effect", `${definition.name} attempts instant kill on ${targetSeatNumbers.join(", ")}${boxId != null ? ` [box ${boxId}]` : ""}`);
       for (const targetSeatNumber of targetSeatNumbers) {
         const targetSeat = getPublicSeat(match, targetSeatNumber);
-        targetSeat.hp = 0;
+        if (targetSeat.hp > 0) {
+          pushPresentationEvent(match, {
+            boxId,
+            type: "hp_loss",
+            seatNumber: targetSeatNumber,
+            cardName: definition.name,
+            amount: targetSeat.hp
+          });
+        }
         handleSeatDeath(match, targetSeatNumber, effect.resurrectionBlocked ?? false);
       }
       break;
@@ -5883,8 +5896,8 @@ function resolveRemovedCardPlay(
     request.mode === "active"
     && definition.rules.targets === "single_opponent"
     && targetSeatNumbers[0] != null
-    && targetMustHaveObjectOnTable(definition)
-    && getStoredSeat(game, targetSeatNumbers[0]).objects.length === 0
+    && singleOpponentTargetRequiresEligibleObject(definition)
+    && !seatHasEligibleTargetObject(game, targetSeatNumbers[0], getAllowedObjectSlotsForDefinition(definition))
   ) {
     invalidReason = "The target opponent must have at least one object on the table";
   } else if (

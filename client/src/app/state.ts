@@ -26,6 +26,7 @@ export interface AppState {
   match: MatchState | null;
   localSeatNumber: number;
   displayedHpBySeat: Record<number, number>;
+  displayedAliveBySeat: Record<number, boolean>;
   draggingCardInstanceId: string;
   dragPointerX: number;
   dragPointerY: number;

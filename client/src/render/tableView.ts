@@ -18,6 +18,7 @@ interface TableViewParams {
   match: MatchState;
   localSeatNumber: number;
   displayedHpBySeat: Record<number, number>;
+  displayedAliveBySeat: Record<number, boolean>;
   presentationLockActive: boolean;
   activeActionVisual: {
     actorSeatNumber: number;
@@ -327,6 +328,7 @@ function renderSeatInlineObjects(
 function renderOpponentSeat(
   seat: SeatState,
   displayedHp: number,
+  displayedAlive: boolean,
   anchor: OpponentAnchor,
   draggedCard: CardView | undefined,
   hoverTarget: DragHoverTarget | null,
@@ -355,7 +357,7 @@ function renderOpponentSeat(
     : "table-seat--center-y";
   return `
     <article
-      class="table-seat ${horizontalAnchorClass} ${verticalAnchorClass} ${seat.isAlive === false ? "table-seat--dead" : ""} ${targetable ? "table-seat--targetable" : ""} ${currentTurn ? "table-seat--current-turn" : ""} ${impactActive ? "table-seat--impact" : ""} ${isHoverTarget(hoverTarget, "seat", seat.seatNumber) ? "table-seat--hovered" : ""} ${healBurstActive ? "table-seat--heal-active" : ""}"
+      class="table-seat ${horizontalAnchorClass} ${verticalAnchorClass} ${!displayedAlive ? "table-seat--dead" : ""} ${targetable ? "table-seat--targetable" : ""} ${currentTurn ? "table-seat--current-turn" : ""} ${impactActive ? "table-seat--impact" : ""} ${isHoverTarget(hoverTarget, "seat", seat.seatNumber) ? "table-seat--hovered" : ""} ${healBurstActive ? "table-seat--heal-active" : ""}"
       style="left:${anchor.x}%; top:${anchor.y}%;"
       data-seat-area="true"
       data-seat-number="${seat.seatNumber}"
@@ -470,7 +472,7 @@ function renderHandCards(
           ${disableSelection ? "" : `data-action="drag-card" data-card-instance-id="${card.instanceId}"`}
           ${disableSelection ? "disabled" : ""}
         >
-          <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+          <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" draggable="false" />
           ${renderCardTooltip(card, language)}
         </button>
       </article>
@@ -1507,6 +1509,7 @@ export function renderTableView({
   match,
   localSeatNumber,
   displayedHpBySeat,
+  displayedAliveBySeat,
   presentationLockActive,
   activeActionVisual,
   centerResponseCards,
@@ -1579,6 +1582,7 @@ export function renderTableView({
     return renderOpponentSeat(
       seat,
       displayedHpBySeat[seat.seatNumber] ?? seat.hp ?? 0,
+      displayedAliveBySeat[seat.seatNumber] ?? (seat.isAlive !== false),
       anchor,
       draggedCard,
       dragHoverTarget,
@@ -1646,7 +1650,7 @@ export function renderTableView({
             </div>
           ` : ""}
 
-          <section class="local-hand-panel ${localSeat?.isAlive === false ? "local-hand-panel--dead" : ""} ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumbers.includes(localSeatNumber) ? "local-hand-panel--impact" : ""} ${activeHealBursts[localSeatNumber] != null ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
+          <section class="local-hand-panel ${!(displayedAliveBySeat[localSeatNumber] ?? (localSeat?.isAlive !== false)) ? "local-hand-panel--dead" : ""} ${isLocalTurn ? "local-hand-panel--current-turn" : ""} ${impactTargetSeatNumbers.includes(localSeatNumber) ? "local-hand-panel--impact" : ""} ${activeHealBursts[localSeatNumber] != null ? "local-hand-panel--heal-active" : ""}" data-seat-area="true" data-seat-number="${localSeatNumber}">
             <aside class="local-hp-panel">
               <strong>${localDisplayedHp}</strong>
               ${activeDamageBursts[localSeatNumber] != null ? `<div class="local-damage-burst">-${activeDamageBursts[localSeatNumber]} ${t(language, "stat.hp")}</div>` : ""}
