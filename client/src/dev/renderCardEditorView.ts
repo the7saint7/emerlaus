@@ -374,7 +374,7 @@ export function renderCardEditorView({
             <div class="mapper-field">
               <label for="targets">Targets</label>
               <select id="targets" data-card-editor-field="rules.targets">
-                ${["self", "single_opponent", "all_opponents", "left_opponent", "target_object", "single_player_or_object", "none"].map((value) => `<option value="${value}" ${selected(card.rules.targets, value)}>${value}</option>`).join("")}
+                ${["self", "single_opponent", "self_or_single_opponent", "all_opponents", "left_opponent", "target_object", "single_player_or_object", "none"].map((value) => `<option value="${value}" ${selected(card.rules.targets, value)}>${value}</option>`).join("")}
               </select>
             </div>
           </section>

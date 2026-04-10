@@ -34,6 +34,7 @@ export type RollExpression =
 export type CardEffect =
   | { type: "damage"; amount: RollExpression; grantsHalfDamageOnResistance?: boolean }
   | { type: "heal"; amount: RollExpression; target: "self" | "all_opponents" }
+  | { type: "redraw_hand"; redrawCount?: number }
   | { type: "lifesteal"; amount: RollExpression; powerSource: "self" | "target" }
   | { type: "set_target_hp"; amount: RollExpression }
   | { type: "instant_kill"; resurrectionBlocked?: boolean }
@@ -58,6 +59,7 @@ export interface CardRules {
   targets:
     | "self"
     | "single_opponent"
+    | "self_or_single_opponent"
     | "all_opponents"
     | "left_opponent"
     | "target_object"

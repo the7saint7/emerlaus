@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
+    "dev": "npm run build:server && concurrently \"npm:dev:server:watch\" \"npm:dev:server:run\" \"npm:dev:client\"",
     "dev:client": "vite",
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "npm run build:server && concurrently \"npm:dev:server:watch\" \"npm:dev:server:run\"",
+    "dev:server:watch": "node --watch-path server --watch-path shared --watch-path tsconfig.server.json --watch-preserve-output -e \"import('node:child_process').then(({spawnSync}) => { const result = spawnSync(process.execPath, ['./node_modules/typescript/lib/tsc.js', '-p', 'tsconfig.server.json'], { stdio: 'inherit' }); process.exit(result.status ?? 1); })\"",
+    "dev:server:run": "node --watch dist/server/server/index.js",
     "start": "node dist/server/server/index.js",
     "import:base-cards": "py scripts/import_base_cards.py",
     "build": "npm run build:server && npm run build:client",

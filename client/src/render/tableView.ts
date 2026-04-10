@@ -56,6 +56,10 @@ interface TableViewParams {
   inspectedSeatNumber: number;
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
+  deathSearchPreviewCardInstanceId: string;
+  deathSearchSelectedCardInstanceIds: string[];
+  pickpocketPreviewCardInstanceId: string;
+  pickpocketSelectedCardInstanceIds: string[];
   cardReferencePreviewCardId: string;
   cardReferenceSearchQuery: string;
   cardReferenceShowBase: boolean;
@@ -152,7 +156,9 @@ function isSeatTargetable(selectedCard: CardView | undefined, seat: SeatState, l
     return false;
   }
 
-  return selectedCard.targets === "single_opponent" || selectedCard.targets === "single_player_or_object";
+  return selectedCard.targets === "single_opponent"
+    || selectedCard.targets === "self_or_single_opponent"
+    || selectedCard.targets === "single_player_or_object";
 }
 
 function canLoadMassAttackStaff(
@@ -236,6 +242,7 @@ function isPlaySlotCompatible(card: CardView | undefined): boolean {
   return (
     card.categoryCode === "O" ||
     card.targets === "self" ||
+    card.targets === "self_or_single_opponent" ||
     card.targets === "all_opponents" ||
     card.targets === "left_opponent" ||
     card.targets === "none" ||
@@ -1145,6 +1152,190 @@ function renderPendingSacrificeChoiceModal(
   `;
 }
 
+function renderPendingDeathSearchModal(
+  match: MatchState,
+  localSeatNumber: number,
+  deathSearchPreviewCardInstanceId: string,
+  deathSearchSelectedCardInstanceIds: string[]
+): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
+  const pendingDeathSearch = match.game?.pendingDeathSearch;
+  if (pendingDeathSearch == null) {
+    return "";
+  }
+
+  const chooserSeat = match.seats.find((seat) => seat.seatNumber === pendingDeathSearch.chooserSeatNumber);
+  if (chooserSeat == null) {
+    return "";
+  }
+
+  const isLocalChooser = pendingDeathSearch.chooserSeatNumber === localSeatNumber;
+  const selectedCorpse = pendingDeathSearch.corpseOptions.find((corpse) => corpse.seatNumber === pendingDeathSearch.selectedCorpseSeatNumber);
+  const previewCard = !isLocalChooser
+    ? undefined
+    : pendingDeathSearch.cardOptions.find((card) => card.instanceId === deathSearchPreviewCardInstanceId) ?? pendingDeathSearch.cardOptions[0];
+  const selectedCardIdSet = new Set(deathSearchSelectedCardInstanceIds);
+  const keepSelectionReady = deathSearchSelectedCardInstanceIds.length === pendingDeathSearch.keepCardCount;
+
+  return `
+    <section class="telepathy-overlay">
+      <article class="telepathy-panel" data-modal-panel-scroll="true">
+        <div class="telepathy-panel__header">
+          <div>
+            <p class="eyebrow">${escapeHtml(pendingDeathSearch.cardName)}</p>
+            <h2>${isLocalChooser ? t(language, "deathSearch.title") : t(language, "deathSearch.inProgress")}</h2>
+            <p>${isLocalChooser
+              ? selectedCorpse == null
+                ? t(language, "deathSearch.chooseCorpseBody")
+                : t(language, "deathSearch.keepBody", { corpseName: selectedCorpse.displayName, count: pendingDeathSearch.keepCardCount })
+              : t(language, "deathSearch.waitingBody", { chooserName: chooserSeat.displayName })}</p>
+          </div>
+          ${isLocalChooser && selectedCorpse != null
+            ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-death-search-keep" ${keepSelectionReady ? "" : "disabled"}>${t(language, "deathSearch.keepAction")}</button>`
+            : ""}
+        </div>
+        <div class="telepathy-grid">
+          ${!isLocalChooser
+            ? `<p class="telepathy-empty">${t(language, "deathSearch.blocked")}</p>`
+            : selectedCorpse == null
+            ? `
+              <div class="death-search-corpse-list">
+                ${pendingDeathSearch.corpseOptions.map((corpse) => `
+                  <button
+                    type="button"
+                    class="telepathy-card telepathy-card--text-only"
+                    data-action="choose-death-search-corpse"
+                    data-seat-number="${corpse.seatNumber}"
+                  >
+                    <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(corpse.displayName)}</strong>
+                      <span>${t(language, "deathSearch.corpseCardCount", { count: corpse.cardCount })}</span>
+                    </div>
+                  </button>
+                `).join("")}
+              </div>
+            `
+            : pendingDeathSearch.cardOptions.length === 0
+            ? `<p class="telepathy-empty">${t(language, "deathSearch.empty")}</p>`
+            : `
+              <div class="telepathy-preview">
+                ${previewCard == null ? "" : `
+                  <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                  <div class="telepathy-preview__meta">
+                    <strong>${escapeHtml(previewCard.name)}</strong>
+                    <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
+                    <span>${t(language, previewCard.source === "self" ? "deathSearch.sourceSelf" : "deathSearch.sourceCorpse", { ownerName: previewCard.ownerDisplayName })}</span>
+                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
+                    ${renderDefenseTooltip(previewCard, language)}
+                  </div>
+                `}
+              </div>
+              <div class="telepathy-list" data-modal-list-scroll="true">
+                ${pendingDeathSearch.cardOptions.map((card) => `
+                  <button
+                    type="button"
+                    class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""} ${selectedCardIdSet.has(card.instanceId) ? "telepathy-card--selected" : ""}"
+                    data-action="toggle-death-search-card"
+                    data-card-instance-id="${card.instanceId}"
+                  >
+                    <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                    <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(card.name)}</strong>
+                      <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                      <span>${t(language, card.source === "self" ? "deathSearch.sourceSelf" : "deathSearch.sourceCorpse", { ownerName: card.ownerDisplayName })}</span>
+                    </div>
+                  </button>
+                `).join("")}
+              </div>
+            `}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderPendingPickpocketModal(
+  match: MatchState,
+  localSeatNumber: number,
+  pickpocketPreviewCardInstanceId: string,
+  pickpocketSelectedCardInstanceIds: string[]
+): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
+  const pendingPickpocket = match.game?.pendingPickpocket;
+  if (pendingPickpocket == null) {
+    return "";
+  }
+
+  const chooserSeat = match.seats.find((seat) => seat.seatNumber === pendingPickpocket.chooserSeatNumber);
+  const targetSeat = match.seats.find((seat) => seat.seatNumber === pendingPickpocket.targetSeatNumber);
+  if (chooserSeat == null || targetSeat == null) {
+    return "";
+  }
+
+  const isLocalChooser = pendingPickpocket.chooserSeatNumber === localSeatNumber;
+  const previewCard = !isLocalChooser
+    ? undefined
+    : pendingPickpocket.cardOptions.find((card) => card.instanceId === pickpocketPreviewCardInstanceId) ?? pendingPickpocket.cardOptions[0];
+  const selectedCardIdSet = new Set(pickpocketSelectedCardInstanceIds);
+  const takeSelectionReady = pickpocketSelectedCardInstanceIds.length === pendingPickpocket.takeCardCount;
+
+  return `
+    <section class="telepathy-overlay">
+      <article class="telepathy-panel" data-modal-panel-scroll="true">
+        <div class="telepathy-panel__header">
+          <div>
+            <p class="eyebrow">${escapeHtml(pendingPickpocket.cardName)}</p>
+            <h2>${isLocalChooser ? t(language, "pickpocket.title") : t(language, "pickpocket.inProgress")}</h2>
+            <p>${isLocalChooser
+              ? t(language, "pickpocket.body", { count: pendingPickpocket.takeCardCount, targetName: targetSeat.displayName })
+              : t(language, "pickpocket.waitingBody", { chooserName: chooserSeat.displayName })}</p>
+          </div>
+          ${isLocalChooser
+            ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-pickpocket-take" ${takeSelectionReady ? "" : "disabled"}>${t(language, "pickpocket.takeAction")}</button>`
+            : ""}
+        </div>
+        <div class="telepathy-grid">
+          ${!isLocalChooser
+            ? `<p class="telepathy-empty">${t(language, "pickpocket.blocked")}</p>`
+            : pendingPickpocket.cardOptions.length === 0
+            ? `<p class="telepathy-empty">${t(language, "pickpocket.empty")}</p>`
+            : `
+              <div class="telepathy-preview">
+                ${previewCard == null ? "" : `
+                  <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                  <div class="telepathy-preview__meta">
+                    <strong>${escapeHtml(previewCard.name)}</strong>
+                    <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
+                    <span>${t(language, previewCard.source === "hand" ? "pickpocket.sourceHand" : "pickpocket.sourceObject", { ownerName: previewCard.ownerDisplayName })}</span>
+                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
+                    ${renderDefenseTooltip(previewCard, language)}
+                  </div>
+                `}
+              </div>
+              <div class="telepathy-list" data-modal-list-scroll="true">
+                ${pendingPickpocket.cardOptions.map((card) => `
+                  <button
+                    type="button"
+                    class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""} ${selectedCardIdSet.has(card.instanceId) ? "telepathy-card--selected" : ""}"
+                    data-action="toggle-pickpocket-card"
+                    data-card-instance-id="${card.instanceId}"
+                  >
+                    <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                    <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(card.name)}</strong>
+                      <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                      <span>${t(language, card.source === "hand" ? "pickpocket.sourceHand" : "pickpocket.sourceObject", { ownerName: card.ownerDisplayName })}</span>
+                    </div>
+                  </button>
+                `).join("")}
+              </div>
+            `}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
 function renderCardReferenceModal(
   language: AppLanguage,
   previewCardId: string,
@@ -1329,6 +1520,10 @@ export function renderTableView({
   inspectedSeatNumber,
   telepathyPreviewCardInstanceId,
   boardResetKeepPreviewCardInstanceId,
+  deathSearchPreviewCardInstanceId,
+  deathSearchSelectedCardInstanceIds,
+  pickpocketPreviewCardInstanceId,
+  pickpocketSelectedCardInstanceIds,
   cardReferencePreviewCardId,
   cardReferenceSearchQuery,
   cardReferenceShowBase,
@@ -1480,6 +1675,8 @@ export function renderTableView({
         ${renderPendingObjectChoice(localizedMatch, localSeatNumber)}
         ${renderTelepathyInspectionModal(localizedMatch, localSeatNumber, telepathyPreviewCardInstanceId)}
         ${renderBoardResetKeepModal(localizedMatch, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
+        ${renderPendingDeathSearchModal(localizedMatch, localSeatNumber, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds)}
+        ${renderPendingPickpocketModal(localizedMatch, localSeatNumber, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds)}
         ${renderPendingSacrificeChoiceModal(localizedMatch, localSeatNumber, sacrificeAmountInput)}
         ${renderCardReferenceModal(language, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceOpen)}
         ${chatMarkup}

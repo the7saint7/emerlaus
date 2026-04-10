@@ -28,6 +28,7 @@ import type {
 } from "../../shared/types.js";
 import type {
   StoredCardInstance,
+  StoredForcedFollowUpState,
   StoredGameState,
   StoredMatchState,
   StoredPendingActionResponderState,
@@ -38,6 +39,7 @@ import type {
 
 const ATTACK_CATEGORIES = new Set<CardCategoryCode>(["AD", "AM", "S", "E", "CO"]);
 const MASS_ATTACK_STAFF_CARD_ID = "baton-dattaque-massive";
+const ABUNDANCE_ALLOWED_CATEGORIES: CardCategoryCode[] = ["A", "AD", "AM"];
 
 interface SuccessfulHitDamageModifierConfig {
   triggerNotation: string;
@@ -285,6 +287,10 @@ function isAttackLikeDefinition(definition: BaseCardDefinition): boolean {
     || definition.id.startsWith("robe-");
 }
 
+function targetMustHaveObjectOnTable(definition: BaseCardDefinition): boolean {
+  return definition.id === "transfert-dobjets";
+}
+
 function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number | undefined {
   const game = match.internalGame;
   if (game == null) {
@@ -299,6 +305,8 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
     .filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
   const eligibleOpponents = requiresTargetObject
     ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
+    : targetMustHaveObjectOnTable(definition)
+      ? opponents.filter((seatNumber) => getStoredSeat(game, seatNumber).objects.length > 0)
     : opponents;
   if (!isAttackDefinition(definition) || Math.random() >= 0.5) {
     return pickRandom(eligibleOpponents);
@@ -770,6 +778,21 @@ function getTemporaryActionPowerBonus(
     }
   }
 
+  for (const statusInstance of actorState.statuses) {
+    if (statusInstance.cardId === "pacte-tenebreux") {
+      bonus += 2;
+    }
+  }
+
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  if (
+    extraPlayMode != null
+    && extraPlayMode.temporaryPowerBonus !== 0
+    && (extraPlayMode.allowedCategories === "any" || extraPlayMode.allowedCategories.includes(sourceDefinition.category.code))
+  ) {
+    bonus += extraPlayMode.temporaryPowerBonus;
+  }
+
   return bonus;
 }
 
@@ -950,6 +973,34 @@ function getRequiredFollowUpCategory(definition: BaseCardDefinition): CardCatego
   }
 }
 
+function getRequiredExtraPlayStarterCategory(definition: BaseCardDefinition): CardCategoryCode | undefined {
+  switch (definition.id) {
+    case "masse-double":
+      return "AM";
+    default:
+      return undefined;
+  }
+}
+
+function requiresAnyOtherCardInHandForExtraPlay(definition: BaseCardDefinition): boolean {
+  return definition.id.startsWith("resistance-diminuee-");
+}
+
+function getResistanceDiminueePenalty(definitionId: string): number {
+  switch (definitionId) {
+    case "resistance-diminuee-1":
+      return -1;
+    case "resistance-diminuee-2":
+      return -2;
+    case "resistance-diminuee-3":
+      return -3;
+    case "resistance-diminuee-4":
+      return -4;
+    default:
+      return 0;
+  }
+}
+
 function resolveFollowUpCategoryHeal(
   match: StoredMatchState,
   sourceDefinition: BaseCardDefinition,
@@ -1024,6 +1075,50 @@ function rollMassAttackStaffDamage(
   return roll.total;
 }
 
+function isAbundanceTurn(match: StoredMatchState, seatNumber: number): boolean {
+  return (
+    match.internalGame?.currentTurnSeatNumber === seatNumber
+    && match.internalGame.forcedPlayCategories != null
+    && match.internalGame.forcedPlayCategories !== "any"
+    && match.internalGame.forcedPlayCategories.length === ABUNDANCE_ALLOWED_CATEGORIES.length
+    && ABUNDANCE_ALLOWED_CATEGORIES.every((category) => match.internalGame?.forcedPlayCategories?.includes(category))
+  );
+}
+
+function getActiveExtraPlayMode(match: StoredMatchState, actorSeatNumber: number) {
+  const game = match.internalGame;
+  if (game?.extraPlayMode?.actorSeatNumber !== actorSeatNumber) {
+    return undefined;
+  }
+
+  return game.extraPlayMode;
+}
+
+function autoSkipOptionalExtraPlayIfUnavailable(match: StoredMatchState, actorSeatNumber: number): void {
+  const game = match.internalGame;
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  if (game == null || extraPlayMode == null || extraPlayMode.requiredActivePlaysRemaining > 0) {
+    return;
+  }
+
+  const actorState = getStoredSeat(game, actorSeatNumber);
+  const hasEligibleFollowUp = actorState.hand.some((card) =>
+    extraPlayMode.allowedCategories === "any"
+    || extraPlayMode.allowedCategories.includes(requireDefinition(card.cardId).category.code)
+  );
+  if (hasEligibleFollowUp) {
+    return;
+  }
+
+  actorState.pendingExtraPlays = 0;
+  game.extraPlayMode = undefined;
+  appendServerDebugLog(
+    match,
+    "turn",
+    `Seat ${actorSeatNumber} has no remaining eligible follow-up for ${requireDefinition(extraPlayMode.sourceCardId).name}; optional extra play skipped`
+  );
+}
+
 function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, card: StoredCardInstance): { canPlay: boolean; reason?: string } {
   const game = match.internalGame;
   if (game == null) {
@@ -1035,6 +1130,8 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     || game.pendingObjectChoice != null
     || game.pendingHandInspection != null
     || game.pendingBoardResetKeep != null
+    || game.pendingDeathSearch != null
+    || game.pendingPickpocket != null
     || game.pendingSacrificeChoice != null
     || game.pendingCurseRelease != null
   ) {
@@ -1051,13 +1148,39 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
   }
 
   const definition = requireDefinition(card.cardId);
+  if (definition.id === "fouille-de-mort") {
+    return { canPlay: false, reason: "This card triggers automatically when an opponent dies" };
+  }
+
+  if (
+    game.forcedPlayCategories != null
+    && game.forcedPlayCategories !== "any"
+    && !game.forcedPlayCategories.includes(definition.category.code)
+  ) {
+    return { canPlay: false, reason: "Only A, AD, and AM cards can be actively played this turn" };
+  }
+
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  if (
+    extraPlayMode != null
+    && extraPlayMode.allowedCategories !== "any"
+    && !extraPlayMode.allowedCategories.includes(definition.category.code)
+  ) {
+    return {
+      canPlay: false,
+      reason: `Only ${extraPlayMode.allowedCategories.join("/")} cards can be actively played for ${requireDefinition(extraPlayMode.sourceCardId).name}`
+    };
+  }
+
   const requiredFollowUpCategory = getRequiredFollowUpCategory(definition);
+  const requiredExtraPlayStarterCategory = getRequiredExtraPlayStarterCategory(definition);
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
   const requiresTargetObject = definition.rules.effects.some((effect) =>
     effect.type === "remove_target_object" || effect.type === "steal_target_object"
   );
   const livingOpponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
   const attackableOpponents = livingOpponents.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
+  const attackableOpponentsWithObjects = attackableOpponents.filter((seatNumber) => getStoredSeat(game, seatNumber).objects.length > 0);
   const opponentsWithEligibleObjects = livingOpponents.filter((seatNumber) =>
     seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
   );
@@ -1086,7 +1209,21 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     return { canPlay: false, reason: `This card requires a ${requiredFollowUpCategory} card in hand` };
   }
 
-  if (definition.category.code === "AM" && getSeatMassAttackStaff(actorSeat) != null) {
+  if (
+    requiredExtraPlayStarterCategory != null
+    && !actorSeat.hand.some((handCard) => handCard.instanceId !== card.instanceId && requireDefinition(handCard.cardId).category.code === requiredExtraPlayStarterCategory)
+  ) {
+    return { canPlay: false, reason: `This card requires a ${requiredExtraPlayStarterCategory} card in hand` };
+  }
+
+  if (
+    requiresAnyOtherCardInHandForExtraPlay(definition)
+    && !actorSeat.hand.some((handCard) => handCard.instanceId !== card.instanceId)
+  ) {
+    return { canPlay: false, reason: "This card requires another card in hand" };
+  }
+
+  if (definition.category.code === "AM" && extraPlayMode == null && getSeatMassAttackStaff(actorSeat) != null) {
     return { canPlay: true };
   }
 
@@ -1104,9 +1241,18 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
           ? { canPlay: true }
           : { canPlay: false, reason: "No valid opponent target" };
       }
+      if (targetMustHaveObjectOnTable(definition)) {
+        return attackableOpponentsWithObjects.length > 0
+          ? { canPlay: true }
+          : { canPlay: false, reason: "The target opponent must have at least one object on the table" };
+      }
       return attackableOpponents.length > 0
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid opponent target" };
+    case "self_or_single_opponent":
+      return attackableOpponents.length > 0 || actorSeat.alive
+        ? { canPlay: true }
+        : { canPlay: false, reason: "No valid target" };
     case "left_opponent":
       {
         const leftOpponentSeatNumber = getLeftOpponentSeatNumber(game, actorSeatNumber);
@@ -1261,6 +1407,10 @@ function canPlayCardAsPendingResponse(match: StoredMatchState, seatNumber: numbe
     return { canPlay: false, reason: "Choose the card to keep first" };
   }
 
+  if (match.internalGame?.pendingDeathSearch != null) {
+    return { canPlay: false, reason: "Resolve the death search first" };
+  }
+
   if (match.internalGame?.pendingSacrificeChoice != null) {
     return { canPlay: false, reason: "Choose the sacrifice amount first" };
   }
@@ -1297,6 +1447,12 @@ function getTargetSeatNumbers(game: StoredGameState, actorSeatNumber: number, re
       return [actorSeatNumber];
     case "single_opponent":
       if (request.targetSeatNumber == null || request.targetSeatNumber === actorSeatNumber) {
+        throw new Error("A target player is required");
+      }
+
+      return [request.targetSeatNumber];
+    case "self_or_single_opponent":
+      if (request.targetSeatNumber == null) {
         throw new Error("A target player is required");
       }
 
@@ -1638,6 +1794,195 @@ function queueBoardResetKeepChoice(
   return true;
 }
 
+function buildPendingPickpocketPool(
+  match: StoredMatchState,
+  pendingPickpocket: NonNullable<StoredGameState["pendingPickpocket"]>
+): { takeCardCount: number; cardOptions: NonNullable<GameState["pendingPickpocket"]>["cardOptions"] } {
+  const game = match.internalGame!;
+  const targetState = getStoredSeat(game, pendingPickpocket.targetSeatNumber);
+  const targetSeat = getPublicSeat(match, pendingPickpocket.targetSeatNumber);
+  const cardOptions = [
+    ...targetState.hand.map((card) => ({
+      ...buildCardView(card, requireDefinition(card.cardId), "hand", false),
+      source: "hand" as const,
+      ownerSeatNumber: targetSeat.seatNumber,
+      ownerDisplayName: targetSeat.displayName
+    })),
+    ...targetState.objects.map((card) => ({
+      ...buildCardView(card, requireDefinition(card.cardId), "object", false),
+      source: "object" as const,
+      ownerSeatNumber: targetSeat.seatNumber,
+      ownerDisplayName: targetSeat.displayName
+    }))
+  ];
+
+  return {
+    takeCardCount: Math.min(pendingPickpocket.takeCardCount, cardOptions.length),
+    cardOptions
+  };
+}
+
+function queuePickpocketChoice(
+  match: StoredMatchState,
+  chooserSeatNumber: number,
+  targetSeatNumber: number,
+  sourceCard: StoredCardInstance,
+  takeCardCount: number,
+  boxId?: string
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const chooser = getPublicSeat(match, chooserSeatNumber);
+  if (chooser.controllerType === "bot") {
+    return false;
+  }
+
+  game.pendingPickpocket = {
+    boxId,
+    chooserSeatNumber,
+    targetSeatNumber,
+    sourceCard,
+    takeCardCount
+  };
+  appendServerDebugLog(
+    match,
+    "pickpocket",
+    `Seat ${chooserSeatNumber} must choose ${takeCardCount} card(s) from seat ${targetSeatNumber} for ${requireDefinition(sourceCard.cardId).name}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+  refreshSeatSummaries(match);
+  return true;
+}
+
+function resolvePickpocketSelection(
+  match: StoredMatchState,
+  pendingPickpocket: NonNullable<StoredGameState["pendingPickpocket"]>,
+  selectedCardInstanceIds: string[]
+): void {
+  const game = match.internalGame;
+  if (game == null) {
+    throw new Error("Game not initialized");
+  }
+
+  const chooserState = getStoredSeat(game, pendingPickpocket.chooserSeatNumber);
+  const targetState = getStoredSeat(game, pendingPickpocket.targetSeatNumber);
+  const pool = buildPendingPickpocketPool(match, pendingPickpocket);
+  const requestedCardIds = [...new Set(selectedCardInstanceIds)];
+  if (requestedCardIds.length !== pool.takeCardCount) {
+    throw new Error(`Choose exactly ${pool.takeCardCount} cards to take`);
+  }
+
+  const optionsById = new Map(pool.cardOptions.map((card) => [card.instanceId, card]));
+  const chosenCards: StoredCardInstance[] = [];
+  for (const cardInstanceId of requestedCardIds) {
+    const selectedCard = optionsById.get(cardInstanceId);
+    if (selectedCard == null) {
+      throw new Error("One or more selected cards are no longer available");
+    }
+
+    if (selectedCard.source === "hand") {
+      chosenCards.push(moveCardFromHand(targetState.hand, cardInstanceId));
+    } else {
+      const removed = removeObjectFromSeat(match, pendingPickpocket.targetSeatNumber, cardInstanceId);
+      if (removed[0] == null) {
+        throw new Error("Selected object is no longer available");
+      }
+      chosenCards.push(removed[0]);
+    }
+  }
+
+  chooserState.hand.push(...chosenCards);
+  const chooserSeat = getPublicSeat(match, pendingPickpocket.chooserSeatNumber);
+  const targetSeat = getPublicSeat(match, pendingPickpocket.targetSeatNumber);
+  const chosenNames = chosenCards.map((card) => requireDefinition(card.cardId).name);
+  appendDealerMessage(
+    match,
+    `${chooserSeat.displayName} uses ${requireDefinition(pendingPickpocket.sourceCard.cardId).name} to steal ${chosenCards.length} card${chosenCards.length === 1 ? "" : "s"} from ${targetSeat.displayName}.`
+  );
+  appendServerDebugLog(
+    match,
+    "pickpocket",
+    `Seat ${pendingPickpocket.chooserSeatNumber} stole ${chosenNames.join(", ") || "no cards"} from seat ${pendingPickpocket.targetSeatNumber}`
+  );
+}
+
+function findDeathSearchOwner(
+  match: StoredMatchState,
+  deadSeatNumber: number
+): { chooserSeatNumber: number; sourceCard: StoredCardInstance } | undefined {
+  const game = match.internalGame;
+  if (game == null) {
+    return undefined;
+  }
+
+  for (const seatState of sortBySeatNumber(game.seatStates)) {
+    if (!seatState.alive || seatState.seatNumber === deadSeatNumber) {
+      continue;
+    }
+
+    const sourceCard = seatState.hand.find((card) => card.cardId === "fouille-de-mort");
+    if (sourceCard != null) {
+      return {
+        chooserSeatNumber: seatState.seatNumber,
+        sourceCard
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function queueDeathSearch(
+  match: StoredMatchState,
+  deadSeatNumber: number,
+  corpseCards: StoredCardInstance[]
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const existingPending = game.pendingDeathSearch;
+  if (existingPending != null) {
+    existingPending.corpses.push({
+      seatNumber: deadSeatNumber,
+      cards: corpseCards
+    });
+    appendServerDebugLog(
+      match,
+      "death_search",
+      `Added seat ${deadSeatNumber} corpse to pending ${requireDefinition(existingPending.sourceCard.cardId).name} search`
+    );
+    refreshSeatSummaries(match);
+    return true;
+  }
+
+  const owner = findDeathSearchOwner(match, deadSeatNumber);
+  if (owner == null) {
+    return false;
+  }
+
+  game.pendingDeathSearch = {
+    chooserSeatNumber: owner.chooserSeatNumber,
+    sourceCard: owner.sourceCard,
+    corpses: [
+      {
+        seatNumber: deadSeatNumber,
+        cards: corpseCards
+      }
+    ]
+  };
+  appendServerDebugLog(
+    match,
+    "death_search",
+    `Seat ${owner.chooserSeatNumber} may use ${requireDefinition(owner.sourceCard.cardId).name} after seat ${deadSeatNumber} died`
+  );
+  refreshSeatSummaries(match);
+  return true;
+}
+
 function queueSacrificeChoice(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -1668,6 +2013,28 @@ function queueSacrificeChoice(
   );
   refreshSeatSummaries(match);
   return true;
+}
+
+function redrawSeatHand(match: StoredMatchState, seatNumber: number, redrawCount?: number, boxId?: string): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const discardedCount = seatState.hand.length;
+  if (discardedCount > 0) {
+    discardInstances(game, seatState.hand.splice(0));
+  }
+
+  const desiredHandCount = Math.max(0, redrawCount ?? game.minimumHandSize);
+  drawCards(match, seatNumber, desiredHandCount);
+  appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName} discards their hand and redraws.`);
+  appendServerDebugLog(
+    match,
+    "hand",
+    `Seat ${seatNumber} redrew hand ${discardedCount} -> ${seatState.hand.length}${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
 }
 
 function executeBoardReset(
@@ -1755,6 +2122,12 @@ function handleSeatDeath(match: StoredMatchState, seatNumber: number, resurrecti
     return;
   }
 
+  if (game.pendingDeathSearch?.chooserSeatNumber === seatNumber) {
+    discardInstances(game, game.pendingDeathSearch.corpses.flatMap((corpse) => corpse.cards));
+    appendServerDebugLog(match, "death_search", `Canceled pending ${requireDefinition(game.pendingDeathSearch.sourceCard.cardId).name} because seat ${seatNumber} died`);
+    game.pendingDeathSearch = undefined;
+  }
+
   const ringIndex = seatState.objects.findIndex((card) => card.cardId === "anneau-de-resurrection");
   if (!resurrectionBlocked && ringIndex !== -1) {
     const [ring] = seatState.objects.splice(ringIndex, 1);
@@ -1768,19 +2141,32 @@ function handleSeatDeath(match: StoredMatchState, seatNumber: number, resurrecti
     return;
   }
 
+  const corpseCards: StoredCardInstance[] = [
+    ...seatState.hand.splice(0),
+    ...flattenStoredCardInstances(seatState.objects.splice(0)),
+    ...seatState.statuses.splice(0).map((status) => ({ instanceId: status.instanceId, cardId: status.cardId }))
+  ];
   seatState.alive = false;
   publicSeat.hp = 0;
-  discardInstances(game, seatState.hand.splice(0));
-  discardInstances(game, seatState.objects.splice(0));
-  discardInstances(game, seatState.statuses.map((status) => ({ instanceId: status.instanceId, cardId: status.cardId })));
-  seatState.statuses = [];
+  seatState.skipTurnsRemaining = 0;
+  seatState.pendingExtraPlays = 0;
+  seatState.attackImmunityTurns = 0;
+  seatState.noRiposteTurnsRemaining = 0;
+  seatState.handInspectionTargetSeatNumber = undefined;
   appendDealerMessage(match, `${publicSeat.displayName} has fallen.`);
-  appendServerDebugLog(match, "death", `Seat ${seatNumber} died and discarded hand, objects, and statuses`);
+  if (!queueDeathSearch(match, seatNumber, corpseCards)) {
+    discardInstances(game, corpseCards);
+  }
+  appendServerDebugLog(match, "death", `Seat ${seatNumber} died and released ${corpseCards.length} cards`);
 }
 
 function checkForWinner(match: StoredMatchState): void {
   const game = match.internalGame;
   if (game == null) {
+    return;
+  }
+
+  if (game.pendingDeathSearch != null) {
     return;
   }
 
@@ -1972,6 +2358,19 @@ function determineResponseMode(definition: BaseCardDefinition): PendingActionSta
     : "per_target";
 }
 
+function isSelfTargetedSinglePlayerSpell(
+  definition: BaseCardDefinition,
+  actorSeatNumber: number,
+  targetSeatNumbers: number[]
+): boolean {
+  return (
+    definition.rules.targets === "single_player_or_object"
+    || definition.rules.targets === "self_or_single_opponent"
+  )
+    && targetSeatNumbers.length === 1
+    && targetSeatNumbers[0] === actorSeatNumber;
+}
+
 function getCurrentPendingResponder(pendingAction: StoredPendingActionState): StoredPendingActionResponderState | undefined {
   return pendingAction.responders.find((responder) => responder.state === "pending");
 }
@@ -1987,6 +2386,10 @@ function getResponderSeatNumbers(
   }
 
   if (definition.rules.targets === "self") {
+    return nextLivingOpponentSeatNumbers(game, actorSeatNumber);
+  }
+
+  if (isSelfTargetedSinglePlayerSpell(definition, actorSeatNumber, targetSeatNumbers)) {
     return nextLivingOpponentSeatNumbers(game, actorSeatNumber);
   }
 
@@ -2038,6 +2441,27 @@ function computeResistanceThreshold(match: StoredMatchState, seatNumber: number,
       if (effect.type === "modify_resistance" && effect.duration === "current_action") {
         modifier += effect.amount;
       }
+    }
+
+    if (
+      pendingAction.actorSeatNumber !== seatNumber
+      && pendingAction.sourceZone === "hand"
+      && (actionDefinition.category.code === "AD" || actionDefinition.category.code === "AM")
+      && getStoredSeat(game, pendingAction.actorSeatNumber).statuses.some((status) => status.cardId === "pacte-tenebreux")
+    ) {
+      modifier -= 3;
+    }
+
+    const extraPlayMode = game.extraPlayMode;
+    if (
+      extraPlayMode != null
+      && pendingAction.actorSeatNumber !== seatNumber
+      && pendingAction.actorSeatNumber === extraPlayMode.actorSeatNumber
+      && pendingAction.sourceZone === "hand"
+      && extraPlayMode.temporaryResistanceModifier !== 0
+      && (extraPlayMode.allowedCategories === "any" || extraPlayMode.allowedCategories.includes(actionDefinition.category.code))
+    ) {
+      modifier += extraPlayMode.temporaryResistanceModifier;
     }
   }
 
@@ -2371,6 +2795,37 @@ function movePersistentCard(
     return;
   }
 
+  if (definition.id === "abondance") {
+    const seat = getStoredSeat(game, actorSeatNumber);
+    const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
+    seat.statuses.push({
+      instanceId: card.instanceId,
+      cardId: card.cardId,
+      sourceSeatNumber: actorSeatNumber,
+      remainingTurnTriggers: Math.max(1, actorSeat.powerLevel ?? 1),
+      bodyBound: true,
+      activatesNextTurn: true
+    });
+    appendServerDebugLog(
+      match,
+      "status",
+      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves for ${Math.max(1, actorSeat.powerLevel ?? 1)} turn(s), starting next turn`
+    );
+    return;
+  }
+
+  if (definition.id === "pacte-tenebreux") {
+    const seat = getStoredSeat(game, actorSeatNumber);
+    seat.statuses.push({
+      instanceId: card.instanceId,
+      cardId: card.cardId,
+      sourceSeatNumber: actorSeatNumber,
+      bodyBound: true
+    });
+    appendServerDebugLog(match, "status", `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves`);
+    return;
+  }
+
   if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
     const seat = getStoredSeat(game, actorSeatNumber);
     const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
@@ -2397,6 +2852,70 @@ function movePersistentCard(
   }
 
   game.discardPile.push(card);
+}
+
+function resolveAbundanceTurnStart(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  game.forcedPlayCategories = undefined;
+  const seatState = getStoredSeat(game, seatNumber);
+  const abundanceStatuses = seatState.statuses.filter((status) => status.cardId === "abondance");
+  if (abundanceStatuses.length === 0) {
+    return;
+  }
+
+  for (const status of abundanceStatuses) {
+    if (status.activatesNextTurn === true) {
+      status.activatesNextTurn = false;
+    }
+  }
+
+  const activeStatus = abundanceStatuses.find((status) => (status.remainingTurnTriggers ?? 0) > 0 && status.activatesNextTurn !== true);
+  if (activeStatus == null) {
+    return;
+  }
+
+  game.forcedPlayCategories = [...ABUNDANCE_ALLOWED_CATEGORIES];
+  appendServerDebugLog(
+    match,
+    "status",
+    `Seat ${seatNumber} starts an Abondance turn with ${(activeStatus.remainingTurnTriggers ?? 0)} turn(s) remaining`
+  );
+}
+
+function resolveAbundanceTurnEnd(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const abundanceStatuses = seatState.statuses.filter((status) =>
+    status.cardId === "abondance" && status.activatesNextTurn !== true && (status.remainingTurnTriggers ?? 0) > 0
+  );
+
+  for (const status of abundanceStatuses) {
+    const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
+    if (nextRemainingTurnTriggers > 0) {
+      status.remainingTurnTriggers = nextRemainingTurnTriggers;
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${seatNumber}'s Abondance has ${nextRemainingTurnTriggers} affected turn(s) remaining`
+      );
+      continue;
+    }
+
+    seatState.statuses = seatState.statuses.filter((candidate) => candidate.instanceId !== status.instanceId);
+    discardInstances(game, [{ instanceId: status.instanceId, cardId: status.cardId }]);
+    appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s Abondance ends.`);
+    appendServerDebugLog(match, "status", `Seat ${seatNumber}'s Abondance expired at end of turn`);
+  }
+
+  game.forcedPlayCategories = undefined;
 }
 
 function describePlay(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition, request: PlayCardRequest, targetSeatNumbers: number[]): string {
@@ -2505,6 +3024,12 @@ function applyEffect(
             });
           }
         }
+      }
+      break;
+    case "redraw_hand":
+      appendServerDebugLog(match, "effect", `${definition.name} redraws hand for ${targetSeatNumbers.join(", ")}${boxId != null ? ` [box ${boxId}]` : ""}`);
+      for (const targetSeatNumber of targetSeatNumbers) {
+        redrawSeatHand(match, targetSeatNumber, effect.redrawCount, boxId);
       }
       break;
     case "lifesteal":
@@ -2697,6 +3222,27 @@ function applyEffect(
       break;
     case "play_extra_cards":
       actorState.pendingExtraPlays += effect.count;
+      if (definition.id === "masse-double" && effect.allowedCategories !== "any") {
+        game.extraPlayMode = {
+          sourceCardId: definition.id,
+          actorSeatNumber,
+          allowedCategories: [...effect.allowedCategories],
+          requiredActivePlaysRemaining: 1,
+          remainingRestrictedPlays: effect.count,
+          temporaryPowerBonus: 2,
+          temporaryResistanceModifier: 0
+        };
+      } else if (definition.id.startsWith("resistance-diminuee-")) {
+        game.extraPlayMode = {
+          sourceCardId: definition.id,
+          actorSeatNumber,
+          allowedCategories: "any",
+          requiredActivePlaysRemaining: 1,
+          remainingRestrictedPlays: effect.count,
+          temporaryPowerBonus: 0,
+          temporaryResistanceModifier: getResistanceDiminueePenalty(definition.id)
+        };
+      }
       appendServerDebugLog(match, "turn", `Seat ${actorSeatNumber} gained ${effect.count} extra play(s) from ${definition.name}${boxId != null ? ` [box ${boxId}]` : ""}`);
       break;
     case "swap_bodies":
@@ -2861,6 +3407,8 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
     return;
   }
 
+  game.extraPlayMode = undefined;
+
   const currentIndex = ordered.indexOf(previousSeatNumber);
   let nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % ordered.length;
   let safety = 0;
@@ -2899,6 +3447,7 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
     game.turnNumber += 1;
     candidateSeat.pendingExtraPlays = 0;
     candidateSeat.handInspectionTargetSeatNumber = undefined;
+    resolveAbundanceTurnStart(match, candidateSeat.seatNumber);
     if (candidateSeat.attackImmunityTurns > 0) {
       candidateSeat.attackImmunityTurns -= 1;
       if (candidateSeat.attackImmunityTurns === 0) {
@@ -2929,6 +3478,7 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
     }
 
     if (losesTurn) {
+      resolveAbundanceTurnEnd(match, candidateSeat.seatNumber);
       appendDealerMessage(match, `${getPublicSeat(match, candidateSeat.seatNumber).displayName} loses a turn.`);
       appendServerDebugLog(match, "turn", `Seat ${candidateSeat.seatNumber} skipped turn (${candidateSeat.skipTurnsRemaining} skips remaining)`);
       nextIndex = (nextIndex + 1) % ordered.length;
@@ -2948,6 +3498,7 @@ export function passTurnWithoutPlaying(match: StoredMatchState, seatNumber: numb
   }
 
   const seat = getStoredSeat(game, seatNumber);
+  resolveAbundanceTurnEnd(match, seatNumber);
   const handBeforeRefill = seat.hand.length;
   while (seat.hand.length < game.minimumHandSize && seat.alive) {
     drawCards(match, seatNumber, 1);
@@ -3062,6 +3613,8 @@ function buildPublicGameState(match: StoredMatchState, viewerSeatNumber?: number
     pendingObjectChoice: buildPendingObjectChoicePublicState(match),
     pendingHandInspection: buildPendingHandInspectionPublicState(match),
     pendingBoardResetKeep: buildPendingBoardResetKeepPublicState(match, viewerSeatNumber),
+    pendingDeathSearch: buildPendingDeathSearchPublicState(match, viewerSeatNumber),
+    pendingPickpocket: buildPendingPickpocketPublicState(match, viewerSeatNumber),
     pendingSacrificeChoice: buildPendingSacrificeChoicePublicState(match),
     pendingCurseRelease: buildPendingCurseReleasePublicState(match),
     forcedFollowUp: game.forcedFollowUp == null
@@ -3195,6 +3748,109 @@ function buildPendingBoardResetKeepPublicState(
   };
 }
 
+function getPendingDeathSearchSelectedCorpse(
+  pendingDeathSearch: NonNullable<StoredGameState["pendingDeathSearch"]>
+): { seatNumber: number; cards: StoredCardInstance[] } | undefined {
+  if (pendingDeathSearch.selectedCorpseSeatNumber != null) {
+    return pendingDeathSearch.corpses.find((corpse) => corpse.seatNumber === pendingDeathSearch.selectedCorpseSeatNumber);
+  }
+
+  return pendingDeathSearch.corpses.length === 1 ? pendingDeathSearch.corpses[0] : undefined;
+}
+
+function buildPendingDeathSearchPool(
+  match: StoredMatchState,
+  pendingDeathSearch: NonNullable<StoredGameState["pendingDeathSearch"]>
+): { keepCardCount: number; cardOptions: NonNullable<GameState["pendingDeathSearch"]>["cardOptions"] } {
+  const game = match.internalGame!;
+  const chooserState = getStoredSeat(game, pendingDeathSearch.chooserSeatNumber);
+  const chooserSeat = getPublicSeat(match, pendingDeathSearch.chooserSeatNumber);
+  const selectedCorpse = getPendingDeathSearchSelectedCorpse(pendingDeathSearch);
+  if (selectedCorpse == null) {
+    return {
+      keepCardCount: 0,
+      cardOptions: []
+    };
+  }
+
+  const corpseSeat = getPublicSeat(match, selectedCorpse.seatNumber);
+  const cardOptions = [
+    ...chooserState.hand
+      .filter((card) => card.instanceId !== pendingDeathSearch.sourceCard.instanceId)
+      .map((card) => ({
+        ...buildCardView(card, requireDefinition(card.cardId), "hand", false),
+        source: "self" as const,
+        ownerSeatNumber: chooserSeat.seatNumber,
+        ownerDisplayName: chooserSeat.displayName
+      })),
+    ...selectedCorpse.cards.map((card) => ({
+      ...buildCardView(card, requireDefinition(card.cardId), "discard", false),
+      source: "corpse" as const,
+      ownerSeatNumber: corpseSeat.seatNumber,
+      ownerDisplayName: corpseSeat.displayName
+    }))
+  ];
+
+  return {
+    keepCardCount: Math.min(5, cardOptions.length),
+    cardOptions
+  };
+}
+
+function buildPendingDeathSearchPublicState(
+  match: StoredMatchState,
+  viewerSeatNumber?: number
+): GameState["pendingDeathSearch"] {
+  const game = match.internalGame;
+  const pendingDeathSearch = game?.pendingDeathSearch;
+  if (game == null || pendingDeathSearch == null) {
+    return undefined;
+  }
+
+  const isLocalChooser = viewerSeatNumber === pendingDeathSearch.chooserSeatNumber;
+  const corpseOptions = pendingDeathSearch.corpses.map((corpse) => ({
+    seatNumber: corpse.seatNumber,
+    displayName: getPublicSeat(match, corpse.seatNumber).displayName,
+    cardCount: corpse.cards.length
+  }));
+  const pool = isLocalChooser
+    ? buildPendingDeathSearchPool(match, pendingDeathSearch)
+    : { keepCardCount: 0, cardOptions: [] };
+
+  return {
+    chooserSeatNumber: pendingDeathSearch.chooserSeatNumber,
+    cardName: requireDefinition(pendingDeathSearch.sourceCard.cardId).name,
+    keepCardCount: pool.keepCardCount,
+    corpseOptions,
+    selectedCorpseSeatNumber: getPendingDeathSearchSelectedCorpse(pendingDeathSearch)?.seatNumber,
+    cardOptions: pool.cardOptions
+  };
+}
+
+function buildPendingPickpocketPublicState(
+  match: StoredMatchState,
+  viewerSeatNumber?: number
+): GameState["pendingPickpocket"] {
+  const game = match.internalGame;
+  const pendingPickpocket = game?.pendingPickpocket;
+  if (game == null || pendingPickpocket == null) {
+    return undefined;
+  }
+
+  const isLocalChooser = viewerSeatNumber === pendingPickpocket.chooserSeatNumber;
+  const pool = isLocalChooser
+    ? buildPendingPickpocketPool(match, pendingPickpocket)
+    : { takeCardCount: pendingPickpocket.takeCardCount, cardOptions: [] };
+
+  return {
+    chooserSeatNumber: pendingPickpocket.chooserSeatNumber,
+    targetSeatNumber: pendingPickpocket.targetSeatNumber,
+    cardName: requireDefinition(pendingPickpocket.sourceCard.cardId).name,
+    takeCardCount: pool.takeCardCount,
+    cardOptions: pool.cardOptions
+  };
+}
+
 function buildPendingSacrificeChoicePublicState(match: StoredMatchState): GameState["pendingSacrificeChoice"] {
   const game = match.internalGame;
   const pendingSacrificeChoice = game?.pendingSacrificeChoice;
@@ -3272,6 +3928,18 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
     return;
   }
 
+  if (game.pendingDeathSearch != null) {
+    game.pendingDeathSearch.continuationActorSeatNumber = actorSeatNumber;
+    game.pendingDeathSearch.continuationBoxId = boxId;
+    appendServerDebugLog(
+      match,
+      "death_search",
+      `Turn resolution paused for ${requireDefinition(game.pendingDeathSearch.sourceCard.cardId).name}; seat ${game.pendingDeathSearch.chooserSeatNumber} must choose cards to keep`
+    );
+    refreshSeatSummaries(match);
+    return;
+  }
+
   checkForWinner(match);
   if (match.status === "finished") {
     refreshSeatSummaries(match);
@@ -3284,6 +3952,16 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
       match,
       "forced_follow_up",
       `Turn resolution paused for ${requireDefinition(game.forcedFollowUp.sourceCardId).name}; seat ${game.forcedFollowUp.actorSeatNumber} must play AD or pass`
+    );
+    refreshSeatSummaries(match);
+    return;
+  }
+
+  if (game.pendingPickpocket != null) {
+    appendServerDebugLog(
+      match,
+      "pickpocket",
+      `Turn resolution paused for ${requireDefinition(game.pendingPickpocket.sourceCard.cardId).name}; seat ${game.pendingPickpocket.chooserSeatNumber} must choose cards to steal`
     );
     refreshSeatSummaries(match);
     return;
@@ -3329,10 +4007,21 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
     return;
   }
 
+  const pendingRepeatedPlay = game.pendingRepeatedPlay;
+  if (pendingRepeatedPlay != null && pendingRepeatedPlay.actorSeatNumber === actorSeatNumber) {
+    game.pendingRepeatedPlay = undefined;
+    appendServerDebugLog(match, "repeat", `Seat ${actorSeatNumber} begins repeated use of ${requireDefinition(pendingRepeatedPlay.cardId).name}`);
+    beginPendingRepeatedPlay(match, pendingRepeatedPlay);
+    return;
+  }
+
+  autoSkipOptionalExtraPlayIfUnavailable(match, actorSeatNumber);
+
   if (actorState.pendingExtraPlays > 0) {
     actorState.pendingExtraPlays -= 1;
     appendServerDebugLog(match, "box", `Closed box ${boxId ?? "n/a"} for seat ${actorSeatNumber}; extra play remains (${actorState.pendingExtraPlays})`);
   } else {
+    resolveAbundanceTurnEnd(match, actorSeatNumber);
     const handBeforeRefill = actorState.hand.length;
     while (actorState.hand.length < game.minimumHandSize && actorState.alive) {
       drawCards(match, actorSeatNumber, 1);
@@ -3343,6 +4032,13 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
       `Closed box ${boxId ?? "n/a"} for seat ${actorSeatNumber}; refill ${handBeforeRefill} -> ${actorState.hand.length}`
     );
     startNextTurn(match, actorSeatNumber);
+  }
+
+  if (
+    game.extraPlayMode?.actorSeatNumber === actorSeatNumber
+    && game.extraPlayMode.remainingRestrictedPlays === 0
+  ) {
+    game.extraPlayMode = undefined;
   }
 
   refreshSeatSummaries(match);
@@ -3537,7 +4233,8 @@ function beginPendingAction(
   removedCard: StoredCardInstance,
   definition: BaseCardDefinition,
   request: PlayCardRequest,
-  targetSeatNumbers: number[]
+  targetSeatNumbers: number[],
+  skipStoredCardResolution = false
 ): void {
   const game = match.internalGame;
   if (game == null) {
@@ -3575,8 +4272,11 @@ function beginPendingAction(
     targetObjectInstanceId: request.targetObjectInstanceId,
     storedCard: removedCard,
     summary,
-    responseMode: determineResponseMode(definition),
+    responseMode: isSelfTargetedSinglePlayerSpell(definition, actorSeatNumber, targetSeatNumbers)
+      ? "collective"
+      : determineResponseMode(definition),
     sourceZone: "hand",
+    skipStoredCardResolution,
     sharedSacrificeAmount: undefined,
     responders: responderSeatNumbers.map((seatNumber) => ({
       seatNumber,
@@ -3635,6 +4335,7 @@ function resolvePendingActionContinuation(
       "turn",
       `Seat ${continuation.seatNumber} skipped the rest of the turn after ${requireDefinition(pendingAction.storedCard.cardId).name}`
     );
+    resolveAbundanceTurnEnd(match, continuation.seatNumber);
     startNextTurn(match, continuation.seatNumber);
   }
 
@@ -3868,7 +4569,45 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
     }
   }
 
+  if (definition.id === "pickpocket-demmerlaus") {
+    const takeCardCount = resisted ? 1 : 2;
+    const pendingPickpocket = {
+      boxId: pendingAction.boxId,
+      chooserSeatNumber: pendingAction.actorSeatNumber,
+      targetSeatNumber,
+      sourceCard: pendingAction.storedCard,
+      takeCardCount
+    } satisfies NonNullable<StoredGameState["pendingPickpocket"]>;
+    const pool = buildPendingPickpocketPool(match, pendingPickpocket);
+    if (pool.takeCardCount > 0) {
+      if (queuePickpocketChoice(
+        match,
+        pendingAction.actorSeatNumber,
+        targetSeatNumber,
+        pendingAction.storedCard,
+        takeCardCount,
+        pendingAction.boxId
+      )) {
+        return;
+      }
+
+      const selectedCardInstanceIds = pool.cardOptions
+        .slice(0, pool.takeCardCount)
+        .map((card) => card.instanceId);
+      resolvePickpocketSelection(match, pendingPickpocket, selectedCardInstanceIds);
+      return;
+    }
+
+    appendServerDebugLog(
+      match,
+      "pickpocket",
+      `${definition.name} found no cards to steal from seat ${targetSeatNumber}${pendingAction.boxId != null ? ` [box ${pendingAction.boxId}]` : ""}`
+    );
+    return;
+  }
+
   if (!resisted || definition.defenseBand?.resistance.color === "yellow") {
+
     if (!resisted && SUCCESSFUL_HIT_KILL_ROLL_BY_CARD_ID[definition.id] != null) {
       resolveSuccessfulHitKillRoll(match, pendingAction.actorSeatNumber, definition, [targetSeatNumber], pendingAction.boxId);
     }
@@ -3994,6 +4733,16 @@ function finalizePendingAction(match: StoredMatchState): void {
   const definition = requireDefinition(pendingAction.storedCard.cardId);
   appendServerDebugLog(match, "pending_action", `Finalize ${definition.name} from seat ${pendingAction.actorSeatNumber} [box ${pendingAction.boxId}]`);
 
+  if (game.pendingPickpocket != null) {
+    appendServerDebugLog(
+      match,
+      "pickpocket",
+      `Finalize paused for ${definition.name}; seat ${game.pendingPickpocket.chooserSeatNumber} must choose stolen cards`
+    );
+    refreshSeatSummaries(match);
+    return;
+  }
+
   if (pendingAction.fromMirror === true) {
     // Mirror chain link resolved — resume the paused outer action if there is one
     const pausedAction = game.pausedSequentialAction;
@@ -4086,7 +4835,7 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
 
     resolvePerTargetResponder(match, currentResponder);
-    if (game.pendingObjectChoice != null) {
+    if (game.pendingObjectChoice != null || game.pendingPickpocket != null) {
       refreshSeatSummaries(match);
       return;
     }
@@ -4533,7 +5282,9 @@ function resolvePendingAction(match: StoredMatchState): void {
     (seatNumber) => !canceledTargets.has(seatNumber) && !resistedTargets.has(seatNumber) && !mirroredTargets.has(seatNumber)
   );
 
-  if (definition.rules.staysInPlay) {
+  if (pendingAction.skipStoredCardResolution === true) {
+    appendServerDebugLog(match, "pending_action", `Skipped stored-card resolution for ${definition.name} after repeated use`);
+  } else if (definition.rules.staysInPlay) {
     if (pendingAction.sourceZone !== "object") {
       movePersistentCard(
         match,
@@ -4647,7 +5398,7 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
 
   if (pendingAction.responseMode === "per_target") {
     resolvePerTargetResponder(match, responder);
-    if (game.pendingObjectChoice != null) {
+    if (game.pendingObjectChoice != null || game.pendingPickpocket != null) {
       refreshSeatSummaries(match);
       return;
     }
@@ -4830,7 +5581,9 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
   const pendingAction = game.pendingAction;
   if (pendingAction != null) {
     discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
-    if (definition.rules.staysInPlay) {
+    if (pendingAction.skipStoredCardResolution === true) {
+      appendServerDebugLog(match, "pending_action", `Skipped stored-card resolution for ${definition.name} after deferred board-reset choice`);
+    } else if (definition.rules.staysInPlay) {
       if (pendingAction.sourceZone !== "object") {
         movePersistentCard(
           match,
@@ -4867,6 +5620,135 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
   }
 
   finalizeResolvedAction(match, chooserSeat.seatNumber, pendingBoardResetKeep.boxId);
+}
+
+export function resolvePendingDeathSearch(
+  match: StoredMatchState,
+  userId: string,
+  request: { corpseSeatNumber?: number; keepCardInstanceIds?: string[] }
+): void {
+  const game = match.internalGame;
+  const pendingDeathSearch = game?.pendingDeathSearch;
+  if (game == null || pendingDeathSearch == null) {
+    throw new Error("No pending death search");
+  }
+
+  const chooserSeat = match.seats.find((seat) => seat.userId === userId);
+  if (chooserSeat == null || chooserSeat.seatNumber !== pendingDeathSearch.chooserSeatNumber) {
+    throw new Error("This seat cannot resolve the death search");
+  }
+
+  if (request.corpseSeatNumber != null) {
+    const corpseExists = pendingDeathSearch.corpses.some((corpse) => corpse.seatNumber === request.corpseSeatNumber);
+    if (!corpseExists) {
+      throw new Error("Selected corpse is no longer available");
+    }
+
+    pendingDeathSearch.selectedCorpseSeatNumber = request.corpseSeatNumber;
+  }
+
+  const selectedCorpse = getPendingDeathSearchSelectedCorpse(pendingDeathSearch);
+  if (selectedCorpse == null) {
+    throw new Error("Choose which corpse to search first");
+  }
+
+  const chooserState = getStoredSeat(game, chooserSeat.seatNumber);
+  if (!chooserState.hand.some((card) => card.instanceId === pendingDeathSearch.sourceCard.instanceId)) {
+    throw new Error(`${requireDefinition(pendingDeathSearch.sourceCard.cardId).name} is no longer in hand`);
+  }
+
+  const pool = buildPendingDeathSearchPool(match, pendingDeathSearch);
+  if (request.keepCardInstanceIds == null) {
+    if (pool.keepCardCount === pool.cardOptions.length) {
+      request.keepCardInstanceIds = pool.cardOptions.map((card) => card.instanceId);
+    } else {
+      refreshSeatSummaries(match);
+      return;
+    }
+  }
+
+  const requestedCardIds = [...new Set(request.keepCardInstanceIds)];
+  if (requestedCardIds.length !== pool.keepCardCount) {
+    throw new Error(`Choose exactly ${pool.keepCardCount} cards to keep`);
+  }
+
+  const availableCardIdSet = new Set(pool.cardOptions.map((card) => card.instanceId));
+  if (requestedCardIds.some((cardInstanceId) => !availableCardIdSet.has(cardInstanceId))) {
+    throw new Error("One or more selected cards are no longer available");
+  }
+
+  const keptCardIdSet = new Set(requestedCardIds);
+  const keptCards = pool.cardOptions
+    .filter((card) => keptCardIdSet.has(card.instanceId))
+    .map((card) => ({ instanceId: card.instanceId, cardId: card.cardId }));
+  const discardedCards = pool.cardOptions
+    .filter((card) => !keptCardIdSet.has(card.instanceId))
+    .map((card) => ({ instanceId: card.instanceId, cardId: card.cardId }));
+  const sourceCard = moveCardFromHand(chooserState.hand, pendingDeathSearch.sourceCard.instanceId);
+  chooserState.hand = keptCards;
+  discardInstances(game, [sourceCard, ...discardedCards]);
+
+  const corpseSeat = getPublicSeat(match, selectedCorpse.seatNumber);
+  appendDealerMessage(
+    match,
+    `${chooserSeat.displayName} uses ${requireDefinition(sourceCard.cardId).name} to search ${corpseSeat.displayName} and keeps ${keptCards.length} cards.`
+  );
+  appendServerDebugLog(
+    match,
+    "death_search",
+    `Seat ${chooserSeat.seatNumber} resolved ${requireDefinition(sourceCard.cardId).name} on seat ${corpseSeat.seatNumber}; kept ${keptCards.length}, discarded ${discardedCards.length + 1}`
+  );
+
+  const continuationActorSeatNumber = pendingDeathSearch.continuationActorSeatNumber ?? chooserSeat.seatNumber;
+  const continuationBoxId = pendingDeathSearch.continuationBoxId;
+  game.pendingDeathSearch = undefined;
+  finalizeResolvedAction(match, continuationActorSeatNumber, continuationBoxId);
+}
+
+export function resolvePendingPickpocket(
+  match: StoredMatchState,
+  userId: string,
+  request: { takeCardInstanceIds: string[] }
+): void {
+  const game = match.internalGame;
+  const pendingPickpocket = game?.pendingPickpocket;
+  if (game == null || pendingPickpocket == null) {
+    throw new Error("No pending pickpocket");
+  }
+
+  const chooserSeat = match.seats.find((seat) => seat.userId === userId);
+  if (chooserSeat == null || chooserSeat.seatNumber !== pendingPickpocket.chooserSeatNumber) {
+    throw new Error("This seat cannot resolve the pickpocket");
+  }
+
+  resolvePickpocketSelection(match, pendingPickpocket, request.takeCardInstanceIds);
+
+  const pendingAction = game.pendingAction;
+  const definition = requireDefinition(pendingPickpocket.sourceCard.cardId);
+  game.pendingPickpocket = undefined;
+  if (pendingAction != null) {
+    discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
+    discardInstances(game, [pendingAction.storedCard]);
+    game.lastPlayedCard = {
+      actorSeatNumber: pendingAction.actorSeatNumber,
+      targetSeatNumbers: [...pendingAction.targetSeatNumbers],
+      targetObjectInstanceId: pendingAction.targetObjectInstanceId,
+      card: buildCardView(
+        pendingAction.storedCard,
+        definition,
+        pendingAction.sourceZone === "object" ? "object" : "discard",
+        false
+      ),
+      mode: "active",
+      summary: pendingAction.summary,
+      resolvedAt: new Date().toISOString()
+    };
+    game.pendingAction = undefined;
+    finalizeResolvedAction(match, pendingAction.actorSeatNumber, pendingAction.boxId);
+    return;
+  }
+
+  finalizeResolvedAction(match, chooserSeat.seatNumber, pendingPickpocket.boxId);
 }
 
 export function resolvePendingSacrificeChoice(match: StoredMatchState, userId: string, amount: number): void {
@@ -4954,6 +5836,279 @@ export function resolvePendingCurseRelease(match: StoredMatchState, userId: stri
   finalizeResolvedAction(match, seat.seatNumber);
 }
 
+function resolveRemovedCardPlay(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  removedCard: StoredCardInstance,
+  definition: BaseCardDefinition,
+  request: PlayCardRequest,
+  forcedFollowUp?: StoredForcedFollowUpState,
+  options?: {
+    skipStoredCardResolution?: boolean;
+    fizzleIfInvalid?: boolean;
+    summaryOverride?: string;
+  }
+): void {
+  const game = match.internalGame;
+  if (game == null) {
+    throw new Error("The match has not started");
+  }
+
+  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  const targetSeatNumbers = request.mode === "inactive"
+    ? []
+    : forcedFollowUp != null
+      ? [forcedFollowUp.targetSeatNumber]
+      : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets);
+  const effectiveTargetSeatNumbers =
+    request.mode === "active" && definition.rules.targets === "all_opponents" && isAttackDefinition(definition)
+      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
+      : targetSeatNumbers;
+
+  let invalidReason: string | undefined;
+  if (
+    forcedFollowUp != null
+    && request.targetSeatNumber != null
+    && request.targetSeatNumber !== forcedFollowUp.targetSeatNumber
+  ) {
+    invalidReason = "Colère du magicien follow-up must target the paralyzed opponent";
+  } else if (
+    request.mode === "active"
+    && definition.rules.targets === "single_opponent"
+    && targetSeatNumbers[0] != null
+    && !getStoredSeat(game, targetSeatNumbers[0]).alive
+  ) {
+    invalidReason = "Original target is no longer alive";
+  } else if (
+    request.mode === "active"
+    && definition.rules.targets === "single_opponent"
+    && targetSeatNumbers[0] != null
+    && targetMustHaveObjectOnTable(definition)
+    && getStoredSeat(game, targetSeatNumbers[0]).objects.length === 0
+  ) {
+    invalidReason = "The target opponent must have at least one object on the table";
+  } else if (
+    request.mode === "active"
+    && definition.rules.targets !== "all_opponents"
+    && targetSeatNumbers.some((seatNumber) => isProtectedFromAttack(match, seatNumber, definition))
+  ) {
+    invalidReason = "That target is protected and cannot be attacked right now";
+  } else if (
+    request.mode === "active"
+    && definition.rules.targets === "all_opponents"
+    && isAttackDefinition(definition)
+    && effectiveTargetSeatNumbers.length === 0
+  ) {
+    invalidReason = "No valid opponent target";
+  } else if (
+    request.mode === "active"
+    && definition.category.code === "AM"
+    && request.targetObjectInstanceId == null
+    && forcedFollowUp == null
+    && effectiveTargetSeatNumbers.length === 0
+  ) {
+    invalidReason = "No valid opponent target";
+  }
+
+  if (invalidReason != null) {
+    if (options?.fizzleIfInvalid) {
+      appendDealerMessage(match, `${actorSeat.displayName}'s repeated ${definition.name} fizzles.`);
+      appendServerDebugLog(match, "repeat", `${definition.name} fizzled for seat ${actorSeatNumber}: ${invalidReason}`);
+      finalizeResolvedAction(match, forcedFollowUp?.turnOwnerSeatNumber ?? actorSeatNumber);
+      return;
+    }
+
+    throw new Error(invalidReason);
+  }
+
+  const summary = options?.summaryOverride ?? describePlay(match, actorSeatNumber, definition, request, effectiveTargetSeatNumbers);
+  appendServerDebugLog(
+    match,
+    "play_card",
+    `Seat ${actorSeatNumber} resolves ${definition.name} (${request.mode})${request.targetSeatNumber != null ? ` -> seat ${request.targetSeatNumber}` : ""}${request.targetObjectInstanceId != null ? ` -> object ${request.targetObjectInstanceId}` : ""}${options?.skipStoredCardResolution === true ? " [repeat]" : ""}`
+  );
+
+  if (request.mode === "active" && cardConsumesTurnAsNoOp(definition)) {
+    if (options?.skipStoredCardResolution !== true) {
+      game.discardPile.push(removedCard);
+    }
+    appendDealerMessage(match, summary);
+    appendDealerMessage(match, `[TEMP] ${definition.name} effect is not implemented yet.`);
+    appendServerDebugLog(
+      match,
+      "play_card",
+      `${definition.name} consumed the turn as a no-op because its effect is not implemented yet`
+    );
+    game.lastPlayedCard = {
+      actorSeatNumber,
+      targetSeatNumbers: effectiveTargetSeatNumbers,
+      targetObjectInstanceId: request.targetObjectInstanceId,
+      card: buildCardView(removedCard, definition, "discard", false),
+      mode: request.mode,
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    finalizeResolvedAction(match, actorSeatNumber);
+    return;
+  }
+
+  if (request.mode === "inactive") {
+    if (options?.skipStoredCardResolution !== true) {
+      game.discardPile.push(removedCard);
+    }
+    appendDealerMessage(match, summary);
+    game.lastPlayedCard = {
+      actorSeatNumber,
+      targetSeatNumbers: effectiveTargetSeatNumbers,
+      targetObjectInstanceId: request.targetObjectInstanceId,
+      card: buildCardView(removedCard, definition, "discard", false),
+      mode: request.mode,
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    finalizeResolvedAction(match, actorSeatNumber);
+    return;
+  }
+
+  if (definition.id === MASS_ATTACK_STAFF_CARD_ID) {
+    if (options?.skipStoredCardResolution !== true) {
+      movePersistentCard(match, actorSeatNumber, effectiveTargetSeatNumbers, removedCard, definition);
+    }
+    appendDealerMessage(match, summary);
+    game.lastPlayedCard = {
+      actorSeatNumber,
+      targetSeatNumbers: effectiveTargetSeatNumbers,
+      targetObjectInstanceId: request.targetObjectInstanceId,
+      card: buildCardView(removedCard, definition, "object", false),
+      mode: request.mode,
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    finalizeResolvedAction(match, actorSeatNumber);
+    return;
+  }
+
+  const responderSeatNumbers = getResponderSeatNumbers(game, actorSeatNumber, definition, effectiveTargetSeatNumbers);
+  if (
+    forcedFollowUp == null &&
+    (definition.rules.requiresDefenseWindow || definition.rules.requiresResistanceCheck || definition.defenseBand?.annulationAllowed === true) &&
+    responderSeatNumbers.length > 0 &&
+    definition.defenseBand != null
+  ) {
+    beginPendingAction(
+      match,
+      actorSeatNumber,
+      removedCard,
+      definition,
+      request,
+      effectiveTargetSeatNumbers,
+      options?.skipStoredCardResolution === true
+    );
+    refreshSeatSummaries(match);
+    return;
+  }
+
+  const boxId = randomUUID();
+  appendServerDebugLog(match, "box", `Opened box ${boxId} for seat ${actorSeatNumber} using ${definition.name}`);
+  pushGameEvent(match, {
+    id: randomUUID(),
+    boxId,
+    type: "action_start",
+    createdAt: new Date().toISOString(),
+    actorSeatNumber,
+    targetSeatNumbers: effectiveTargetSeatNumbers,
+    targetObjectInstanceId: request.targetObjectInstanceId,
+    card: buildCardView(removedCard, definition, "discard", false),
+    summary
+  });
+
+  const damageMultiplier = forcedFollowUp?.doubleHpLossDamage === true ? 2 : 1;
+  const finalizeActorSeatNumber = forcedFollowUp?.turnOwnerSeatNumber;
+  const wasForcedFollowUp = forcedFollowUp != null;
+  for (const effect of definition.rules.effects) {
+    const pausedForObjectChoice = applyEffect(
+      match,
+      actorSeatNumber,
+      removedCard,
+      definition,
+      effect,
+      effectiveTargetSeatNumbers,
+      request.targetObjectInstanceId,
+      boxId,
+      damageMultiplier,
+      finalizeActorSeatNumber,
+      "hand"
+    );
+    if (pausedForObjectChoice) {
+      if (options?.skipStoredCardResolution !== true) {
+        if (definition.rules.staysInPlay) {
+          movePersistentCard(match, actorSeatNumber, effectiveTargetSeatNumbers, removedCard, definition);
+        } else {
+          game.discardPile.push(removedCard);
+        }
+      }
+
+      appendDealerMessage(match, summary);
+      game.lastPlayedCard = {
+        actorSeatNumber,
+        targetSeatNumbers: effectiveTargetSeatNumbers,
+        targetObjectInstanceId: request.targetObjectInstanceId,
+        card: buildCardView(removedCard, definition, "discard", false),
+        mode: request.mode,
+        summary,
+        resolvedAt: new Date().toISOString()
+      };
+      if (wasForcedFollowUp) {
+        game.forcedFollowUp = undefined;
+      }
+      refreshSeatSummaries(match);
+      return;
+    }
+  }
+
+  if (options?.skipStoredCardResolution !== true) {
+    if (definition.rules.staysInPlay) {
+      movePersistentCard(match, actorSeatNumber, effectiveTargetSeatNumbers, removedCard, definition);
+    } else {
+      game.discardPile.push(removedCard);
+    }
+  }
+
+  appendDealerMessage(match, summary);
+  game.lastPlayedCard = {
+    actorSeatNumber,
+    targetSeatNumbers: effectiveTargetSeatNumbers,
+    targetObjectInstanceId: request.targetObjectInstanceId,
+    card: buildCardView(removedCard, definition, "discard", false),
+    mode: request.mode,
+    summary,
+    resolvedAt: new Date().toISOString()
+  };
+  if (wasForcedFollowUp) {
+    game.forcedFollowUp = undefined;
+    appendServerDebugLog(match, "forced_follow_up", `Seat ${actorSeatNumber} completed Colère du magicien follow-up with ${definition.name}`);
+  }
+  finalizeResolvedAction(match, finalizeActorSeatNumber ?? actorSeatNumber, boxId);
+}
+
+function beginPendingRepeatedPlay(match: StoredMatchState, repeatedPlay: NonNullable<StoredGameState["pendingRepeatedPlay"]>): void {
+  const definition = requireDefinition(repeatedPlay.cardId);
+  const actorName = getPublicSeat(match, repeatedPlay.actorSeatNumber).displayName;
+  resolveRemovedCardPlay(
+    match,
+    repeatedPlay.actorSeatNumber,
+    { instanceId: randomUUID(), cardId: repeatedPlay.cardId },
+    definition,
+    repeatedPlay.request,
+    repeatedPlay.forcedFollowUp,
+    {
+      skipStoredCardResolution: true,
+      fizzleIfInvalid: true,
+      summaryOverride: `${actorName}'s Abondance repeats ${definition.name}.`
+    }
+  );
+}
+
 export function passForcedFollowUp(match: StoredMatchState, userId: string): void {
   const game = match.internalGame;
   const forcedFollowUp = game?.forcedFollowUp;
@@ -4997,6 +6152,14 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     throw new Error("Resolve the current action first");
   }
 
+  if (game.pendingDeathSearch != null) {
+    throw new Error("Resolve the current action first");
+  }
+
+  if (game.pendingPickpocket != null) {
+    throw new Error("Resolve the current action first");
+  }
+
   if (game.pendingSacrificeChoice != null) {
     throw new Error("Resolve the current action first");
   }
@@ -5028,6 +6191,11 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
   const forcedFollowUp = game.forcedFollowUp?.actorSeatNumber === actorSeat.seatNumber
     ? game.forcedFollowUp
     : undefined;
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeat.seatNumber);
+  if (extraPlayMode != null && request.mode === "inactive" && extraPlayMode.requiredActivePlaysRemaining > 0) {
+    const requiredCategories = extraPlayMode.allowedCategories === "any" ? "allowed" : extraPlayMode.allowedCategories.join("/");
+    throw new Error(`Play a ${requiredCategories} card for ${requireDefinition(extraPlayMode.sourceCardId).name} first`);
+  }
   if (forcedFollowUp != null && request.mode === "inactive") {
     throw new Error("Play an AD card for Colère du magicien or pass the forced follow-up");
   }
@@ -5037,6 +6205,9 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
       ? getSeatMassAttackStaff(actorState, request.targetObjectInstanceId)
       : undefined;
   if (targetOwnedMassAttackStaff != null) {
+    if (extraPlayMode?.sourceCardId === "masse-double") {
+      throw new Error(`${requireDefinition(extraPlayMode.sourceCardId).name} requires an AM attack, not loading the staff`);
+    }
     if (definition.category.code !== "AM") {
       throw new Error("Only AM cards can be loaded onto BÃ¢ton dâ€™attaque massive");
     }
@@ -5068,192 +6239,43 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     throw new Error(playState.reason ?? "That card cannot be played right now");
   }
 
-  const targetSeatNumbers = request.mode === "inactive"
-    ? []
-    : forcedFollowUp != null
-      ? [forcedFollowUp.targetSeatNumber]
-      : getTargetSeatNumbers(game, actorSeat.seatNumber, request, definition.rules.targets);
-  const effectiveTargetSeatNumbers =
-    request.mode === "active" && definition.rules.targets === "all_opponents" && isAttackDefinition(definition)
-      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
-      : targetSeatNumbers;
-  if (
-    forcedFollowUp != null &&
-    request.targetSeatNumber != null &&
-    request.targetSeatNumber !== forcedFollowUp.targetSeatNumber
-  ) {
-    throw new Error("Colère du magicien follow-up must target the paralyzed opponent");
-  }
-
-  if (
-    request.mode === "active"
-    && definition.rules.targets !== "all_opponents"
-    && effectiveTargetSeatNumbers.some((seatNumber) => isProtectedFromAttack(match, seatNumber, definition))
-  ) {
-    throw new Error("That target is protected and cannot be attacked right now");
-  }
-
-  if (
-    request.mode === "active"
-    && definition.category.code === "AM"
-    && request.targetObjectInstanceId == null
-    && forcedFollowUp == null
-    && effectiveTargetSeatNumbers.length === 0
-  ) {
-    throw new Error("No valid opponent target");
-  }
-
   const removedCard = moveCardFromHand(actorState.hand, handCard.instanceId);
-  const summary = describePlay(match, actorSeat.seatNumber, definition, request, effectiveTargetSeatNumbers);
-  appendServerDebugLog(
-    match,
-    "play_card",
-    `Seat ${actorSeat.seatNumber} plays ${definition.name} (${request.mode})${request.targetSeatNumber != null ? ` -> seat ${request.targetSeatNumber}` : ""}${request.targetObjectInstanceId != null ? ` -> object ${request.targetObjectInstanceId}` : ""}`
-  );
-
-  if (request.mode === "active" && cardConsumesTurnAsNoOp(definition)) {
-    game.discardPile.push(removedCard);
-    appendDealerMessage(match, summary);
-    appendDealerMessage(match, `[TEMP] ${definition.name} effect is not implemented yet.`);
-    appendServerDebugLog(
-      match,
-      "play_card",
-      `${definition.name} consumed the turn as a no-op because its effect is not implemented yet`
-    );
-    game.lastPlayedCard = {
-      actorSeatNumber: actorSeat.seatNumber,
-      targetSeatNumbers: effectiveTargetSeatNumbers,
-      targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
-      mode: request.mode,
-      summary,
-      resolvedAt: new Date().toISOString()
-    };
-    finalizeResolvedAction(match, actorSeat.seatNumber);
-    return;
-  }
-
-  if (request.mode === "inactive") {
-    game.discardPile.push(removedCard);
-    appendDealerMessage(match, summary);
-    game.lastPlayedCard = {
-      actorSeatNumber: actorSeat.seatNumber,
-      targetSeatNumbers: effectiveTargetSeatNumbers,
-      targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
-      mode: request.mode,
-      summary,
-      resolvedAt: new Date().toISOString()
-    };
-    finalizeResolvedAction(match, actorSeat.seatNumber);
-    return;
-  }
-
-  if (definition.id === MASS_ATTACK_STAFF_CARD_ID) {
-    movePersistentCard(match, actorSeat.seatNumber, effectiveTargetSeatNumbers, removedCard, definition);
-    appendDealerMessage(match, summary);
-    game.lastPlayedCard = {
-      actorSeatNumber: actorSeat.seatNumber,
-      targetSeatNumbers: effectiveTargetSeatNumbers,
-      targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "object", false),
-      mode: request.mode,
-      summary,
-      resolvedAt: new Date().toISOString()
-    };
-    finalizeResolvedAction(match, actorSeat.seatNumber);
-    return;
-  }
-
-  const responderSeatNumbers = getResponderSeatNumbers(game, actorSeat.seatNumber, definition, effectiveTargetSeatNumbers);
-  if (
-    forcedFollowUp == null &&
-    (definition.rules.requiresDefenseWindow || definition.rules.requiresResistanceCheck || definition.defenseBand?.annulationAllowed === true) &&
-    responderSeatNumbers.length > 0 &&
-    definition.defenseBand != null
-  ) {
-    beginPendingAction(match, actorSeat.seatNumber, removedCard, definition, request, effectiveTargetSeatNumbers);
-    refreshSeatSummaries(match);
-    return;
-  }
-
-  const boxId = randomUUID();
-  appendServerDebugLog(match, "box", `Opened box ${boxId} for seat ${actorSeat.seatNumber} using ${definition.name}`);
-  pushGameEvent(match, {
-    id: randomUUID(),
-    boxId,
-    type: "action_start",
-    createdAt: new Date().toISOString(),
-    actorSeatNumber: actorSeat.seatNumber,
-    targetSeatNumbers: effectiveTargetSeatNumbers,
-    targetObjectInstanceId: request.targetObjectInstanceId,
-    card: buildCardView(removedCard, definition, "discard", false),
-    summary
-  });
-
-  const damageMultiplier = forcedFollowUp?.doubleHpLossDamage === true ? 2 : 1;
-  const finalizeActorSeatNumber = forcedFollowUp?.turnOwnerSeatNumber;
-  const wasForcedFollowUp = forcedFollowUp != null;
-  for (const effect of definition.rules.effects) {
-    const pausedForObjectChoice = applyEffect(
-      match,
-      actorSeat.seatNumber,
-      removedCard,
-      definition,
-      effect,
-      effectiveTargetSeatNumbers,
-      request.targetObjectInstanceId,
-      boxId,
-      damageMultiplier,
-      finalizeActorSeatNumber,
-      "hand"
-    );
-    if (pausedForObjectChoice) {
-      if (definition.rules.staysInPlay) {
-        movePersistentCard(match, actorSeat.seatNumber, effectiveTargetSeatNumbers, removedCard, definition);
-      } else {
-        game.discardPile.push(removedCard);
+  if (extraPlayMode != null) {
+    if (request.mode === "inactive") {
+      actorState.pendingExtraPlays = 0;
+      game.extraPlayMode = undefined;
+      appendServerDebugLog(
+        match,
+        "turn",
+        `Seat ${actorSeat.seatNumber} skipped the remaining optional extra play from ${requireDefinition(extraPlayMode.sourceCardId).name}`
+      );
+    } else if (
+      extraPlayMode.allowedCategories === "any"
+      || extraPlayMode.allowedCategories.includes(definition.category.code)
+    ) {
+      extraPlayMode.remainingRestrictedPlays = Math.max(0, extraPlayMode.remainingRestrictedPlays - 1);
+      if (extraPlayMode.requiredActivePlaysRemaining > 0) {
+        extraPlayMode.requiredActivePlaysRemaining -= 1;
       }
-
-      appendDealerMessage(match, summary);
-      game.lastPlayedCard = {
-        actorSeatNumber: actorSeat.seatNumber,
-        targetSeatNumbers: effectiveTargetSeatNumbers,
-        targetObjectInstanceId: request.targetObjectInstanceId,
-        card: buildCardView(removedCard, definition, "discard", false),
-        mode: request.mode,
-        summary,
-        resolvedAt: new Date().toISOString()
-      };
-      if (wasForcedFollowUp) {
-        game.forcedFollowUp = undefined;
-      }
-      refreshSeatSummaries(match);
-      return;
     }
   }
-
-  if (definition.rules.staysInPlay) {
-    movePersistentCard(match, actorSeat.seatNumber, effectiveTargetSeatNumbers, removedCard, definition);
-  } else {
-    game.discardPile.push(removedCard);
+  if (
+    request.mode === "active"
+    && isAbundanceTurn(match, actorSeat.seatNumber)
+    && ABUNDANCE_ALLOWED_CATEGORIES.includes(definition.category.code)
+    && request.targetObjectInstanceId == null
+    && game.pendingRepeatedPlay == null
+  ) {
+    game.pendingRepeatedPlay = {
+      actorSeatNumber: actorSeat.seatNumber,
+      cardId: definition.id,
+      request: { ...request },
+      forcedFollowUp: forcedFollowUp == null ? undefined : { ...forcedFollowUp }
+    };
+    appendServerDebugLog(match, "repeat", `Seat ${actorSeat.seatNumber} queued ${definition.name} for Abondance repeat`);
   }
 
-  appendDealerMessage(match, summary);
-  game.lastPlayedCard = {
-    actorSeatNumber: actorSeat.seatNumber,
-    targetSeatNumbers: effectiveTargetSeatNumbers,
-    targetObjectInstanceId: request.targetObjectInstanceId,
-    card: buildCardView(removedCard, definition, "discard", false),
-    mode: request.mode,
-    summary,
-    resolvedAt: new Date().toISOString()
-  };
-  if (wasForcedFollowUp) {
-    game.forcedFollowUp = undefined;
-    appendServerDebugLog(match, "forced_follow_up", `Seat ${actorSeat.seatNumber} completed Colère du magicien follow-up with ${definition.name}`);
-  }
-  finalizeResolvedAction(match, finalizeActorSeatNumber ?? actorSeat.seatNumber, boxId);
+  resolveRemovedCardPlay(match, actorSeat.seatNumber, removedCard, definition, request, forcedFollowUp);
 }
 
 export function getCurrentTurnSeat(match: StoredMatchState): SeatState | undefined {
@@ -5290,6 +6312,9 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
         if (request.targetSeatNumber == null) {
           continue;
         }
+        break;
+      case "self_or_single_opponent":
+        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition) ?? seatNumber;
         break;
       case "left_opponent":
         request.targetSeatNumber = getLeftOpponentSeatNumber(game, seatNumber);

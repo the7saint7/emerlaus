@@ -7,6 +7,8 @@ import type {
   MatchState,
   UpdateExpansionRequest,
   PendingBoardResetKeepRequest,
+  PendingDeathSearchRequest,
+  PendingPickpocketRequest,
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
@@ -242,6 +244,34 @@ export async function resolvePendingBoardResetKeep(
   request: PendingBoardResetKeepRequest
 ): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/board-reset/keep`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function resolvePendingDeathSearch(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingDeathSearchRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/death-search`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function resolvePendingPickpocket(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingPickpocketRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/pickpocket`, {
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify(request)

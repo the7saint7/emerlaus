@@ -41,6 +41,7 @@ export type ResponseChoiceType = "pending" | "pass" | "resist" | "annulation" | 
 export type CardTargetMode =
   | "self"
   | "single_opponent"
+  | "self_or_single_opponent"
   | "all_opponents"
   | "left_opponent"
   | "target_object"
@@ -214,6 +215,41 @@ export interface PendingBoardResetKeepState {
   cardOptions: CardView[];
 }
 
+export interface PendingDeathSearchCorpseOption {
+  seatNumber: number;
+  displayName: string;
+  cardCount: number;
+}
+
+export interface PendingDeathSearchCardOption extends CardView {
+  source: "self" | "corpse";
+  ownerSeatNumber: number;
+  ownerDisplayName: string;
+}
+
+export interface PendingDeathSearchState {
+  chooserSeatNumber: number;
+  cardName: string;
+  keepCardCount: number;
+  corpseOptions: PendingDeathSearchCorpseOption[];
+  selectedCorpseSeatNumber?: number;
+  cardOptions: PendingDeathSearchCardOption[];
+}
+
+export interface PendingPickpocketCardOption extends CardView {
+  source: "hand" | "object";
+  ownerSeatNumber: number;
+  ownerDisplayName: string;
+}
+
+export interface PendingPickpocketState {
+  chooserSeatNumber: number;
+  targetSeatNumber: number;
+  cardName: string;
+  takeCardCount: number;
+  cardOptions: PendingPickpocketCardOption[];
+}
+
 export interface PendingSacrificeChoiceState {
   actorSeatNumber: number;
   cardName: string;
@@ -252,6 +288,8 @@ export interface GameState {
   pendingObjectChoice?: PendingObjectChoiceState;
   pendingHandInspection?: PendingHandInspectionState;
   pendingBoardResetKeep?: PendingBoardResetKeepState;
+  pendingDeathSearch?: PendingDeathSearchState;
+  pendingPickpocket?: PendingPickpocketState;
   pendingSacrificeChoice?: PendingSacrificeChoiceState;
   pendingCurseRelease?: PendingCurseReleaseState;
   forcedFollowUp?: ForcedFollowUpState;
@@ -337,6 +375,15 @@ export interface PendingHandInspectionRequest {
 
 export interface PendingBoardResetKeepRequest {
   cardInstanceId: string;
+}
+
+export interface PendingDeathSearchRequest {
+  corpseSeatNumber?: number;
+  keepCardInstanceIds?: string[];
+}
+
+export interface PendingPickpocketRequest {
+  takeCardInstanceIds: string[];
 }
 
 export interface PendingSacrificeChoiceRequest {

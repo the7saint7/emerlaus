@@ -16,6 +16,7 @@ const LANGUAGE_STORAGE_KEY = "emerlaus.language";
 type TranslationKey =
   | "language.french"
   | "language.english"
+  | "language.switch"
   | "common.cancel"
   | "annulationChoice.title"
   | "annulationChoice.body"
@@ -120,6 +121,26 @@ type TranslationKey =
   | "boardReset.keepAction"
   | "boardReset.blocked"
   | "boardReset.empty"
+  | "deathSearch.title"
+  | "deathSearch.inProgress"
+  | "deathSearch.chooseCorpseBody"
+  | "deathSearch.keepBody"
+  | "deathSearch.waitingBody"
+  | "deathSearch.keepAction"
+  | "deathSearch.blocked"
+  | "deathSearch.empty"
+  | "deathSearch.corpseCardCount"
+  | "deathSearch.sourceSelf"
+  | "deathSearch.sourceCorpse"
+  | "pickpocket.title"
+  | "pickpocket.inProgress"
+  | "pickpocket.body"
+  | "pickpocket.waitingBody"
+  | "pickpocket.takeAction"
+  | "pickpocket.blocked"
+  | "pickpocket.empty"
+  | "pickpocket.sourceHand"
+  | "pickpocket.sourceObject"
   | "sacrifice.title"
   | "sacrifice.inProgress"
   | "sacrifice.body"
@@ -155,6 +176,8 @@ type TranslationKey =
   | "error.addBot"
   | "error.closeInspection"
   | "error.keepCard"
+  | "error.resolveDeathSearch"
+  | "error.resolvePickpocket"
   | "error.sacrificeRange"
   | "error.chooseSacrifice"
   | "error.kickPlayer"
@@ -165,6 +188,7 @@ type TranslationKey =
   | "error.drawCard"
   | "error.passResponse"
   | "error.selectObject"
+  | "error.updateExpansion"
   | "left.replacedByBot";
 
 type TranslationTable = Record<TranslationKey, string>;
@@ -173,6 +197,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
   en: {
     "language.french": "French",
     "language.english": "English",
+    "language.switch": "Language switch",
     "common.cancel": "Cancel",
     "annulationChoice.title": "Use Annulation",
     "annulationChoice.body": "This attack still needs {neededCount} Annulation card(s). You currently have {maxCount}. How many do you want to commit?",
@@ -277,6 +302,26 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "boardReset.keepAction": "Keep This Card",
     "boardReset.blocked": "No other actions can continue until the keeper card is chosen.",
     "boardReset.empty": "There are no cards left in hand to keep.",
+    "deathSearch.title": "Search The Dead",
+    "deathSearch.inProgress": "Death search in progress",
+    "deathSearch.chooseCorpseBody": "Choose which corpse to search.",
+    "deathSearch.keepBody": "Choose the {count} cards you will keep from your hand and {corpseName}'s cards.",
+    "deathSearch.waitingBody": "Waiting for {chooserName} to resolve Death Search.",
+    "deathSearch.keepAction": "Keep Selected Cards",
+    "deathSearch.blocked": "No other actions can continue until the death search is resolved.",
+    "deathSearch.empty": "No cards are available to keep.",
+    "deathSearch.corpseCardCount": "{count} cards available",
+    "deathSearch.sourceSelf": "From {ownerName}'s hand",
+    "deathSearch.sourceCorpse": "From {ownerName}'s corpse",
+    "pickpocket.title": "Pickpocket",
+    "pickpocket.inProgress": "Pickpocket in progress",
+    "pickpocket.body": "Choose the {count} card(s) to steal from {targetName}.",
+    "pickpocket.waitingBody": "Waiting for {chooserName} to resolve Pickpocket.",
+    "pickpocket.takeAction": "Take Selected Cards",
+    "pickpocket.blocked": "No other actions can continue until the pickpocket is resolved.",
+    "pickpocket.empty": "There are no cards available to steal.",
+    "pickpocket.sourceHand": "From {ownerName}'s hand",
+    "pickpocket.sourceObject": "From {ownerName}'s table",
     "sacrifice.title": "Choose Sacrifice Amount",
     "sacrifice.inProgress": "Sacrifice in progress",
     "sacrifice.body": "Enter how many HP to sacrifice. Choose a whole number from 0 to {maxAmount}.",
@@ -312,6 +357,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.addBot": "Unable to add bot",
     "error.closeInspection": "Unable to close hand inspection",
     "error.keepCard": "Unable to keep the selected card",
+    "error.resolveDeathSearch": "Unable to resolve death search",
+    "error.resolvePickpocket": "Unable to resolve pickpocket",
     "error.sacrificeRange": "Enter a whole number between 0 and {maxAmount}.",
     "error.chooseSacrifice": "Unable to choose sacrifice amount",
     "error.kickPlayer": "Unable to kick player",
@@ -322,9 +369,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.drawCard": "Failed to draw card",
     "error.passResponse": "Unable to pass",
     "error.selectObject": "Unable to select object",
+    "error.updateExpansion": "Unable to update expansion",
     "left.replacedByBot": "Your seat was replaced by a bot. Start a new Activity session to enter a new lobby."
   },
   fr: {
+    "language.switch": "Choix de langue",
     "language.french": "Français",
     "language.english": "Anglais",
     "common.cancel": "Annuler",
@@ -431,6 +480,26 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "boardReset.keepAction": "Garder cette carte",
     "boardReset.blocked": "Aucune autre action ne peut continuer tant que la carte à garder n'est pas choisie.",
     "boardReset.empty": "Il ne reste aucune carte en main à garder.",
+    "deathSearch.title": "Fouille de mort",
+    "deathSearch.inProgress": "Fouille de mort en cours",
+    "deathSearch.chooseCorpseBody": "Choisissez quel cadavre fouiller.",
+    "deathSearch.keepBody": "Choisissez les {count} cartes à garder parmi votre main et les cartes de {corpseName}.",
+    "deathSearch.waitingBody": "En attente que {chooserName} résolve Fouille de mort.",
+    "deathSearch.keepAction": "Garder les cartes sélectionnées",
+    "deathSearch.blocked": "Aucune autre action ne peut continuer tant que la fouille n'est pas résolue.",
+    "deathSearch.empty": "Aucune carte n'est disponible à garder.",
+    "deathSearch.corpseCardCount": "{count} cartes disponibles",
+    "deathSearch.sourceSelf": "Depuis la main de {ownerName}",
+    "deathSearch.sourceCorpse": "Depuis le cadavre de {ownerName}",
+    "pickpocket.title": "Pickpocket",
+    "pickpocket.inProgress": "Pickpocket en cours",
+    "pickpocket.body": "Choisissez les {count} carte(s) à voler à {targetName}.",
+    "pickpocket.waitingBody": "En attente que {chooserName} résolve Pickpocket.",
+    "pickpocket.takeAction": "Prendre les cartes sélectionnées",
+    "pickpocket.blocked": "Aucune autre action ne peut continuer tant que le pickpocket n'est pas résolu.",
+    "pickpocket.empty": "Aucune carte n'est disponible à voler.",
+    "pickpocket.sourceHand": "Depuis la main de {ownerName}",
+    "pickpocket.sourceObject": "Depuis la table de {ownerName}",
     "sacrifice.title": "Choisir le sacrifice",
     "sacrifice.inProgress": "Sacrifice en cours",
     "sacrifice.body": "Entrez combien de PV sacrifier. Choisissez un nombre entier de 0 à {maxAmount}.",
@@ -466,6 +535,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.addBot": "Impossible d'ajouter un bot",
     "error.closeInspection": "Impossible de fermer l'inspection de la main",
     "error.keepCard": "Impossible de garder la carte sélectionnée",
+    "error.resolveDeathSearch": "Impossible de résoudre Fouille de mort",
+    "error.resolvePickpocket": "Impossible de résoudre Pickpocket",
     "error.sacrificeRange": "Entrez un nombre entier entre 0 et {maxAmount}.",
     "error.chooseSacrifice": "Impossible de choisir le montant du sacrifice",
     "error.kickPlayer": "Impossible d'expulser le joueur",
@@ -477,6 +548,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.passResponse": "Impossible de passer",
     "error.selectObject": "Impossible de sélectionner l'objet",
     "left.replacedByBot": "Votre siège a été remplacé par un bot. Démarrez une nouvelle session d'activité pour entrer dans un nouveau salon."
+    , "error.updateExpansion": "Impossible de modifier l'extension"
   }
 };
 
@@ -562,7 +634,8 @@ export function localizeCardView(card: CardView, language: AppLanguage): CardVie
     name: localizedText?.name ?? card.name,
     description: localizedText?.description ?? card.description,
     imageUrl: getLocalizedCardImageUrl(card.cardId, card.imageUrl, language),
-    categoryLabel: getLocalizedCategoryLabel(card.categoryCode, language)
+    categoryLabel: getLocalizedCategoryLabel(card.categoryCode, language),
+    disabledReason: localizeCardDisabledReason(card.disabledReason, language)
   };
 }
 
@@ -573,6 +646,58 @@ function localizeSeatState(seat: SeatState, language: AppLanguage): SeatState {
     objects: seat.objects?.map((card) => localizeCardView(card, language)),
     statuses: seat.statuses?.map((card) => localizeCardView(card, language))
   };
+}
+
+function localizeCardDisabledReason(reason: string | undefined, language: AppLanguage): string | undefined {
+  if (reason == null || language === "en") {
+    return reason;
+  }
+
+  const exactTranslations: Record<string, string> = {
+    "Game not started": "La partie n'a pas commence.",
+    "Resolve the current action first": "Resolvez d'abord l'action en cours.",
+    "Wait for your turn": "Attendez votre tour.",
+    "Dead players cannot act": "Les joueurs morts ne peuvent pas agir.",
+    "This card triggers automatically when an opponent dies": "Cette carte se declenche automatiquement quand un adversaire meurt.",
+    "Only A, AD, and AM cards can be actively played this turn": "Seules les cartes A, AD et AM peuvent etre jouees activement ce tour-ci.",
+    "Waiting for the forced follow-up": "En attente de la riposte forcee.",
+    "Colère du magicien requires an AD card": "Colere du magicien exige une carte AD.",
+    "This forced follow-up must target the paralyzed opponent": "Cette riposte forcee doit viser l'adversaire paralyse.",
+    "Counter cards are only used as reactions": "Les cartes de contre ne peuvent etre utilisees qu'en reaction.",
+    "This card requires another card in hand": "Cette carte exige une autre carte en main.",
+    "No valid opponent target": "Aucune cible adverse valide.",
+    "The target opponent must have at least one object on the table": "L'adversaire cible doit avoir au moins un objet sur la table.",
+    "No valid target": "Aucune cible valide.",
+    "No left opponent available": "Aucun adversaire a gauche n'est disponible.",
+    "The left opponent is protected right now": "L'adversaire de gauche est protege pour le moment.",
+    "No target object available": "Aucun objet cible n'est disponible.",
+    "Unsupported target mode": "Mode de ciblage non pris en charge.",
+    "Choose the pending object first": "Choisissez d'abord l'objet en attente.",
+    "Choose the card to keep first": "Choisissez d'abord la carte a garder.",
+    "Resolve the death search first": "Resolvez d'abord la Fouille de mort.",
+    "Choose the sacrifice amount first": "Choisissez d'abord le montant du sacrifice.",
+    "Waiting for the current action to resolve": "En attente de la resolution de l'action en cours.",
+    "Annulation is not legal for this action": "Annulation n'est pas autorisee pour cette action.",
+    "Resistance accrue is not legal for this action": "Resistance accrue n'est pas autorisee pour cette action.",
+    "Mirror is not legal for this action": "Miroir n'est pas autorise pour cette action.",
+    "Only response cards can be used right now": "Seules les cartes de reponse peuvent etre utilisees maintenant."
+  };
+
+  if (exactTranslations[reason] != null) {
+    return exactTranslations[reason];
+  }
+
+  let match = reason.match(/^Only (.+) cards can be actively played for (.+)$/);
+  if (match != null) {
+    return `Seules les cartes ${match[1]} peuvent etre jouees activement pour ${localizeCardNameForUi(match[2], language)}.`;
+  }
+
+  match = reason.match(/^This card requires a (.+) card in hand$/);
+  if (match != null) {
+    return `Cette carte exige une carte ${match[1]} en main.`;
+  }
+
+  return reason;
 }
 
 function localizePlayedCardState(playedCard: PlayedCardState | undefined, language: AppLanguage): PlayedCardState | undefined {
@@ -712,6 +837,9 @@ export function localizeDealerMessageForUi(content: string, language: AppLanguag
     { regex: /^(.+) had no CA card and resisted automatically\.$/, format: (match) => language === "fr"
       ? `${match[1]} n'avait pas de CA et a resiste automatiquement.`
       : `${match[1]} had no CA card and resisted automatically.` },
+    { regex: /^(.+) had no CA card and relied on normal resistance\.$/, format: (match) => language === "fr"
+      ? `${match[1]} n'avait pas de CA et s'en remet a sa resistance normale.`
+      : `${match[1]} had no CA card and relied on normal resistance.` },
     { regex: /^(.+) had no defense .* passed automatically\.$/, format: (match) => language === "fr"
       ? `${match[1]} n'avait aucune defense et passe automatiquement.`
       : `${match[1]} had no defense and passed automatically.` },
@@ -730,6 +858,48 @@ export function localizeDealerMessageForUi(content: string, language: AppLanguag
     { regex: /^(.+) has no AD card for (.+) and passes\.$/, format: (match) => language === "fr"
       ? `${match[1]} n'a pas de carte AD pour ${localizeCardName(match[2])} et passe.`
       : `${match[1]} has no AD card for ${localizeCardName(match[2])} and passes.` },
+    { regex: /^(.+)'s (.+) uses the total power of all living players \((\d+)\)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} utilise ${localizeCardName(match[2])} avec la puissance totale de tous les joueurs vivants (${match[3]}).`
+      : `${match[1]}'s ${localizeCardName(match[2])} uses the total power of all living players (${match[3]}).` },
+    { regex: /^(.+)'s (.+) deals (\d+)x damage\.$/, format: (match) => language === "fr"
+      ? `${match[1]} voit ${localizeCardName(match[2])} infliger ${match[3]}x les degats.`
+      : `${match[1]}'s ${localizeCardName(match[2])} deals ${match[3]}x damage.` },
+    { regex: /^(.+)'s Robe miroir reflects (\d+) damage back to (.+)\.$/, format: (match) => language === "fr"
+      ? `La Robe miroir de ${match[1]} renvoie ${match[2]} degats a ${match[3]}.`
+      : `${match[1]}'s Robe miroir reflects ${match[2]} damage back to ${match[3]}.` },
+    { regex: /^(.+)'s (.+) hits (.+) for (\d+)\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[2])} de ${match[1]} frappe ${match[3]} pour ${match[4]}.`
+      : `${match[1]}'s ${localizeCardName(match[2])} hits ${match[3]} for ${match[4]}.` },
+    { regex: /^(.+) uses (.+) to steal (\d+) cards? from (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} utilise ${localizeCardName(match[2])} pour voler ${match[3]} carte(s) a ${match[4]}.`
+      : `${match[1]} uses ${localizeCardName(match[2])} to steal ${match[3]} card(s) from ${match[4]}.` },
+    { regex: /^(.+) discards their hand and redraws\.$/, format: (match) => language === "fr"
+      ? `${match[1]} defausse sa main et repige.`
+      : `${match[1]} discards their hand and redraws.` },
+    { regex: /^(.+) triggers and kills (.+)!$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[1])} se declenche et tue ${match[2]} !`
+      : `${localizeCardName(match[1])} triggers and kills ${match[2]}!` },
+    { regex: /^(.+)'s (.+) deals (\d+) to all affected opponents\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[2])} de ${match[1]} inflige ${match[3]} a tous les adversaires affectes.`
+      : `${match[1]}'s ${localizeCardName(match[2])} deals ${match[3]} to all affected opponents.` },
+    { regex: /^(.+)'s Abondance ends\.$/, format: (match) => language === "fr"
+      ? `L'Abondance de ${match[1]} prend fin.`
+      : `${match[1]}'s Abondance ends.` },
+    { regex: /^(.+) paralyzed (.+) with (.+) and may immediately play an AD card\.$/, format: (match) => language === "fr"
+      ? `${match[1]} paralyse ${match[2]} avec ${localizeCardName(match[3])} et peut jouer immediatement une carte AD.`
+      : `${match[1]} paralyzed ${match[2]} with ${localizeCardName(match[3])} and may immediately play an AD card.` },
+    { regex: /^(.+) uses (.+) to search (.+) and keeps (\d+) cards\.$/, format: (match) => language === "fr"
+      ? `${match[1]} utilise ${localizeCardName(match[2])} pour fouiller ${match[3]} et garde ${match[4]} cartes.`
+      : `${match[1]} uses ${localizeCardName(match[2])} to search ${match[3]} and keeps ${match[4]} cards.` },
+    { regex: /^(.+) discarded (\d+) (.+) to remove (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} a defausse ${match[2]} ${localizeCardName(match[3])} pour retirer ${localizeCardName(match[4])}.`
+      : `${match[1]} discarded ${match[2]} ${localizeCardName(match[3])} to remove ${localizeCardName(match[4])}.` },
+    { regex: /^(.+)'s repeated (.+) fizzles\.$/, format: (match) => language === "fr"
+      ? `La repetition de ${localizeCardName(match[2])} de ${match[1]} echoue.`
+      : `${match[1]}'s repeated ${localizeCardName(match[2])} fizzles.` },
+    { regex: /^(.+) loaded (.+) onto (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} charge ${localizeCardName(match[2])} sur ${localizeCardName(match[3])}.`
+      : `${match[1]} loaded ${localizeCardName(match[2])} onto ${localizeCardName(match[3])}.` },
     { regex: /^(.+) was canceled before resolving\.$/, format: (match) => language === "fr"
       ? `${localizeCardName(match[1])} est annulee avant sa resolution.`
       : `${localizeCardName(match[1])} was canceled before resolving.` },
@@ -802,6 +972,26 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
                 cardName: localizeCardName(match.game.pendingBoardResetKeep.cardName),
                 cardOptions: match.game.pendingBoardResetKeep.cardOptions.map((card) => localizeCardView(card, language))
               },
+          pendingDeathSearch: match.game.pendingDeathSearch == null
+            ? undefined
+            : {
+                ...match.game.pendingDeathSearch,
+                cardName: localizeCardName(match.game.pendingDeathSearch.cardName),
+                cardOptions: match.game.pendingDeathSearch.cardOptions.map((card) => ({
+                  ...card,
+                  ...localizeCardView(card, language)
+                }))
+              },
+          pendingPickpocket: match.game.pendingPickpocket == null
+            ? undefined
+            : {
+                ...match.game.pendingPickpocket,
+                cardName: localizeCardName(match.game.pendingPickpocket.cardName),
+                cardOptions: match.game.pendingPickpocket.cardOptions.map((card) => ({
+                  ...card,
+                  ...localizeCardView(card, language)
+                }))
+              },
           pendingSacrificeChoice: match.game.pendingSacrificeChoice == null
             ? undefined
             : {
@@ -827,7 +1017,7 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
 
 export function renderLanguageToggle(language: AppLanguage): string {
   return `
-    <div class="language-toggle" aria-label="Language switch">
+    <div class="language-toggle" aria-label="${t(language, "language.switch")}">
       <button
         type="button"
         class="language-toggle__button ${language === "fr" ? "language-toggle__button--active" : ""}"

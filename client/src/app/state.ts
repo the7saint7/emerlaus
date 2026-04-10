@@ -40,6 +40,10 @@ export interface AppState {
   hoveredCenterSlotKind: "" | "attack" | "response";
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
+  deathSearchPreviewCardInstanceId: string;
+  deathSearchSelectedCardInstanceIds: string[];
+  pickpocketPreviewCardInstanceId: string;
+  pickpocketSelectedCardInstanceIds: string[];
   cardReferencePreviewCardId: string;
   cardReferenceSearchQuery: string;
   cardReferenceShowBase: boolean;

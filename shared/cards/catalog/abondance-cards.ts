@@ -761,7 +761,7 @@ export const abondanceCardDefinitions = [
       defenseBand: {
         resistance: {
           color: "red",
-          rollsRequired: 1
+          rollsRequired: 0
         },
         resistanceAccrueAllowed: false,
         annulationAllowed: true,
@@ -770,7 +770,8 @@ export const abondanceCardDefinitions = [
       },
       implementation: {
         status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        handler: "abondance",
+        notes: "Starts next turn for a locked number of turns equal to the caster's power. During affected turns, only A, AD, and AM cards may be actively played, and each chosen active card resolves twice with the same target and separate defense windows."
       }
     }
   ),
@@ -802,7 +803,8 @@ export const abondanceCardDefinitions = [
       },
       implementation: {
         status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        handler: "fouille_de_mort",
+        notes: "Triggers automatically when an opponent dies. The owner chooses one corpse, then keeps up to 5 cards from their own hand plus the corpse's cards."
       }
     }
   ),
@@ -816,11 +818,15 @@ export const abondanceCardDefinitions = [
       file: "La_ceinture_qui_disparait.png",
       rules: {
         selectionMode: "target",
-        targets: "single_player_or_object",
+        targets: "self_or_single_opponent",
         requiresDefenseWindow: true,
         requiresResistanceCheck: false,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "redraw_hand"
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -833,8 +839,9 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: true
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        handler: "redraw_hand",
+        notes: "The target discards their full hand and redraws to the current game minimum hand size. Can target self or one opponent."
       }
     }
   ),
@@ -866,7 +873,8 @@ export const abondanceCardDefinitions = [
       },
       implementation: {
         status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        handler: "pacte-tenebreux",
+        notes: "Body-bound persistent self-status. Hand-played AD and AM cards gain +2 temporary power, and opponents take -3 on resistance against those hand-played AD and AM attacks."
       }
     }
   ),
@@ -924,7 +932,16 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: true,
         requiresResistanceCheck: true,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "swap_bodies",
+            swapSeatOrder: false,
+            swapHand: false,
+            swapHp: false,
+            swapObjects: true,
+            swapStatuses: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -937,8 +954,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Swaps all O cards on the table between the caster and a chosen opponent. The target opponent must have at least one object on the table."
       }
     }
   ),
@@ -956,7 +973,16 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: true,
         requiresResistanceCheck: true,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "swap_bodies",
+            swapSeatOrder: false,
+            swapHand: true,
+            swapHp: false,
+            swapObjects: false,
+            swapStatuses: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -969,8 +995,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Swaps the caster's hand with the chosen opponent's hand."
       }
     }
   ),
@@ -988,7 +1014,14 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: false,
         requiresResistanceCheck: false,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "play_extra_cards",
+            count: 2,
+            allowedCategories: ["AM"],
+            refillAtTurnEnd: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -1001,8 +1034,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Requires at least one AM card in hand before play. Grants up to two immediate AM attacks with +2 temporary power on each; the first AM is required and the second is only taken if another AM remains."
       }
     }
   ),
@@ -1020,7 +1053,14 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: false,
         requiresResistanceCheck: false,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "play_extra_cards",
+            count: 1,
+            allowedCategories: "any",
+            refillAtTurnEnd: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -1033,8 +1073,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Requires another card in hand. Immediately grants one follow-up card play from hand; all resistance thresholds against that second card are lowered by 1."
       }
     }
   ),
@@ -1052,7 +1092,14 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: false,
         requiresResistanceCheck: false,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "play_extra_cards",
+            count: 1,
+            allowedCategories: "any",
+            refillAtTurnEnd: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -1065,8 +1112,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Requires another card in hand. Immediately grants one follow-up card play from hand; all resistance thresholds against that second card are lowered by 2."
       }
     }
   ),
@@ -1084,7 +1131,14 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: false,
         requiresResistanceCheck: false,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "play_extra_cards",
+            count: 1,
+            allowedCategories: "any",
+            refillAtTurnEnd: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -1097,8 +1151,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Requires another card in hand. Immediately grants one follow-up card play from hand; all resistance thresholds against that second card are lowered by 3."
       }
     }
   ),
@@ -1116,7 +1170,14 @@ export const abondanceCardDefinitions = [
         requiresDefenseWindow: false,
         requiresResistanceCheck: false,
         staysInPlay: false,
-        effects: []
+        effects: [
+          {
+            type: "play_extra_cards",
+            count: 1,
+            allowedCategories: "any",
+            refillAtTurnEnd: false
+          }
+        ]
       },
       defenseBand: {
         resistance: {
@@ -1129,8 +1190,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        status: "generic",
+        notes: "Requires another card in hand. Immediately grants one follow-up card play from hand; all resistance thresholds against that second card are lowered by 4."
       }
     }
   ),
@@ -1239,7 +1300,8 @@ export const abondanceCardDefinitions = [
       },
       implementation: {
         status: "manual",
-        notes: "Imported for Abondance deck testing; effect not implemented yet."
+        handler: "pickpocket-demmerlaus",
+        notes: "Lets the caster choose cards from the target's hand and equipped objects. Steals 2 on failed resistance, or 1 on successful resistance. Stolen cards go to the caster's hand."
       }
     }
   ),

@@ -17,6 +17,8 @@ import type {
   KickPlayerRequest,
   MatchState,
   PendingBoardResetKeepRequest,
+  PendingDeathSearchRequest,
+  PendingPickpocketRequest,
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
@@ -35,6 +37,8 @@ import {
   passTurnWithoutPlaying,
   playCardFromHand,
   resolvePendingBoardResetKeep,
+  resolvePendingDeathSearch,
+  resolvePendingPickpocket,
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
   respondToPendingAction,
@@ -336,6 +340,43 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
           const latestSeat = latestMatch?.seats.find((candidate) => candidate.seatNumber === latestCurseRelease?.seatNumber);
           if (latestMatch != null && latestCurseRelease != null && latestSeat?.controllerType === "bot") {
             resolvePendingCurseRelease(latestMatch, latestSeat.userId, "accept");
+            saveMatch(latestMatch);
+            notifyMatchUpdated(instanceId);
+          }
+          scheduleBotTurnIfNeeded(instanceId);
+        }, 450 + Math.floor(Math.random() * 400));
+        botTurnTimers.set(timerKey, timer);
+      }
+    }
+    return;
+  }
+
+  const pendingDeathSearch = match.internalGame?.pendingDeathSearch;
+  if (pendingDeathSearch != null) {
+    const seat = match.seats.find((candidate) => candidate.seatNumber === pendingDeathSearch.chooserSeatNumber);
+    if (seat?.controllerType === "bot") {
+      const timerKey = `${instanceId}:death-search:${seat.seatNumber}`;
+      if (!botTurnTimers.has(timerKey)) {
+        const timer = setTimeout(() => {
+          botTurnTimers.delete(timerKey);
+          const latestMatch = getMatch(instanceId);
+          const latestPending = latestMatch?.internalGame?.pendingDeathSearch;
+          const latestSeat = latestMatch?.seats.find((candidate) => candidate.seatNumber === latestPending?.chooserSeatNumber);
+          if (latestMatch != null && latestPending != null && latestSeat?.controllerType === "bot") {
+            const selectedCorpseSeatNumber = latestPending.selectedCorpseSeatNumber
+              ?? (latestPending.corpses.length === 1
+                ? latestPending.corpses[0]?.seatNumber
+                : [...latestPending.corpses].sort((left, right) => right.cards.length - left.cards.length)[0]?.seatNumber);
+            const chooserState = latestMatch.internalGame?.seatStates.find((candidate) => candidate.seatNumber === latestPending.chooserSeatNumber);
+            const selectedCorpse = latestPending.corpses.find((corpse) => corpse.seatNumber === selectedCorpseSeatNumber);
+            const combinedCards = [
+              ...(chooserState?.hand.filter((card) => card.instanceId !== latestPending.sourceCard.instanceId) ?? []),
+              ...(selectedCorpse?.cards ?? [])
+            ];
+            resolvePendingDeathSearch(latestMatch, latestSeat.userId, {
+              corpseSeatNumber: selectedCorpseSeatNumber,
+              keepCardInstanceIds: combinedCards.slice(0, Math.min(5, combinedCards.length)).map((card) => card.instanceId)
+            });
             saveMatch(latestMatch);
             notifyMatchUpdated(instanceId);
           }
@@ -724,6 +765,32 @@ export function resolveMatchBoardResetKeep(instanceId: string, userId: string, r
 
   clearBotTurnTimer(instanceId);
   resolvePendingBoardResetKeep(match, userId, request.cardInstanceId);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchDeathSearch(instanceId: string, userId: string, request: PendingDeathSearchRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingDeathSearch(match, userId, request);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchPickpocket(instanceId: string, userId: string, request: PendingPickpocketRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingPickpocket(match, userId, request);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);

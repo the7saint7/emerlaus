@@ -13,6 +13,8 @@ import {
   requestUpdateExpansion,
   respondToPendingAction,
   resolvePendingBoardResetKeep,
+  resolvePendingDeathSearch,
+  resolvePendingPickpocket,
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
   requestStartMatch,
@@ -104,6 +106,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     hoveredCenterSlotKind: "",
     telepathyPreviewCardInstanceId: "",
     boardResetKeepPreviewCardInstanceId: "",
+    deathSearchPreviewCardInstanceId: "",
+    deathSearchSelectedCardInstanceIds: [],
+    pickpocketPreviewCardInstanceId: "",
+    pickpocketSelectedCardInstanceIds: [],
     cardReferencePreviewCardId: "",
     cardReferenceSearchQuery: "",
     cardReferenceShowBase: true,
@@ -529,6 +535,9 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const applyMatchState = (nextMatch: MatchState | null): void => {
     const previousPendingInspection = state.match?.game?.pendingHandInspection;
     const previousPendingBoardResetKeep = state.match?.game?.pendingBoardResetKeep;
+    const previousPendingDeathSearch = state.match?.game?.pendingDeathSearch;
+    const previousPendingPickpocket = state.match?.game?.pendingPickpocket;
+    const previousPendingSacrificeChoice = state.match?.game?.pendingSacrificeChoice;
     state.match = nextMatch;
     // Clear ghost arrows whenever game state resolves (action is done)
     state.opponentCursors = {};
@@ -538,6 +547,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       state.activeCardFlight = null;
       state.telepathyPreviewCardInstanceId = "";
       state.boardResetKeepPreviewCardInstanceId = "";
+      state.deathSearchPreviewCardInstanceId = "";
+      state.deathSearchSelectedCardInstanceIds = [];
+      state.pickpocketPreviewCardInstanceId = "";
+      state.pickpocketSelectedCardInstanceIds = [];
       state.telepathyPanelScrollTop = 0;
       state.telepathyListScrollTop = 0;
       state.hiddenHandCardInstanceIds = [];
@@ -553,7 +566,8 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
 
     const nextPendingInspection = nextMatch.game?.pendingHandInspection;
     const nextPendingBoardResetKeep = nextMatch.game?.pendingBoardResetKeep;
-    const previousPendingSacrificeChoice = state.match?.game?.pendingSacrificeChoice;
+    const nextPendingDeathSearch = nextMatch.game?.pendingDeathSearch;
+    const nextPendingPickpocket = nextMatch.game?.pendingPickpocket;
     const nextPendingSacrificeChoice = nextMatch.game?.pendingSacrificeChoice;
     const previousLocalInspectionTargetSeatNumber =
       previousPendingInspection?.viewerSeatNumber === state.localSeatNumber
@@ -595,6 +609,60 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       if (!(nextPendingBoardResetKeep?.cardOptions ?? []).some((card) => card.instanceId === state.boardResetKeepPreviewCardInstanceId)) {
         state.boardResetKeepPreviewCardInstanceId = nextPendingBoardResetKeep?.cardOptions[0]?.instanceId ?? "";
       }
+    }
+
+    const previousLocalDeathSearchChooser =
+      previousPendingDeathSearch?.chooserSeatNumber === state.localSeatNumber
+        ? previousPendingDeathSearch.chooserSeatNumber
+        : undefined;
+    const nextLocalDeathSearchChooser =
+      nextPendingDeathSearch?.chooserSeatNumber === state.localSeatNumber
+        ? nextPendingDeathSearch.chooserSeatNumber
+        : undefined;
+    if (nextLocalDeathSearchChooser == null) {
+      state.deathSearchPreviewCardInstanceId = "";
+      state.deathSearchSelectedCardInstanceIds = [];
+    } else if (
+      nextLocalDeathSearchChooser !== previousLocalDeathSearchChooser
+      || previousPendingDeathSearch?.selectedCorpseSeatNumber !== nextPendingDeathSearch?.selectedCorpseSeatNumber
+    ) {
+      state.deathSearchPreviewCardInstanceId = nextPendingDeathSearch?.cardOptions[0]?.instanceId ?? "";
+      state.deathSearchSelectedCardInstanceIds = [];
+    } else {
+      const nextCardOptions = nextPendingDeathSearch?.cardOptions ?? [];
+      if (!nextCardOptions.some((card) => card.instanceId === state.deathSearchPreviewCardInstanceId)) {
+        state.deathSearchPreviewCardInstanceId = nextCardOptions[0]?.instanceId ?? "";
+      }
+      state.deathSearchSelectedCardInstanceIds = state.deathSearchSelectedCardInstanceIds.filter((instanceId) =>
+        nextCardOptions.some((card) => card.instanceId === instanceId)
+      );
+    }
+
+    const previousLocalPickpocketChooser =
+      previousPendingPickpocket?.chooserSeatNumber === state.localSeatNumber
+        ? previousPendingPickpocket.chooserSeatNumber
+        : undefined;
+    const nextLocalPickpocketChooser =
+      nextPendingPickpocket?.chooserSeatNumber === state.localSeatNumber
+        ? nextPendingPickpocket.chooserSeatNumber
+        : undefined;
+    if (nextLocalPickpocketChooser == null) {
+      state.pickpocketPreviewCardInstanceId = "";
+      state.pickpocketSelectedCardInstanceIds = [];
+    } else if (
+      nextLocalPickpocketChooser !== previousLocalPickpocketChooser
+      || previousPendingPickpocket?.targetSeatNumber !== nextPendingPickpocket?.targetSeatNumber
+    ) {
+      state.pickpocketPreviewCardInstanceId = nextPendingPickpocket?.cardOptions[0]?.instanceId ?? "";
+      state.pickpocketSelectedCardInstanceIds = [];
+    } else {
+      const nextCardOptions = nextPendingPickpocket?.cardOptions ?? [];
+      if (!nextCardOptions.some((card) => card.instanceId === state.pickpocketPreviewCardInstanceId)) {
+        state.pickpocketPreviewCardInstanceId = nextCardOptions[0]?.instanceId ?? "";
+      }
+      state.pickpocketSelectedCardInstanceIds = state.pickpocketSelectedCardInstanceIds.filter((instanceId) =>
+        nextCardOptions.some((card) => card.instanceId === instanceId)
+      );
     }
 
     const previousLocalSacrificePrompt =
@@ -1345,6 +1413,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     card.canPlay && card.categoryCode !== "CA" && (
       card.categoryCode === "O" ||
       card.targets === "self" ||
+      card.targets === "self_or_single_opponent" ||
       card.targets === "all_opponents" ||
       card.targets === "left_opponent" ||
       card.targets === "none" ||
@@ -1557,7 +1626,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         const previousHandVisuals = captureHandCardVisuals();
         await executePlayRequest({
           cardInstanceId: draggedCard.instanceId,
-          mode: "active"
+          mode: "active",
+          targetSeatNumber: draggedCard.targets === "self_or_single_opponent"
+            ? state.localSeatNumber
+            : undefined
         }, previousHandVisuals);
       } else if (hoverTarget.kind === "response-slot") {
         const choice =
@@ -2284,6 +2356,10 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             inspectedSeatNumber: state.inspectedSeatNumber,
             telepathyPreviewCardInstanceId: state.telepathyPreviewCardInstanceId,
             boardResetKeepPreviewCardInstanceId: state.boardResetKeepPreviewCardInstanceId,
+            deathSearchPreviewCardInstanceId: state.deathSearchPreviewCardInstanceId,
+            deathSearchSelectedCardInstanceIds: state.deathSearchSelectedCardInstanceIds,
+            pickpocketPreviewCardInstanceId: state.pickpocketPreviewCardInstanceId,
+            pickpocketSelectedCardInstanceIds: state.pickpocketSelectedCardInstanceIds,
             cardReferencePreviewCardId: state.cardReferencePreviewCardId,
             cardReferenceSearchQuery: state.cardReferenceSearchQuery,
             cardReferenceShowBase: state.cardReferenceShowBase,
@@ -2452,7 +2528,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
           }));
           state.errorMessage = "";
         } catch (error) {
-          state.errorMessage = error instanceof Error ? error.message : "Unable to update expansion";
+          state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.updateExpansion");
         }
 
         render();
@@ -2564,6 +2640,87 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       });
     });
 
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='choose-death-search-corpse']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const corpseSeatNumber = button.dataset.seatNumber == null ? 0 : Number(button.dataset.seatNumber);
+        if (corpseSeatNumber <= 0) {
+          return;
+        }
+
+        try {
+          applyMatchState(await resolvePendingDeathSearch(state.instanceId, state.playerSessionToken, { corpseSeatNumber }));
+          state.errorMessage = "";
+        } catch (error) {
+          state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.resolveDeathSearch");
+        }
+        render();
+      });
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-death-search-card']").forEach((button) => {
+      const previewCardInstanceId = button.dataset.cardInstanceId ?? "";
+      const setPreview = (): void => {
+        if (previewCardInstanceId === "" || state.deathSearchPreviewCardInstanceId === previewCardInstanceId) {
+          return;
+        }
+
+        state.deathSearchPreviewCardInstanceId = previewCardInstanceId;
+        render();
+      };
+
+      button.addEventListener("focus", setPreview);
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-death-search-card']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const cardInstanceId = button.dataset.cardInstanceId ?? "";
+        if (cardInstanceId === "") {
+          return;
+        }
+
+        const alreadySelected = state.deathSearchSelectedCardInstanceIds.includes(cardInstanceId);
+        if (alreadySelected) {
+          state.deathSearchSelectedCardInstanceIds = state.deathSearchSelectedCardInstanceIds.filter((instanceId) => instanceId !== cardInstanceId);
+        } else {
+          state.deathSearchSelectedCardInstanceIds = [...state.deathSearchSelectedCardInstanceIds, cardInstanceId];
+        }
+        state.deathSearchPreviewCardInstanceId = cardInstanceId;
+        render();
+      });
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-pickpocket-card']").forEach((button) => {
+      const previewCardInstanceId = button.dataset.cardInstanceId ?? "";
+      const setPreview = (): void => {
+        if (previewCardInstanceId === "" || state.pickpocketPreviewCardInstanceId === previewCardInstanceId) {
+          return;
+        }
+
+        state.pickpocketPreviewCardInstanceId = previewCardInstanceId;
+        render();
+      };
+
+      button.addEventListener("focus", setPreview);
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-pickpocket-card']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const cardInstanceId = button.dataset.cardInstanceId ?? "";
+        if (cardInstanceId === "") {
+          return;
+        }
+
+        const alreadySelected = state.pickpocketSelectedCardInstanceIds.includes(cardInstanceId);
+        if (alreadySelected) {
+          state.pickpocketSelectedCardInstanceIds = state.pickpocketSelectedCardInstanceIds.filter((instanceId) => instanceId !== cardInstanceId);
+        } else {
+          state.pickpocketSelectedCardInstanceIds = [...state.pickpocketSelectedCardInstanceIds, cardInstanceId];
+        }
+        state.pickpocketPreviewCardInstanceId = cardInstanceId;
+        render();
+      });
+    });
+
     rootElement.querySelector<HTMLButtonElement>("[data-action='open-card-reference']")?.addEventListener("click", () => {
       state.cardReferenceOpen = true;
       render();
@@ -2635,6 +2792,40 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.errorMessage = "";
       } catch (error) {
         state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.keepCard");
+      }
+      render();
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-death-search-keep']")?.addEventListener("click", async () => {
+      const pendingDeathSearch = state.match?.game?.pendingDeathSearch;
+      if (pendingDeathSearch == null) {
+        return;
+      }
+
+      try {
+        applyMatchState(await resolvePendingDeathSearch(state.instanceId, state.playerSessionToken, {
+          keepCardInstanceIds: state.deathSearchSelectedCardInstanceIds
+        }));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.resolveDeathSearch");
+      }
+      render();
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-pickpocket-take']")?.addEventListener("click", async () => {
+      const pendingPickpocket = state.match?.game?.pendingPickpocket;
+      if (pendingPickpocket == null) {
+        return;
+      }
+
+      try {
+        applyMatchState(await resolvePendingPickpocket(state.instanceId, state.playerSessionToken, {
+          takeCardInstanceIds: state.pickpocketSelectedCardInstanceIds
+        }));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.resolvePickpocket");
       }
       render();
     });

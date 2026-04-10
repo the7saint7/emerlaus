@@ -12,6 +12,8 @@ import type {
   MatchConfigResponse,
   UpdateExpansionRequest,
   PendingBoardResetKeepRequest,
+  PendingDeathSearchRequest,
+  PendingPickpocketRequest,
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
@@ -46,6 +48,8 @@ import {
   passMatchForcedFollowUp,
   playMatchCard,
   resolveMatchBoardResetKeep,
+  resolveMatchDeathSearch,
+  resolveMatchPickpocket,
   resolveMatchSacrificeChoice,
   resolveMatchCurseRelease,
   respondMatchAction,
@@ -381,6 +385,30 @@ app.post("/api/matches/:instanceId/board-reset/keep", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to keep card"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/death-search", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingDeathSearchRequest;
+    response.json(resolveMatchDeathSearch(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to resolve death search"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/pickpocket", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingPickpocketRequest;
+    response.json(resolveMatchPickpocket(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to resolve pickpocket"
     });
   }
 });

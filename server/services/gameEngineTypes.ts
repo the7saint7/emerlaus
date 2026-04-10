@@ -6,6 +6,7 @@ import type {
   MatchState,
   PendingActionState,
   PendingActionResponderState,
+  PlayCardRequest,
   PlayedCardState,
   ResponseChoiceType
 } from "../../shared/types.js";
@@ -23,6 +24,7 @@ export interface StoredSeatStatus {
   sourceSeatNumber: number;
   remainingTurnTriggers?: number;
   bodyBound?: boolean;
+  activatesNextTurn?: boolean;
 }
 
 export interface StoredSeatState {
@@ -47,12 +49,34 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   responders: StoredPendingActionResponderState[];
   createdAt: string;
   sourceZone?: "hand" | "object";
+  skipStoredCardResolution?: boolean;
   sharedSacrificeAmount?: number;
   deferredMirrorHits?: Array<{ sourceSeatNumber: number; targetSeatNumber: number }>;
   continuation?: {
     mode: "resume_turn" | "advance_turn_without_play";
     seatNumber: number;
   };
+}
+
+export interface StoredForcedFollowUpState {
+  sourceCardId: "colere-du-magicien";
+  actorSeatNumber: number;
+  targetSeatNumber: number;
+  turnOwnerSeatNumber: number;
+  allowedCategories: CardCategoryCode[];
+  doubleHpLossDamage: boolean;
+  suppressDefenseWindow: boolean;
+  suppressResistanceCheck: boolean;
+}
+
+export interface StoredExtraPlayModeState {
+  sourceCardId: string;
+  actorSeatNumber: number;
+  allowedCategories: CardCategoryCode[] | "any";
+  requiredActivePlaysRemaining: number;
+  remainingRestrictedPlays: number;
+  temporaryPowerBonus: number;
+  temporaryResistanceModifier: number;
 }
 
 export interface StoredGameState {
@@ -90,6 +114,24 @@ export interface StoredGameState {
     sourceCard: StoredCardInstance;
     effectIndex: number;
   };
+  pendingDeathSearch?: {
+    chooserSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    corpses: Array<{
+      seatNumber: number;
+      cards: StoredCardInstance[];
+    }>;
+    selectedCorpseSeatNumber?: number;
+    continuationActorSeatNumber?: number;
+    continuationBoxId?: string;
+  };
+  pendingPickpocket?: {
+    boxId?: string;
+    chooserSeatNumber: number;
+    targetSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    takeCardCount: number;
+  };
   pendingSacrificeChoice?: {
     boxId?: string;
     actorSeatNumber: number;
@@ -103,18 +145,16 @@ export interface StoredGameState {
     releaseCardId: string;
     releaseCardCount: number;
   };
-  pausedSequentialAction?: StoredPendingActionState;
-  forcedPlayCategories?: CardCategoryCode[] | "any";
-  forcedFollowUp?: {
-    sourceCardId: "colere-du-magicien";
+  pendingRepeatedPlay?: {
     actorSeatNumber: number;
-    targetSeatNumber: number;
-    turnOwnerSeatNumber: number;
-    allowedCategories: CardCategoryCode[];
-    doubleHpLossDamage: boolean;
-    suppressDefenseWindow: boolean;
-    suppressResistanceCheck: boolean;
+    cardId: string;
+    request: PlayCardRequest;
+    forcedFollowUp?: StoredForcedFollowUpState;
   };
+  pausedSequentialAction?: StoredPendingActionState;
+  extraPlayMode?: StoredExtraPlayModeState;
+  forcedPlayCategories?: CardCategoryCode[] | "any";
+  forcedFollowUp?: StoredForcedFollowUpState;
 }
 
 export type StoredMatchState = MatchState & {
