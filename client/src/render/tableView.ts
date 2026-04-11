@@ -2,6 +2,12 @@ import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { CardView, MatchState, PendingActionResponderState, SeatState } from "../../../shared/types";
 import { allCardDefinitions } from "../../../shared/cards";
 import type { ArrowDragState, DragHoverTarget } from "../app/state";
+import {
+  canLoadMassAttackStaff,
+  isObjectTargetable,
+  isSeatTargetable,
+  objectCardMatchesSelectedTargeting
+} from "../gameplay/interactionRules";
 import type { AppLanguage } from "../i18n";
 import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, t } from "../i18n";
 import type { OpponentAnchor } from "./opponentLayout";
@@ -130,84 +136,6 @@ function renderCardTooltip(card: CardView, language: AppLanguage): string {
       ${renderDefenseTooltip(card, language)}
     </div>
   `;
-}
-
-function isAttackCard(card: CardView): boolean {
-  return ["AD", "AM", "S", "E", "CO"].includes(card.categoryCode);
-}
-
-function isSeatTargetable(selectedCard: CardView | undefined, seat: SeatState, localSeatNumber: number, forcedTargetSeatNumber?: number): boolean {
-  if (selectedCard == null || !selectedCard.canPlay || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
-    return false;
-  }
-
-  if (forcedTargetSeatNumber != null && seat.seatNumber !== forcedTargetSeatNumber) {
-    return false;
-  }
-
-  if (isAttackCard(selectedCard) && (seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")) {
-    return false;
-  }
-
-  if (selectedCard.cardId === "dissipation-dun-anneau" && !(seat.objects ?? []).some((card) => card.cardId.startsWith("anneau"))) {
-    return false;
-  }
-
-  if (selectedCard.cardId === "la-main-qui-vole" && (seat.objects ?? []).length === 0) {
-    return false;
-  }
-
-  return selectedCard.targets === "single_opponent"
-    || selectedCard.targets === "self_or_single_opponent"
-    || selectedCard.targets === "single_player_or_object";
-}
-
-function canLoadMassAttackStaff(
-  selectedCard: CardView | undefined,
-  objectCard: CardView,
-  ownerSeatNumber: number,
-  localSeatNumber: number
-): boolean {
-  return selectedCard?.canPlay === true
-    && selectedCard.categoryCode === "AM"
-    && ownerSeatNumber === localSeatNumber
-    && objectCard.cardId === "baton-dattaque-massive";
-}
-
-function isObjectTargetable(
-  selectedCard: CardView | undefined,
-  objectCard: CardView,
-  ownerSeatNumber: number,
-  localSeatNumber: number
-): boolean {
-  if (selectedCard == null || !selectedCard.canPlay) {
-    return false;
-  }
-
-  return canLoadMassAttackStaff(selectedCard, objectCard, ownerSeatNumber, localSeatNumber)
-    || selectedCard.targets === "target_object"
-    || selectedCard.targets === "single_player_or_object";
-}
-
-function objectCardMatchesSelectedTargeting(
-  selectedCard: CardView | undefined,
-  objectCard: CardView,
-  ownerSeatNumber: number,
-  localSeatNumber: number
-): boolean {
-  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber) || objectCard.categoryCode !== "O") {
-    return false;
-  }
-
-  if (canLoadMassAttackStaff(selectedCard, objectCard, ownerSeatNumber, localSeatNumber)) {
-    return true;
-  }
-
-  if (selectedCard?.cardId === "dissipation-dun-anneau") {
-    return objectCard.cardId.startsWith("anneau");
-  }
-
-  return true;
 }
 
 function renderAttachedCardCountBadge(card: CardView): string {

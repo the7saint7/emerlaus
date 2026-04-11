@@ -1,11 +1,11 @@
 {
   "instanceId": "local-dev-instance",
   "status": "in_progress",
-  "createdAt": "2026-04-10T17:14:18.705Z",
-  "startedAt": "2026-04-10T17:14:26.763Z",
-  "currentTurnSeatNumber": 2,
+  "createdAt": "2026-04-11T03:46:50.749Z",
+  "startedAt": "2026-04-11T03:46:53.434Z",
+  "currentTurnSeatNumber": 1,
   "currentTurnDisplayName": "Browser Player 405",
-  "turnNumber": 2,
+  "turnNumber": 1,
   "pendingAction": null,
   "pendingObjectChoice": null,
   "pendingCurseRelease": null,
@@ -13,7 +13,7 @@
   "seats": [
     {
       "seatNumber": 1,
-      "displayName": "Browser Player 252",
+      "displayName": "Browser Player 405",
       "controllerType": "human",
       "connected": true,
       "handCount": 5,
@@ -24,62 +24,7 @@
     },
     {
       "seatNumber": 2,
-      "displayName": "Browser Player 405",
-      "controllerType": "human",
-      "connected": true,
-      "handCount": 5,
-      "objectCount": 0,
-      "statusCount": 0,
-      "hp": 48,
-      "isAlive": true
-    },
-    {
-      "seatNumber": 3,
       "displayName": "Bot 1",
-      "controllerType": "bot",
-      "connected": true,
-      "handCount": 5,
-      "objectCount": 0,
-      "statusCount": 0,
-      "hp": 50,
-      "isAlive": true
-    },
-    {
-      "seatNumber": 4,
-      "displayName": "Bot 2",
-      "controllerType": "bot",
-      "connected": true,
-      "handCount": 5,
-      "objectCount": 0,
-      "statusCount": 0,
-      "hp": 50,
-      "isAlive": true
-    },
-    {
-      "seatNumber": 5,
-      "displayName": "Bot 3",
-      "controllerType": "bot",
-      "connected": true,
-      "handCount": 5,
-      "objectCount": 0,
-      "statusCount": 0,
-      "hp": 50,
-      "isAlive": true
-    },
-    {
-      "seatNumber": 6,
-      "displayName": "Bot 4",
-      "controllerType": "bot",
-      "connected": true,
-      "handCount": 5,
-      "objectCount": 0,
-      "statusCount": 0,
-      "hp": 50,
-      "isAlive": true
-    },
-    {
-      "seatNumber": 7,
-      "displayName": "Bot 5",
       "controllerType": "bot",
       "connected": true,
       "handCount": 5,

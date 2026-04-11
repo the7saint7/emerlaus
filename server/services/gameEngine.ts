@@ -1689,7 +1689,7 @@ function queueObjectChoice(
   if (game.pendingAction == null && finalizeActorSeatNumber == null) {
     const removed = removeObjectFromSeat(match, ownerSeatNumber, eligibleObjects[0]?.instanceId);
     if (mode === "steal") {
-      getStoredSeat(game, chooserSeatNumber).objects.push(...removed);
+      removed.forEach((card) => addObjectToSeat(match, chooserSeatNumber, card));
     } else {
       discardInstances(game, removed);
     }
@@ -1704,7 +1704,7 @@ function queueObjectChoice(
     }
     const removed = removeObjectFromSeat(match, ownerSeatNumber, chosenObject.instanceId);
     if (mode === "steal") {
-      getStoredSeat(game, chooserSeatNumber).objects.push(...removed);
+      removed.forEach((card) => addObjectToSeat(match, chooserSeatNumber, card));
     } else {
       discardInstances(game, removed);
     }
@@ -2737,6 +2737,59 @@ const OBJECT_SLOT_LIMITS: Record<string, number> = {
   other: 1
 };
 
+function normalizeSeatObjectSlots(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seat = getStoredSeat(game, seatNumber);
+  const overflowBySlot = new Map<string, StoredCardInstance[]>();
+  for (const objectCard of seat.objects) {
+    const slot = getObjectSlot(requireDefinition(objectCard.cardId).name);
+    const slotCards = overflowBySlot.get(slot) ?? [];
+    slotCards.push(objectCard);
+    overflowBySlot.set(slot, slotCards);
+  }
+
+  const removed: StoredCardInstance[] = [];
+  for (const [slot, slotCards] of overflowBySlot.entries()) {
+    const limit = OBJECT_SLOT_LIMITS[slot] ?? 1;
+    while (slotCards.length > limit) {
+      const displaced = slotCards.shift();
+      if (displaced == null) {
+        break;
+      }
+
+      const index = seat.objects.findIndex((candidate) => candidate.instanceId === displaced.instanceId);
+      if (index >= 0) {
+        seat.objects.splice(index, 1);
+      }
+      removed.push(displaced);
+      appendServerDebugLog(
+        match,
+        "object",
+        `Seat ${seatNumber} discarded overflow ${requireDefinition(displaced.cardId).name} to enforce ${slot} slot limit ${limit}`
+      );
+    }
+  }
+
+  if (removed.length > 0) {
+    discardInstances(game, removed);
+  }
+}
+
+function addObjectToSeat(match: StoredMatchState, seatNumber: number, card: StoredCardInstance): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seat = getStoredSeat(game, seatNumber);
+  seat.objects.push(card);
+  normalizeSeatObjectSlots(match, seatNumber);
+}
+
 function movePersistentCard(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -2751,21 +2804,7 @@ function movePersistentCard(
   }
 
   if (definition.category.code === "O") {
-    const seat = getStoredSeat(game, actorSeatNumber);
-    const slot = getObjectSlot(definition.name);
-    const limit = OBJECT_SLOT_LIMITS[slot] ?? 1;
-    const existing = seat.objects.filter((o) => getObjectSlot(requireDefinition(o.cardId).name) === slot);
-
-    if (existing.length >= limit) {
-      // Replace the oldest object of the same slot (discard it)
-      const replaced = existing[0];
-      const idx = seat.objects.indexOf(replaced);
-      seat.objects.splice(idx, 1);
-      discardInstances(game, [replaced]);
-      appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} replaced ${requireDefinition(replaced.cardId).name} with ${definition.name}`);
-    }
-
-    seat.objects.push(card);
+    addObjectToSeat(match, actorSeatNumber, card);
     appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} equipped ${definition.name}`);
     return;
   }
@@ -2783,8 +2822,7 @@ function movePersistentCard(
   }
 
   if (definition.id === "sanctuaire-demmerlaus") {
-    const seat = getStoredSeat(game, actorSeatNumber);
-    seat.objects.push(card);
+    addObjectToSeat(match, actorSeatNumber, card);
     appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} placed ${definition.name} in play`);
     return;
   }
@@ -3159,7 +3197,7 @@ function applyEffect(
         return queueObjectChoice(match, actorSeatNumber, ownerSeatNumber, cardInstance, "steal", boxId, objectChoiceFinalizeActorSeatNumber);
       }
       const removed = removeObjectFromSeat(match, ownerSeatNumber, targetObjectInstanceId);
-      actorState.objects.push(...removed);
+      removed.forEach((card) => addObjectToSeat(match, actorSeatNumber, card));
       if (removed[0] != null) {
         appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} stole ${requireDefinition(removed[0].cardId).name} from seat ${ownerSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`);
       }
@@ -3428,6 +3466,7 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
 
   while (safety < ordered.length) {
     const candidateSeat = getStoredSeat(game, ordered[nextIndex]);
+    normalizeSeatObjectSlots(match, candidateSeat.seatNumber);
     const hydromelStatuses = candidateSeat.statuses.filter((status) => status.cardId === "hydromel");
     if (hydromelStatuses.length > 0) {
       candidateSeat.statuses = candidateSeat.statuses.filter((status) => status.cardId !== "hydromel");
@@ -5472,7 +5511,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
   const removed = removeObjectFromSeat(match, pendingObjectChoice.ownerSeatNumber, objectInstanceId);
   if (removed[0] != null) {
     if (pendingObjectChoice.mode === "steal") {
-      getStoredSeat(game, pendingObjectChoice.chooserSeatNumber).objects.push(...removed);
+      removed.forEach((card) => addObjectToSeat(match, pendingObjectChoice.chooserSeatNumber, card));
       appendDealerMessage(
         match,
         `${chooserSeat.displayName} stole ${requireDefinition(removed[0].cardId).name} with ${sourceDefinition.name}.`

@@ -34,6 +34,12 @@ import { createDiscordSession } from "./discord/session";
 import { diceController, type DiceStagePlacement } from "./features/dice/diceController";
 import { getSeatDiceColor } from "./features/dice/diceSeatColors";
 import {
+  cardIsLiftPlayable,
+  cardNeedsArrow,
+  getCollectiveAnnulationPrompt as getSharedCollectiveAnnulationPrompt,
+  getResponseChoiceForCard
+} from "./gameplay/interactionRules";
+import {
   loadStoredLanguage,
   localizeCardView,
   localizeMatchState,
@@ -1302,40 +1308,11 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
   const getCollectiveAnnulationPrompt = (
     draggedCard: CardView | undefined
   ): { maxCount: number; neededCount: number } | null => {
-    if (draggedCard?.cardId !== "annulation") {
+    if (state.match == null) {
       return null;
     }
 
-    const pendingAction = state.match?.game?.pendingAction;
-    if (pendingAction == null || pendingAction.responseMode !== "collective") {
-      return null;
-    }
-
-    const requiredCount = pendingAction.card.defenseBand?.annulationCardsRequired ?? 0;
-    if (requiredCount < 2) {
-      return null;
-    }
-
-    const localResponder = pendingAction.responders.find((responder) => responder.seatNumber === state.localSeatNumber);
-    if (localResponder?.state !== "pending") {
-      return null;
-    }
-
-    const alreadyCommitted = pendingAction.responders.reduce((count, responder) => (
-      responder.choice === "annulation"
-        ? count + (responder.committedCardCount ?? responder.cards?.length ?? 0)
-        : count
-    ), 0);
-    const neededCount = Math.max(0, requiredCount - alreadyCommitted);
-    const availableCount = getLocalHand().filter((card) => card.cardId === "annulation").length;
-    if (neededCount < 2 || availableCount < 2) {
-      return null;
-    }
-
-    return {
-      maxCount: Math.min(availableCount, neededCount),
-      neededCount
-    };
+    return getSharedCollectiveAnnulationPrompt(state.match, state.localSeatNumber, getLocalHand(), draggedCard);
   };
 
   const captureHandCardVisuals = (): Map<string, HandCardVisualSnapshot> => {
@@ -1454,22 +1431,6 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     state.returningHandCardInstanceId = "";
     render();
   };
-
-  /** Returns true if the card's targets require aiming at a specific opponent. */
-  const cardNeedsArrow = (card: CardView): boolean =>
-    card.canPlay && (card.targets === "single_opponent");
-
-  /** Returns true if the card can be played by a "lift out of hand" gesture. */
-  const cardIsLiftPlayable = (card: CardView): boolean =>
-    card.canPlay && card.categoryCode !== "CA" && (
-      card.categoryCode === "O" ||
-      card.targets === "self" ||
-      card.targets === "self_or_single_opponent" ||
-      card.targets === "all_opponents" ||
-      card.targets === "left_opponent" ||
-      card.targets === "none" ||
-      card.selectionMode === "confirm"
-    );
 
   /**
    * Updates the fixed arrow SVG overlay for arrow-drag (Phase 3) and
@@ -1683,14 +1644,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             : undefined
         }, previousHandVisuals);
       } else if (hoverTarget.kind === "response-slot") {
-        const choice =
-          draggedCard.cardId === "annulation"
-            ? "annulation"
-            : draggedCard.cardId === "resistance-accrue"
-              ? "resistance_accrue"
-              : draggedCard.cardId === "miroir"
-                ? "mirror"
-                : null;
+        const choice = getResponseChoiceForCard(draggedCard);
         if (choice == null) {
           if (shouldOfferDiscardOnInvalidDrop(draggedCard)) {
             state.confirmingDiscardCardInstanceId = draggedCard.instanceId;
