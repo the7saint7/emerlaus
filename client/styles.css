@@ -147,6 +147,7 @@ select {
 
 .pixi-frame-status,
 .pixi-frame-actions,
+.pixi-kick-panel,
 .pixi-expansion-row,
 .pixi-language-switch {
   display: flex;
@@ -231,6 +232,48 @@ select {
   pointer-events: none;
 }
 
+.pixi-combat-banner {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(760px, calc(100% - 220px));
+  padding: 12px 18px;
+  border-radius: 999px;
+  color: #f7f0df;
+  background: rgba(14, 22, 16, 0.9);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  pointer-events: none;
+  text-align: center;
+}
+
+.pixi-playback-lock {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border: 1px solid rgba(134, 207, 255, 0.18);
+  border-radius: 999px;
+  color: rgba(239, 246, 255, 0.92);
+  background: rgba(10, 16, 12, 0.72);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pixi-combat-banner--info {
+  border: 1px solid rgba(134, 207, 255, 0.32);
+}
+
+.pixi-combat-banner--success {
+  border: 1px solid rgba(126, 224, 160, 0.34);
+}
+
+.pixi-combat-banner--failure {
+  border: 1px solid rgba(220, 102, 102, 0.34);
+}
+
 .pixi-center-actions {
   position: absolute;
   transform: translateX(-50%);
@@ -238,6 +281,18 @@ select {
 }
 
 .pixi-center-actions .pixi-overlay-button {
+  pointer-events: auto;
+}
+
+.pixi-seat-action {
+  position: absolute;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.pixi-seat-action .pixi-overlay-button {
+  min-height: 34px;
+  padding: 8px 12px;
   pointer-events: auto;
 }
 
@@ -2817,6 +2872,74 @@ h2 {
   gap: 12px;
 }
 
+.death-search-tray {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.death-search-tray__label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.death-search-tray__slots {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.death-search-tray__slot {
+  width: 82px;
+}
+
+.death-search-tray__slot--filled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background: rgba(129, 214, 164, 0.07);
+  border: 1px solid rgba(129, 214, 164, 0.45);
+  border-radius: 8px;
+  padding: 6px 6px 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.death-search-tray__slot--filled:hover {
+  background: rgba(180, 80, 80, 0.1);
+  border-color: rgba(200, 100, 100, 0.5);
+}
+
+.death-search-tray__slot--filled img {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.death-search-tray__slot--filled span {
+  font-size: 0.68rem;
+  color: rgba(129, 214, 164, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
+}
+
+.death-search-tray__slot--empty {
+  aspect-ratio: 5 / 7;
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.telepathy-panel:has(.death-search-tray) .telepathy-list {
+  max-height: 44vh;
+}
+
 .card-reference-panel {
   width: min(1180px, 100%);
 }
@@ -2919,6 +3042,10 @@ h2 {
 
   .telepathy-list {
     max-height: 32vh;
+  }
+
+  .telepathy-panel:has(.death-search-tray) .telepathy-list {
+    max-height: 20vh;
   }
 
   .card-reference-list {

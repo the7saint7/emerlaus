@@ -2821,6 +2821,16 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
       render();
     });
 
+    rootElement.querySelector<HTMLButtonElement>("[data-action='decline-death-search']")?.addEventListener("click", async () => {
+      try {
+        applyMatchState(await resolvePendingDeathSearch(state.instanceId, state.playerSessionToken, { decline: true }));
+        state.errorMessage = "";
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.resolveDeathSearch");
+      }
+      render();
+    });
+
     rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-pickpocket-take']")?.addEventListener("click", async () => {
       const pendingPickpocket = state.match?.game?.pendingPickpocket;
       if (pendingPickpocket == null) {

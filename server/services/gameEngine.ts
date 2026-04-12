@@ -5677,7 +5677,7 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
 export function resolvePendingDeathSearch(
   match: StoredMatchState,
   userId: string,
-  request: { corpseSeatNumber?: number; keepCardInstanceIds?: string[] }
+  request: { corpseSeatNumber?: number; keepCardInstanceIds?: string[]; decline?: boolean }
 ): void {
   const game = match.internalGame;
   const pendingDeathSearch = game?.pendingDeathSearch;
@@ -5688,6 +5688,19 @@ export function resolvePendingDeathSearch(
   const chooserSeat = match.seats.find((seat) => seat.userId === userId);
   if (chooserSeat == null || chooserSeat.seatNumber !== pendingDeathSearch.chooserSeatNumber) {
     throw new Error("This seat cannot resolve the death search");
+  }
+
+  if (request.decline) {
+    const continuationActorSeatNumber = pendingDeathSearch.continuationActorSeatNumber ?? chooserSeat.seatNumber;
+    const continuationBoxId = pendingDeathSearch.continuationBoxId;
+    appendServerDebugLog(
+      match,
+      "death_search",
+      `Seat ${chooserSeat.seatNumber} declined ${requireDefinition(pendingDeathSearch.sourceCard.cardId).name}; card kept in hand`
+    );
+    game.pendingDeathSearch = undefined;
+    finalizeResolvedAction(match, continuationActorSeatNumber, continuationBoxId);
+    return;
   }
 
   if (request.corpseSeatNumber != null) {

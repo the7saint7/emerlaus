@@ -380,6 +380,7 @@ export interface PendingBoardResetKeepRequest {
 export interface PendingDeathSearchRequest {
   corpseSeatNumber?: number;
   keepCardInstanceIds?: string[];
+  decline?: boolean;
 }
 
 export interface PendingPickpocketRequest {

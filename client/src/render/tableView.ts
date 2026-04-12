@@ -104,7 +104,7 @@ function formatTooltip(card: CardView): string {
   return `${card.name}\n\n${card.description}`;
 }
 
-function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
+export function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
   const defenseBand = card.defenseBand;
   if (defenseBand == null) {
     return "";
@@ -1122,6 +1122,8 @@ function renderPendingDeathSearchModal(
           </div>
           ${isLocalChooser && selectedCorpse != null
             ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-death-search-keep" ${keepSelectionReady ? "" : "disabled"}>${t(language, "deathSearch.keepAction")}</button>`
+            : isLocalChooser && selectedCorpse == null
+            ? `<button type="button" class="action-button action-button--secondary" data-action="decline-death-search">${t(language, "deathSearch.declineAction")}</button>`
             : ""}
         </div>
         <div class="telepathy-grid">
@@ -1179,6 +1181,23 @@ function renderPendingDeathSearchModal(
               </div>
             `}
         </div>
+        ${isLocalChooser && selectedCorpse != null && pendingDeathSearch.cardOptions.length > 0
+          ? `<div class="death-search-tray">
+              <p class="death-search-tray__label">${t(language, "deathSearch.selectedTray", { count: deathSearchSelectedCardInstanceIds.length, total: pendingDeathSearch.keepCardCount })}</p>
+              <div class="death-search-tray__slots">
+                ${Array.from({ length: pendingDeathSearch.keepCardCount }).map((_, i) => {
+                  const selectedId = deathSearchSelectedCardInstanceIds[i];
+                  const card = selectedId != null ? pendingDeathSearch.cardOptions.find((c) => c.instanceId === selectedId) : undefined;
+                  return card != null
+                    ? `<button type="button" class="death-search-tray__slot death-search-tray__slot--filled" data-action="toggle-death-search-card" data-card-instance-id="${card.instanceId}">
+                        <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                        <span>${escapeHtml(card.name)}</span>
+                      </button>`
+                    : `<div class="death-search-tray__slot death-search-tray__slot--empty"></div>`;
+                }).join("")}
+              </div>
+            </div>`
+          : ""}
       </article>
     </section>
   `;

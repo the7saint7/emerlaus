@@ -640,8 +640,20 @@ export function disconnectPlayer(instanceId: string, userId: string, _request: D
     match.seats = match.seats.filter((candidate) => candidate.userId !== userId);
     revokePlayerSession(instanceId, userId);
   } else {
+    const aliveSeatNumbersBeforeDisconnect = match.internalGame?.seatStates
+      .filter((seatState) => seatState.alive)
+      .map((seatState) => seatState.seatNumber)
+      ?? [];
     replaceSeatWithBot(match, seat, "normal");
     revokePlayerSession(instanceId, userId);
+
+    if (aliveSeatNumbersBeforeDisconnect.length === 2 && aliveSeatNumbersBeforeDisconnect.includes(seat.seatNumber)) {
+      const winnerSeatNumber = aliveSeatNumbersBeforeDisconnect.find((seatNumber) => seatNumber !== seat.seatNumber);
+      if (winnerSeatNumber != null && match.internalGame != null) {
+        match.internalGame.winnerSeatNumber = winnerSeatNumber;
+        match.status = "finished";
+      }
+    }
   }
 
   if (wasHost) {
@@ -677,6 +689,7 @@ export function kickPlayer(instanceId: string, userId: string, request: KickPlay
 
   const kickedUserId = targetSeat.userId;
   replaceSeatWithBot(match, targetSeat, "normal");
+  targetSeat.disconnectedUserId = undefined;
   revokePlayerSession(instanceId, kickedUserId);
 
   saveMatch(match);

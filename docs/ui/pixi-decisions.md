@@ -134,3 +134,19 @@ Use this file for short ADR-style notes during implementation.
   - `client/src/pixi/pixiApp.ts`
   - `client/styles.css`
   - `docs/ui/pixi-migration-status.md`
+
+## 2026-04-11 - Drive Pixi Combat Playback From Live Stage Geometry
+
+- Status: accepted
+- Context:
+  - Phase 3 needed action playback to look choreographed rather than only textual
+  - copied coordinates had already caused overlay drift elsewhere in the Pixi migration
+- Decision:
+  - derive combat card flights and temporary playback arrows from the latest rendered seat, object, and slot geometry
+  - allow response playback to fall back to a generic card visual when the exact response card is not recoverable from current state
+- Consequences:
+  - action and response playback now stays aligned with the evolving fixed-stage layout
+  - animation timing may still need iteration because playback is driven against live synced state rather than a fully isolated replay model
+- Related files:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`

@@ -5,16 +5,14 @@
 - Overall status: in progress
 - Active renderer default: `dom`
 - Fallback renderer available: `dom`
-- Pixi renderer available: yes, Phase 2 interaction preview
-- Current phase: Phase 2
-- Current task: Phase 2 is implementation-complete and waiting for user confirmation before being marked complete in the tracker
+- Pixi renderer available: yes, Phase 4 overlay workflows in progress
+- Current phase: Phase 4
+- Current task: continue Phase 4 with pickpocket modal
 
 ## Next Recommended Task
 
-- Validate the finished Phase 2 Pixi interaction slice with the user and, if accepted, mark Phase 2 complete and begin Phase 3 combat presentation work.
-- Keep refining table composition later, but do not spend more time on the pass-button anchor unless new card/slot art changes force it.
-- Remaining shared-rule cleanup is no longer the blocking item for closing Phase 2.
-- Keep `dom` stable while Pixi interaction parity improves incrementally.
+- Continue Phase 4 with the pickpocket modal.
+- Keep `dom` stable while Pixi overlay parity improves incrementally.
 
 ## Resume Checklist
 
@@ -66,11 +64,11 @@ Any new agent should do this first:
 
 ### Phase 4: Overlay workflows
 
-- [ ] Leave / kick / discard / annulation flows.
-- [ ] Pending object choice.
-- [ ] Telepathy.
-- [ ] Board reset keep.
-- [ ] Death search.
+- [x] Leave / kick / discard / annulation flows.
+- [x] Pending object choice.
+- [x] Telepathy.
+- [x] Board reset keep.
+- [x] Death search.
 - [ ] Pickpocket.
 - [ ] Sacrifice amount entry.
 - [ ] Card reference browser.
@@ -373,3 +371,257 @@ Any new agent should do this first:
   - get user confirmation, then mark `Phase 2` complete and start `Phase 3`
 - Risks / blockers:
   - no known Phase 2 blocker remains beyond user acceptance of the current behavior
+
+## Session 2026-04-11 11
+
+- Phase: Phase 3
+- Task: start Pixi combat-presentation playback
+- Completed:
+  - marked Phase 2 complete after user confirmation
+  - added a first Pixi Phase 3 playback slice driven by unseen server event-log events
+  - added a stage-aligned combat banner overlay for action / response / resistance / damage / heal messages
+  - added seat impact highlights and transient damage/heal burst labels in the Pixi table
+  - initialized shared event playback tracking in the Pixi client so previously seen events are not replayed on join
+- Partial:
+  - this is still a lightweight presentation slice and does not yet include card flights, dice, or full playback lock behavior
+  - persistent action arrows already existed, but richer combat choreography is still ahead
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `client/styles.css`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - continue Phase 3 with stronger action playback such as card flights and richer impact timing
+- Risks / blockers:
+  - Pixi presentation playback is currently simpler than the DOM event-replay system and may need iteration on timing/overlap
+
+## Session 2026-04-11 12
+
+- Phase: Phase 3
+- Task: add event-driven card flights to combat playback
+- Completed:
+  - added transient Pixi card-flight state and playback-arrow state to the combat presentation loop
+  - animated `action_start` playback with actor-to-center card travel followed by center-to-target flights
+  - added response-choice playback travel into the defense slot for non-pass responses
+  - extended rendered table geometry so playback can target actual seat, object, and slot coordinates instead of copied constants
+- Partial:
+  - opponent remote cursors are still not implemented
+  - victory celebration and playback lock are still pending
+  - response playback may still fall back to a generic card visual when the exact response card is no longer available in live state
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - tune the new flight timing/anchors from visual feedback, then continue Phase 3 with opponent cursors or playback lock
+- Risks / blockers:
+  - playback uses current rendered geometry, so event timing can still need adjustment when sync and animation overlap
+  - response playback now snapshots pending-action responder cards and falls back to representative response cards when live state has already resolved
+
+## Session 2026-04-11 13
+
+- Phase: Phase 3
+- Task: add Pixi playback interaction lock
+- Completed:
+  - added a Pixi-side event playback lock so local gameplay interaction is blocked while replay animations are running
+  - deferred sync continuation until the current replay batch completes
+  - added a small stage-aligned resolving indicator above the combat banner during locked playback
+- Partial:
+  - the lock is focused on gameplay interaction, not a full-screen modal freeze
+  - victory celebration and opponent cursors are still pending
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `client/styles.css`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - continue Phase 3 with opponent cursors or victory presentation
+- Risks / blockers:
+  - replay timing still depends on the current event-batch sequencing and may need further tuning as more presentation layers are added
+
+## Session 2026-04-11 14
+
+- Phase: Phase 3
+- Task: port DOM-style presentation lock into Pixi center-state rendering
+- Completed:
+  - confirmed from local logs that `Potion d’énergie` at `2026-04-11 19:30:20.319` was being visually overlapped by `Destruction` opened at `2026-04-11 19:30:20.969`
+  - added immediate pre-replay locking when unseen replayable events arrive, instead of waiting for the replay promise body to start
+  - added Pixi-side `activeActionVisual` and `centerResponseCards` state so the center stack stays on the currently replaying action instead of leaking the next live `pendingAction`
+  - hid live pending-action driven center/response rendering while presentation lock is active
+- Partial:
+  - the Pixi replay model still does not isolate the full board state the way a dedicated replay scene graph would
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - retest chained action playback, then continue Phase 3 with victory presentation or opponent cursors
+- Risks / blockers:
+  - if future replay layers need stricter ordering, the current live-state-plus-lock approach may still need a deeper replay snapshot
+
+## Session 2026-04-11 15
+
+- Phase: Phase 3
+- Task: add Pixi victory presentation
+- Completed:
+  - ported the DOM-style delayed winner reveal into the Pixi renderer
+  - added a stage-aligned victory celebration overlay using the existing hero + floating-label visual language
+  - gated the reveal on `winnerSeatNumber` plus replay quiet state so the celebration waits until combat/event playback is finished
+  - added cleanup for victory timers when leaving the table view
+- Partial:
+  - opponent cursors are still not implemented
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - test end-of-match reveal timing in Pixi, then decide whether opponent cursors are needed before closing Phase 3
+- Risks / blockers:
+  - the current victory overlay reuses DOM/CSS layering over the Pixi stage rather than a Pixi-native particle system
+
+## Session 2026-04-11 16
+
+- Phase: Phase 3
+- Task: add opponent cursor playback to Pixi
+- Completed:
+  - connected the Pixi client to the existing match SSE stream for `cursor_move` events
+  - added throttled local cursor broadcasts during seat-target arrow drag
+  - rendered stage-native ghost arrows for remote players currently targeting seats
+  - added stale-timeout cleanup and explicit clear on local drag release
+- Partial:
+  - cursor playback currently covers seat-target aiming only, matching the existing backend cursor payload
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - user-test remote cursor visibility; if acceptable, `Phase 3` is functionally complete
+- Risks / blockers:
+  - SSE is now also active in Pixi, so any future session-handling changes should verify both participant updates and SSE remain compatible
+
+## Session 2026-04-11 17
+
+- Phase: Phase 4
+- Task: first Pixi overlay-workflow cleanup slice
+- Completed:
+  - added Pixi leave confirmation instead of immediate disconnect on `Quitter la partie`
+  - added Pixi discard confirmation instead of immediate inactive-play discard execution
+  - added a host kick flow in Pixi using the existing kick API and confirmation modal
+  - kept annulation as the existing dedicated Pixi modal path
+- Partial:
+  - this slice only covers the first overlay-workflow group, not pending object choice or the larger special-card flows
+  - kick controls currently live in the Pixi top overlay rather than being attached to seat cards
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `client/styles.css`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+  - `npm run build:client`
+- Next step:
+  - user-test leave / discard / kick confirmations, then continue Phase 4 with pending object choice
+- Risks / blockers:
+  - the Pixi overlay workflow layer is still DOM-based, so future modal-heavy slices should keep deriving positions and visibility from the fixed-stage shell consistently
+
+## Session 2026-04-11 18
+
+- Phase: Phase 4
+- Task: bug fixes and pending object choice modal
+- Completed:
+  - fixed kick confirmation modal disappearing on next sync (was resetting `confirmingKickSeatNumber = 0` unconditionally on every sync)
+  - fixed kicked player being able to rejoin by reclaiming their bot seat (cleared `disconnectedUserId` after `replaceSeatWithBot` in kick handler)
+  - added pending object choice modal in Pixi overlay
+  - modal shows card grid for the local chooser and a waiting message for other players
+  - wired `select-pending-object` click handler through `selectPendingObject` API
+  - added `pendingObjectChoice != null` to `hasBlockingModalOpen` to block canvas interaction while choosing
+- Partial:
+  - object choice modal uses DOM overlay (consistent with other Phase 4 modals)
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `server/services/matchService.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+- Next step:
+  - continue Phase 4 with telepathy hand inspection modal
+- Risks / blockers:
+  - none known
+
+## Session 2026-04-11 19
+
+- Phase: Phase 4
+- Task: telepathy hand inspection modal
+- Completed:
+  - added telepathy hand inspection modal in Pixi overlay
+  - local viewer sees full card grid with image + name + category, and a preview pane showing the selected card's art, description, and defense band
+  - non-viewers see a waiting message
+  - dismiss button calls `acknowledgePendingHandInspection` and clears the modal
+  - card clicks update the local preview selection without API calls
+  - added `syncTelepathyPreview` to auto-select first card on new inspection and keep selection valid across syncs
+  - added `pendingHandInspection != null` to `hasBlockingModalOpen` to block canvas interaction while inspecting
+- Partial:
+  - scroll retention is not implemented (position resets on redraw, acceptable for Pixi phase)
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+- Next step:
+  - continue Phase 4 with board reset keep modal
+- Risks / blockers:
+  - none known
+
+## Session 2026-04-11 20
+
+- Phase: Phase 4
+- Task: board reset keep modal
+- Completed:
+  - added board reset keep modal in Pixi overlay using the same telepathy-panel layout
+  - local chooser sees card list with preview pane and a "Keep This Card" confirm button
+  - non-choosers see a waiting message
+  - confirm button calls `resolvePendingBoardResetKeep` with the selected card instanceId
+  - card clicks update the preview selection without API calls
+  - added `syncBoardResetKeepPreview` to auto-select first card and keep selection valid across syncs
+  - also removed duplicate `syncTelepathyPreview` call left over from previous session
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+- Next step:
+  - continue Phase 4 with death search modal
+- Risks / blockers:
+  - none known
+
+## Session 2026-04-11 21
+
+- Phase: Phase 4
+- Task: death search modal
+- Completed:
+  - added two-phase death search modal in Pixi overlay
+  - phase 1: shows corpse list (text-only buttons); clicking a corpse calls `resolvePendingDeathSearch({ corpseSeatNumber })` to select it
+  - phase 2: shows card preview + toggle-select list; selected cards highlighted with `telepathy-card--selected`; confirm button enabled only when exactly `keepCardCount` cards are selected
+  - confirm calls `resolvePendingDeathSearch({ keepCardInstanceIds })`
+  - added `syncDeathSearchState` to keep preview and selection valid across syncs and phase transitions
+  - non-choosers see a waiting message
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+- Next step:
+  - continue Phase 4 with pickpocket modal
+- Risks / blockers:
+  - none known

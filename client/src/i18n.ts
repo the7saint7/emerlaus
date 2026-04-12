@@ -132,6 +132,8 @@ type TranslationKey =
   | "deathSearch.corpseCardCount"
   | "deathSearch.sourceSelf"
   | "deathSearch.sourceCorpse"
+  | "deathSearch.declineAction"
+  | "deathSearch.selectedTray"
   | "pickpocket.title"
   | "pickpocket.inProgress"
   | "pickpocket.body"
@@ -313,6 +315,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "deathSearch.corpseCardCount": "{count} cards available",
     "deathSearch.sourceSelf": "From {ownerName}'s hand",
     "deathSearch.sourceCorpse": "From {ownerName}'s corpse",
+    "deathSearch.declineAction": "Keep for Later",
+    "deathSearch.selectedTray": "Cards to keep ({count} of {total})",
     "pickpocket.title": "Pickpocket",
     "pickpocket.inProgress": "Pickpocket in progress",
     "pickpocket.body": "Choose the {count} card(s) to steal from {targetName}.",
@@ -491,6 +495,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "deathSearch.corpseCardCount": "{count} cartes disponibles",
     "deathSearch.sourceSelf": "Depuis la main de {ownerName}",
     "deathSearch.sourceCorpse": "Depuis le cadavre de {ownerName}",
+    "deathSearch.declineAction": "Garder pour plus tard",
+    "deathSearch.selectedTray": "Cartes à garder ({count} sur {total})",
     "pickpocket.title": "Pickpocket",
     "pickpocket.inProgress": "Pickpocket en cours",
     "pickpocket.body": "Choisissez les {count} carte(s) à voler à {targetName}.",
