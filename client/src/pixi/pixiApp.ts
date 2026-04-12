@@ -856,6 +856,20 @@ function buildVictoryCelebrationMarkup(match: MatchState, language: AppLanguage,
   `;
 }
 
+const LOBBY_CARD_W = 320;
+const LOBBY_CARD_H = 160;
+const LOBBY_CARD_GAP = 14;
+const LOBBY_COLUMNS = 3;
+const LOBBY_START_X = 70;
+const LOBBY_START_Y = 166;
+
+const LOBBY_EXP_X = 1090;
+const LOBBY_EXP_Y = 70;
+const LOBBY_EXP_W = 440;
+const LOBBY_EXP_HEADER_H = 56;
+const LOBBY_EXP_ROW_H = 85;
+const LOBBY_EXP_ROW_GAP = 8;
+
 function renderLobbyScene(
   scene: Container,
   match: MatchState,
@@ -863,160 +877,126 @@ function renderLobbyScene(
   language: AppLanguage,
   onTextureReady: () => void = () => {}
 ): void {
-  scene.addChild(createRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT, "#0f1f13"));
-  scene.addChild(createRect(34, 34, STAGE_WIDTH - 68, STAGE_HEIGHT - 68, "#183a22", 1, 32));
-  scene.addChild(createRect(70, 70, STAGE_WIDTH - 140, 150, "#0d1910", 0.9, 28));
-  scene.addChild(createLabel(t(language, "lobby.activity"), 98, 102, {
-    fontSize: 20,
-    fill: "#d3b36d",
-    fontWeight: "700",
-    letterSpacing: 2
-  }));
-  scene.addChild(createLabel(t(language, "lobby.title"), 98, 146, {
-    fontSize: 42,
-    fontWeight: "700"
-  }));
-  scene.addChild(createLabel(t(language, "lobby.copy"), 98, 196, {
-    fontSize: 18,
-    fill: "#ced6c9",
-    wordWrap: true,
-    wordWrapWidth: 860,
-    lineHeight: 26
-  }));
-
   const localSeat = getLocalSeat(match, localSeatNumber);
   const hostSeat = match.seats.find((seat) => seat.isHost);
+  const amHost = localSeat?.isHost === true;
 
-  const statusPanel = createRect(1090, 70, 440, 150, "#0d1910", 0.92, 28);
-  scene.addChild(statusPanel);
-  scene.addChild(createLabel(t(language, "lobby.discord"), 1120, 100, { fontSize: 16, fill: "#f0d897" }));
-  scene.addChild(createLabel(t(language, "lobby.seatsFilled", { filled: match.seats.length, max: match.maxSeats }), 1120, 138, {
-    fontSize: 26,
-    fontWeight: "700"
-  }));
-  scene.addChild(createLabel(t(language, "seat.label", { seatNumber: localSeatNumber }), 1120, 176, {
-    fontSize: 18,
-    fill: "#cad4ca"
-  }));
-  scene.addChild(createLabel(hostSeat?.displayName ?? t(language, "lobby.unassigned"), 1120, 206, {
-    fontSize: 18,
-    fill: "#cad4ca"
-  }));
+  // ── Background ───────────────────────────────────────────────────────────────
+  scene.addChild(createRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT, "#0f1f13"));
+  scene.addChild(createRect(34, 34, STAGE_WIDTH - 68, STAGE_HEIGHT - 68, "#183a22", 1, 32));
 
-  const cardWidth = 280;
-  const cardHeight = 230;
-  const seatGap = 22;
-  const columns = 4;
-  const startX = 88;
-  const startY = 274;
+  // ── Header bar ───────────────────────────────────────────────────────────────
+  scene.addChild(createRect(70, 70, 980, 86, "#0d1910", 0.92, 16));
+  scene.addChild(createLabel(t(language, "lobby.title"), 98, 80, { fontSize: 34, fontWeight: "700" }));
+  scene.addChild(createLabel(
+    t(language, "lobby.seatsFilled", { filled: match.seats.length, max: match.maxSeats })
+    + "  ·  " + t(language, "seat.label", { seatNumber: localSeatNumber })
+    + (hostSeat != null ? "  ·  " + t(language, "seat.host") + ": " + hostSeat.displayName : ""),
+    98, 126, { fontSize: 14, fill: "#8aaa80" }
+  ));
 
-  Array.from({ length: match.maxSeats }, (_value, index) => index + 1).forEach((seatNumber, index) => {
+  // ── Seat grid (3 columns × 4 rows) ───────────────────────────────────────────
+  // Row 0, col 0 = host seat; row 0, cols 1-2 = start-match button (drawn below).
+  // Seats 2+ fill rows 1-3 left-to-right.
+  Array.from({ length: match.maxSeats }, (_value, index) => index + 1).forEach((seatNumber) => {
     const seat = match.seats.find((candidate) => candidate.seatNumber === seatNumber);
-    const x = startX + (index % columns) * (cardWidth + seatGap);
-    const y = startY + Math.floor(index / columns) * (cardHeight + seatGap);
+    const col = seatNumber === 1 ? 0 : (seatNumber - 2) % LOBBY_COLUMNS;
+    const row = seatNumber === 1 ? 0 : 1 + Math.floor((seatNumber - 2) / LOBBY_COLUMNS);
+    const x = LOBBY_START_X + col * (LOBBY_CARD_W + LOBBY_CARD_GAP);
+    const y = LOBBY_START_Y + row * (LOBBY_CARD_H + LOBBY_CARD_GAP);
+    const isEmpty = seat == null;
 
-    scene.addChild(createRect(x, y, cardWidth, cardHeight, seat == null ? "#23402a" : "#101a12", 0.95, 24));
-    scene.addChild(createLabel(t(language, "seat.label", { seatNumber }), x + 20, y + 20, {
-      fontSize: 16,
-      fill: "#d3b36d"
-    }));
+    scene.addChild(createRect(x, y, LOBBY_CARD_W, LOBBY_CARD_H, isEmpty ? "#131f15" : "#0f1a10", 0.95, 14));
+    scene.addChild(createLabel(
+      t(language, "seat.label", { seatNumber }),
+      x + 14, y + 14,
+      { fontSize: 12, fill: "#5a8060" }
+    ));
 
-    if (seat == null) {
-      scene.addChild(createLabel(t(language, "lobby.openSeat"), x + 20, y + 74, {
-        fontSize: 28,
-        fontWeight: "700"
-      }));
-      scene.addChild(createLabel(t(language, "lobby.seatAvailable"), x + 20, y + 116, {
-        fontSize: 17,
-        fill: "#cad4ca",
-        wordWrap: true,
-        wordWrapWidth: cardWidth - 40,
-        lineHeight: 24
-      }));
+    if (isEmpty) {
+      if (amHost) {
+        scene.addChild(createLabel("+", x + LOBBY_CARD_W / 2, y + LOBBY_CARD_H / 2 - 16, { fontSize: 40, fill: "#3a6040" }, 0.5, 0.5));
+        scene.addChild(createLabel(t(language, "lobby.addBot"), x + LOBBY_CARD_W / 2, y + LOBBY_CARD_H / 2 + 24, { fontSize: 15, fill: "#4a7a52" }, 0.5, 0.5));
+      } else {
+        scene.addChild(createLabel(t(language, "lobby.openSeat"), x + LOBBY_CARD_W / 2, y + LOBBY_CARD_H / 2, { fontSize: 20, fill: "#2a3d2e" }, 0.5, 0.5));
+      }
       return;
     }
 
     scene.addChild(createAvatarDisplay(
       seat.avatarUrl,
-      x + 54,
-      y + 74,
-      32,
+      x + 40, y + 80,
+      28,
       seat.controllerType === "bot" ? "#8a4f2e" : "#326a8a",
       getSeatInitials(seat.displayName),
       onTextureReady
     ));
-    scene.addChild(createLabel(seat.displayName, x + 100, y + 58, {
-      fontSize: 24,
-      fontWeight: "700"
-    }));
+
+    // Name + status stacked on the right of the avatar
+    scene.addChild(createLabel(seat.displayName, x + 82, y + 38, { fontSize: 19, fontWeight: "700" }));
     scene.addChild(createLabel(
       seat.controllerType === "bot"
         ? t(language, "seat.bot", { difficulty: seat.difficulty ?? "normal" })
-        : seat.connected
-          ? t(language, "seat.connected")
-          : t(language, "seat.disconnected"),
-      x + 100,
-      y + 92,
-      {
-        fontSize: 16,
-        fill: "#cad4ca"
-      }
+        : seat.connected ? t(language, "seat.connected") : t(language, "seat.disconnected"),
+      x + 82, y + 63,
+      { fontSize: 13, fill: "#7a9a80" }
     ));
 
+    // Badges on a row below the status label — never overlap the avatar
+    let badgeX = x + 82;
+    const badgeY = y + 96;
     if (seat.isHost) {
-      scene.addChild(createRect(x + 20, y + 158, 88, 30, "#876126", 1, 999));
-      scene.addChild(createLabel(t(language, "seat.host"), x + 64, y + 173, {
-        fontSize: 14,
-        fill: "#fff3cf"
-      }, 0.5, 0.5));
+      scene.addChild(createRect(badgeX, badgeY, 50, 18, "#6b4d1a", 1, 5));
+      scene.addChild(createLabel(t(language, "seat.host").toUpperCase(), badgeX + 25, badgeY + 9, { fontSize: 10, fill: "#f0d897", fontWeight: "700" }, 0.5, 0.5));
+      badgeX += 56;
     }
-
     if (localSeat?.seatNumber === seat.seatNumber) {
-      scene.addChild(createRect(x + 160, y + 156, 96, 34, "#264b7c", 1, 999));
-      scene.addChild(createLabel(t(language, "lobby.localPlayer"), x + 208, y + 173, {
-        fontSize: 14,
-        fill: "#ebf5ff"
-      }, 0.5, 0.5));
+      scene.addChild(createRect(badgeX, badgeY, 90, 18, "#1e3d6b", 1, 5));
+      scene.addChild(createLabel(t(language, "lobby.localPlayer").toUpperCase(), badgeX + 45, badgeY + 9, { fontSize: 10, fill: "#b8d8ff", fontWeight: "700" }, 0.5, 0.5));
     }
   });
 
-  scene.addChild(createRect(1090, 274, 440, 478, "#0d1910", 0.95, 24));
-  scene.addChild(createLabel(t(language, "lobby.expansions"), 1120, 304, {
-    fontSize: 28,
-    fontWeight: "700"
-  }));
-  scene.addChild(createLabel(t(language, "lobby.expansionsHint"), 1120, 344, {
-    fontSize: 16,
-    fill: "#cad4ca",
-    wordWrap: true,
-    wordWrapWidth: 380,
-    lineHeight: 23
-  }));
+  // ── Row 0, cols 1-2: Start match button ──────────────────────────────────────
+  const smX = LOBBY_START_X + (LOBBY_CARD_W + LOBBY_CARD_GAP);
+  const smY = LOBBY_START_Y;
+  const smW = 2 * LOBBY_CARD_W + LOBBY_CARD_GAP;
+  const smH = LOBBY_CARD_H;
+  scene.addChild(createRect(smX, smY, smW, smH, amHost ? "#132b1a" : "#0d1610", 0.95, 14));
+  scene.addChild(createLabel(
+    t(language, "lobby.startMatch"),
+    smX + smW / 2, smY + smH / 2,
+    { fontSize: 26, fontWeight: "700", fill: amHost ? "#5ad870" : "#253d2c" },
+    0.5, 0.5
+  ));
+
+  // ── Expansion panel (full height) ────────────────────────────────────────────
+  const expPanelH = STAGE_HEIGHT - LOBBY_EXP_Y - 34;
+  scene.addChild(createRect(LOBBY_EXP_X, LOBBY_EXP_Y, LOBBY_EXP_W, expPanelH, "#182d1e", 0.96, 16));
+  scene.addChild(createLabel(t(language, "lobby.expansions"), LOBBY_EXP_X + 22, LOBBY_EXP_Y + LOBBY_EXP_HEADER_H / 2, { fontSize: 20, fontWeight: "700" }, 0, 0.5));
 
   EXPANSION_DECKS.forEach((deck, index) => {
     const enabled = match.enabledExpansions[deck.key];
-    const y = 414 + index * 38;
-    const badgeColor = !deck.available ? "#4e564f" : enabled ? "#8a6a2a" : "#2b3e31";
-    scene.addChild(createRect(1120, y, 380, 28, badgeColor, 1, 999));
-    scene.addChild(createLabel(deck.label, 1138, y + 14, {
-      fontSize: 15,
-      fill: "#f5efde"
+    const rowY = LOBBY_EXP_Y + LOBBY_EXP_HEADER_H + index * (LOBBY_EXP_ROW_H + LOBBY_EXP_ROW_GAP);
+    const rowBg = !deck.available ? "#1e251f" : enabled ? "#1e3d28" : "#1a2e20";
+    scene.addChild(createRect(LOBBY_EXP_X, rowY, LOBBY_EXP_W, LOBBY_EXP_ROW_H, rowBg, 0.97, 10));
+    scene.addChild(createLabel(deck.label, LOBBY_EXP_X + 20, rowY + LOBBY_EXP_ROW_H / 2, {
+      fontSize: 16,
+      fill: deck.available ? "#f0eadc" : "#6a7a6c"
     }, 0, 0.5));
-    scene.addChild(createLabel(
-      !deck.available
-        ? t(language, "lobby.expansionDisabled")
-        : enabled
-          ? t(language, "lobby.expansionEnabled")
-          : t(language, "lobby.expansionOff"),
-      1480,
-      y + 14,
-      {
-        fontSize: 14,
-        fill: "#edf5ea"
-      },
-      1,
-      0.5
-    ));
+
+    // Toggle switch — always rendered so all rows have the same visual structure
+    const trackW = 52; const trackH = 26;
+    const trackX = LOBBY_EXP_X + LOBBY_EXP_W - trackW - 20;
+    const trackY = rowY + (LOBBY_EXP_ROW_H - trackH) / 2;
+    const thumbR = 10;
+    const trackColor = !deck.available ? "#252e28" : enabled ? "#3a8a4e" : "#2e4a38";
+    const thumbColor = !deck.available ? "#363e38" : enabled ? "#6aee8a" : "#587060";
+    const thumbCx = (deck.available && enabled) ? trackX + trackW - thumbR - 3 : trackX + thumbR + 3;
+    scene.addChild(createRect(trackX, trackY, trackW, trackH, trackColor, 1, trackH / 2));
+    scene.addChild(createCircle(thumbCx, trackY + trackH / 2, thumbR, thumbColor));
+    if (!deck.available) {
+      scene.addChild(createLabel(t(language, "lobby.expansionDisabled"), trackX - 10, rowY + LOBBY_EXP_ROW_H / 2, { fontSize: 11, fill: "#6a7a6c" }, 1, 0.5));
+    }
   });
 }
 
@@ -1029,10 +1009,61 @@ function renderSeatNode(
   isLocal = false,
   highlight = false,
   onTextureReady: () => void = () => {},
-  displayedHp?: number
+  displayedHp?: number,
+  language: AppLanguage = "fr"
 ): void {
-  const seatWidth = isLocal ? 440 : 252;
-  const seatHeight = isLocal ? 168 : 118;
+  const hp = displayedHp ?? seat.hp;
+
+  // ── Opponent seat: HP bar dominant ──────────────────────────────────────────
+  // The seat IS a health bar. The filled portion shows remaining HP. Avatar sits
+  // inside the bar on the left; name overlaid in the center; HP number on the right.
+  // Color shifts green → yellow → red as HP drops.
+  if (!isLocal) {
+    const w = 252; const h = 62;
+    const lx = x - w / 2; const ly = y - h / 2;
+    // Decorative bar — fixed at the 38/50 look regardless of actual HP.
+    // Only the HP number on the right is live.
+    const decorFill = Math.round(w * (38 / 50));
+
+    // Track (empty bar background)
+    scene.addChild(createRect(lx, ly, w, h, "#0c160e", 0.96, 10));
+    // Fixed green fill
+    scene.addChild(createRect(lx, ly, decorFill, h, "#1e7a42", 0.88, 10));
+
+    // Highlight border when turn or hovered
+    if (isCurrentTurn) {
+      scene.addChild(createRect(lx - 2, ly - 2, w + 4, h + 4, "#d6b058", 0.55, 11));
+      scene.addChild(createRect(lx, ly, w, h, "#0c160e", 0.96, 10));
+      scene.addChild(createRect(lx, ly, decorFill, h, "#1e7a42", 0.88, 10));
+    }
+    if (highlight) {
+      scene.addChild(createRect(lx - 3, ly - 3, w + 6, h + 6, "#f0c96d", 0.35, 12));
+    }
+
+    // Avatar left side
+    scene.addChild(createAvatarDisplay(seat.avatarUrl, lx + 32, y, 24,
+      seat.controllerType === "bot" ? "#85573d" : "#2f6a88",
+      getSeatInitials(seat.displayName), onTextureReady));
+
+    // Name + power in center
+    scene.addChild(createLabel(seat.displayName, lx + 68, ly + 12, { fontSize: 17, fontWeight: "700" }));
+    scene.addChild(createLabel(`${t(language, "stat.power")} ${seat.powerLevel ?? 1}`, lx + 69, ly + 36, { fontSize: 11, fill: "#8aaa90" }));
+
+    // Live HP number right side
+    scene.addChild(createLabel(`${hp}`, lx + w - 16, y, { fontSize: 22, fontWeight: "700", fill: "#3ec86e" }, 1, 0.5));
+
+    if (seat.isHost) {
+      scene.addChild(createLabel("H", lx + w - 8, ly + 4, { fontSize: 10, fill: "#f0d070", fontWeight: "700" }, 1, 0));
+    }
+    if (seat.isAlive === false) {
+      scene.addChild(createRect(lx, ly, w, h, "#c8d4cc", 0.55, 10));
+    }
+    return;
+  }
+
+  // ── Local seat ───────────────────────────────────────────────────────────────
+  const seatWidth = 440;
+  const seatHeight = 168;
   const seatPanel = createRect(x - (seatWidth / 2), y - (seatHeight / 2), seatWidth, seatHeight, "#101912", 0.96, 24);
   scene.addChild(seatPanel);
 
@@ -1040,35 +1071,22 @@ function renderSeatNode(
     scene.addChild(createRect(x - (seatWidth / 2) - 4, y - (seatHeight / 2) - 4, seatWidth + 8, seatHeight + 8, "#f0c96d", 0.22, 28));
   }
 
-  const avatarRadius = isLocal ? 40 : 34;
-  const avatarX = x - (seatWidth / 2) + 54;
-  const avatarY = y - 6;
   scene.addChild(createAvatarDisplay(
     seat.avatarUrl,
-    avatarX,
-    avatarY,
-    avatarRadius,
+    x - (seatWidth / 2) + 54,
+    y - 6,
+    40,
     seat.controllerType === "bot" ? "#85573d" : "#2f6a88",
     getSeatInitials(seat.displayName),
     onTextureReady
   ));
 
-  scene.addChild(createLabel(seat.displayName, x - (seatWidth / 2) + 104, y - 24, {
-    fontSize: isLocal ? 28 : 21,
-    fontWeight: "700"
-  }));
-  scene.addChild(createLabel(`HP ${displayedHp ?? seat.hp}  |  Power ${seat.powerLevel ?? 1}`, x - (seatWidth / 2) + 104, y + 8, {
-    fontSize: isLocal ? 18 : 16,
-    fill: "#d0d9cf"
-  }));
+  scene.addChild(createLabel(seat.displayName, x - (seatWidth / 2) + 104, y - 24, { fontSize: 28, fontWeight: "700" }));
+  scene.addChild(createLabel(`${t(language, "stat.hp")} ${hp}  |  ${t(language, "stat.power")} ${seat.powerLevel ?? 1}`, x - (seatWidth / 2) + 104, y + 8, { fontSize: 18, fill: "#d0d9cf" }));
 
   if (seat.isHost) {
     scene.addChild(createRect(x + (seatWidth / 2) - 92, y - (seatHeight / 2) + 14, 70, 24, "#816024", 1, 999));
-    scene.addChild(createLabel("HOST", x + (seatWidth / 2) - 57, y - (seatHeight / 2) + 26, {
-      fontSize: 13,
-      fill: "#fff0c1",
-      fontWeight: "700"
-    }, 0.5, 0.5));
+    scene.addChild(createLabel(t(language, "seat.host").toUpperCase(), x + (seatWidth / 2) - 57, y - (seatHeight / 2) + 26, { fontSize: 13, fill: "#fff0c1", fontWeight: "700" }, 0.5, 0.5));
   }
 
   if (isCurrentTurn) {
@@ -1158,7 +1176,7 @@ function renderTableScene(
     const hpBadgeX = handArea.x + handArea.width - hpBadgeWidth - 18;
     const hpBadgeY = handArea.y + 14;
     scene.addChild(createRect(hpBadgeX, hpBadgeY, hpBadgeWidth, hpBadgeHeight, "#121712", 0.94, 999));
-    scene.addChild(createLabel(`HP ${displayedHpBySeat[localSeat.seatNumber] ?? localSeat.hp}`, hpBadgeX + hpBadgeWidth / 2, hpBadgeY + hpBadgeHeight / 2, {
+    scene.addChild(createLabel(`${t(language, "stat.hp")} ${displayedHpBySeat[localSeat.seatNumber] ?? localSeat.hp}`, hpBadgeX + hpBadgeWidth / 2, hpBadgeY + hpBadgeHeight / 2, {
       fontSize: 19,
       fontWeight: "700",
       fill: "#f5efde"
@@ -1188,7 +1206,7 @@ function renderTableScene(
     const seatX = anchor.x * STAGE_WIDTH / 100 + (seatShakeOffsets.get(seat.seatNumber) ?? 0);
     const seatY = anchor.y * STAGE_HEIGHT / 100;
     const seatWidth = 252;
-    const seatHeight = 118;
+    const seatHeight = 62;
     seatCenters.set(seat.seatNumber, { x: seatX, y: seatY });
     seatRects.set(seat.seatNumber, {
       x: seatX - seatWidth / 2,
@@ -1224,7 +1242,8 @@ function renderTableScene(
         || interactionState.arrowDrag?.nearestSeatNumber === seat.seatNumber
       ),
       onTextureReady,
-      displayedHpBySeat[seat.seatNumber]
+      displayedHpBySeat[seat.seatNumber],
+      language
     );
 
     const opponentObjectRow = renderObjectRow(
@@ -1285,7 +1304,7 @@ function renderTableScene(
     if (damageBurst != null) {
       const progress = Math.max(0, Math.min(1, (now - damageBurst.startedAt) / damageBurst.durationMs));
       const lift = (seatNumber === localSeatNumber ? 58 : 42) * (1 - Math.pow(1 - progress, 2));
-      const burst = createLabel(`-${damageBurst.amount} HP`, rect.x + rect.width / 2, rect.y - 8 - lift, {
+      const burst = createLabel(`-${damageBurst.amount} ${t(language, "stat.hp")}`, rect.x + rect.width / 2, rect.y - 8 - lift, {
         fontSize: seatNumber === localSeatNumber ? 30 : 22,
         fontWeight: "700",
         fill: "#ff5c5c",
@@ -1301,7 +1320,7 @@ function renderTableScene(
       const progress = Math.max(0, Math.min(1, (now - healBurst.startedAt) / healBurst.durationMs));
       const lift = (seatNumber === localSeatNumber ? 46 : 34) * (1 - Math.pow(1 - progress, 2));
       const driftX = Math.sin(progress * Math.PI) * 8;
-      const burst = createLabel(`+${healBurst.amount} HP`, rect.x + rect.width / 2 + driftX, rect.y - 6 - lift, {
+      const burst = createLabel(`+${healBurst.amount} ${t(language, "stat.hp")}`, rect.x + rect.width / 2 + driftX, rect.y - 6 - lift, {
         fontSize: seatNumber === localSeatNumber ? 30 : 22,
         fontWeight: "700",
         fill: "#5df27d",
@@ -1321,7 +1340,7 @@ function renderTableScene(
     const visibleResponseCards = responseCards.slice(-3);
     if (visibleResponseCards.length === 0) {
       scene.addChild(createLabel(
-        language === "fr" ? "Glissez une defense ici" : "Drop defense card here",
+        t(language, "table.dropDefense"),
         responseSlot.x + responseSlot.width / 2,
         responseSlot.y + responseSlot.height / 2,
         {
@@ -1368,7 +1387,7 @@ function renderTableScene(
       fontWeight: "700"
     }, 0.5, 0.5));
     scene.addChild(createLabel(
-      `Deck ${match.game?.deckCount ?? 0}  |  Discard ${match.game?.discardCount ?? 0}`,
+      `${t(language, "table.deck")} ${match.game?.deckCount ?? 0}  |  ${t(language, "table.discardPile")} ${match.game?.discardCount ?? 0}`,
       playSlot.x + playSlot.width / 2,
       playSlot.y + playSlot.height / 2 + 26,
       {
@@ -1670,6 +1689,15 @@ function renderEventLog(
   `;
 }
 
+interface LobbyOverlayLayout {
+  startMatchLeftPx: number;
+  startMatchTopPx: number;
+  startMatchWidthPx: number;
+  startMatchHeightPx: number;
+  addBotButtons: Array<{ leftPx: number; topPx: number; widthPx: number; heightPx: number }>;
+  expansionButtons: Array<{ key: string; leftPx: number; topPx: number; widthPx: number; heightPx: number; available: boolean; enabled: boolean }>;
+}
+
 function buildOverlayMarkup(
   match: MatchState,
   localSeatNumber: number,
@@ -1709,28 +1737,13 @@ function buildOverlayMarkup(
   combatBannerLeftPx = 0,
   combatBannerTopPx = 0,
   passButtonLeftPx = 0,
-  passButtonTopPx = 0
+  passButtonTopPx = 0,
+  lobbyLayout: LobbyOverlayLayout | null = null
 ): string {
   const localSeat = getLocalSeat(match, localSeatNumber);
   const amHost = localSeat?.isHost === true;
   const showPassButton = match.status === "in_progress" && canPassPendingResponse(match);
   const annulationChoice = pendingAnnulationChoice;
-  const expansionButtons = match.status !== "lobby"
-    ? ""
-    : EXPANSION_DECKS.map((deck) => {
-        const enabled = match.enabledExpansions[deck.key];
-        return `
-          <button
-            type="button"
-            class="pixi-chip-button ${enabled ? "pixi-chip-button--active" : ""}"
-            data-action="toggle-expansion"
-            data-expansion-key="${deck.key}"
-            ${amHost && deck.available ? "" : "disabled"}
-          >
-            ${deck.label}
-          </button>
-        `;
-      }).join("");
   const devDrawOptionsMarkup = [...allCardDefinitions]
     .sort((left, right) => {
       const leftName = left.localization?.[language]?.name ?? left.name;
@@ -1749,32 +1762,53 @@ function buildOverlayMarkup(
   return `
     <div class="pixi-frame-topbar">
       <div class="pixi-frame-actions">
-        <button type="button" class="pixi-overlay-button pixi-overlay-button--danger" data-action="leave-match">${t(language, "table.leaveMatch")}</button>
-        <button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>
-        ${match.status === "lobby"
-          ? `<button type="button" class="pixi-overlay-button" data-action="add-bot" ${amHost ? "" : "disabled"}>${t(language, "lobby.addBot")}</button>
-             <button type="button" class="pixi-overlay-button pixi-overlay-button--accent" data-action="start-match" ${amHost ? "" : "disabled"}>${t(language, "lobby.startMatch")}</button>`
+        ${match.status === "in_progress"
+          ? `<button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>`
           : ""}
-        ${sessionMode === "browser"
+        ${match.status === "in_progress" || match.status === "lobby" ? "" : ""}
+        ${sessionMode === "browser" && match.status === "in_progress"
           ? `
             <div class="pixi-dev-draw">
               <select class="pixi-dev-select" data-action="dev-draw-card" title="Dev: draw card">
-                <option value="">+ ${language === "fr" ? "Piger" : "Draw"}</option>
+                <option value="">+ ${t(language, "table.draw")}</option>
                 ${devDrawOptionsMarkup}
               </select>
             </div>
-            <button type="button" class="pixi-overlay-button pixi-overlay-button--secondary" data-action="download-server-log" title="Download server debug log">SrvLog</button>
-            <button type="button" class="pixi-overlay-button pixi-overlay-button--secondary" data-action="download-client-log" title="Download client debug log">Log</button>
           `
           : ""}
       </div>
     </div>
     ${errorMessage === "" ? "" : `<div class="pixi-error-banner">${errorMessage}</div>`}
+    ${match.status === "lobby" && lobbyLayout != null ? `
+      <button
+        class="pixi-lobby-cell-btn"
+        style="left:${lobbyLayout.startMatchLeftPx}px; top:${lobbyLayout.startMatchTopPx}px; width:${lobbyLayout.startMatchWidthPx}px; height:${lobbyLayout.startMatchHeightPx}px;"
+        data-action="start-match"
+        ${amHost ? "" : "disabled"}
+      ></button>
+      ${lobbyLayout.addBotButtons.map((btn) => `
+        <button
+          class="pixi-lobby-cell-btn"
+          style="left:${btn.leftPx}px; top:${btn.topPx}px; width:${btn.widthPx}px; height:${btn.heightPx}px;"
+          data-action="add-bot"
+          ${amHost ? "" : "disabled"}
+        ></button>
+      `).join("")}
+      ${lobbyLayout.expansionButtons.map((btn) => `
+        <button
+          class="pixi-lobby-cell-btn"
+          style="left:${btn.leftPx}px; top:${btn.topPx}px; width:${btn.widthPx}px; height:${btn.heightPx}px;"
+          data-action="toggle-expansion"
+          data-expansion-key="${btn.key}"
+          ${amHost && btn.available ? "" : "disabled"}
+        ></button>
+      `).join("")}
+    ` : ""}
     ${activeCombatFx == null
       ? ""
       : `<div class="pixi-combat-banner pixi-combat-banner--${activeCombatFx.tone}" style="left:${combatBannerLeftPx}px; top:${combatBannerTopPx}px;">${escapeHtml(activeCombatFx.message)}</div>`}
     ${playbackLocked && match.status === "in_progress"
-      ? `<div class="pixi-playback-lock" style="left:${combatBannerLeftPx}px; top:${Math.max(18, combatBannerTopPx - 42)}px;">${escapeHtml(language === "fr" ? "Resolution..." : "Resolving...")}</div>`
+      ? `<div class="pixi-playback-lock" style="left:${combatBannerLeftPx}px; top:${Math.max(18, combatBannerTopPx - 42)}px;">${escapeHtml(t(language, "table.resolving"))}</div>`
       : ""}
     ${buildVictoryCelebrationMarkup(match, language, showVictoryCelebration)}
     ${showPassButton
@@ -1805,7 +1839,7 @@ function buildOverlayMarkup(
       </div>
       ${match.status !== "lobby"
         ? renderEventLog(match, language, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight)
-        : `<div class="pixi-expansion-row">${expansionButtons}</div>`}
+        : ""}
     </div>
     ${annulationChoice == null
       ? ""
@@ -3931,6 +3965,43 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       : Math.max(18, (currentGeometry.playSlot.y - 52) * currentMetrics.scale);
     const kickTarget = getKickTarget();
     const kickActionTarget = getSeatKickActionTarget();
+    const lobbyLayout: LobbyOverlayLayout | null = localizedMatch.status === "lobby" ? (() => {
+      const s = currentMetrics.scale;
+      const smX = LOBBY_START_X + (LOBBY_CARD_W + LOBBY_CARD_GAP);
+      const addBotButtons = Array.from({ length: localizedMatch.maxSeats }, (_, i) => i + 2)
+        .filter((seatNumber) => localizedMatch.seats.find((seat) => seat.seatNumber === seatNumber) == null)
+        .map((seatNumber) => {
+          const i = seatNumber - 2;
+          const col = i % LOBBY_COLUMNS;
+          const row = 1 + Math.floor(i / LOBBY_COLUMNS);
+          return {
+            leftPx: (LOBBY_START_X + col * (LOBBY_CARD_W + LOBBY_CARD_GAP)) * s,
+            topPx: (LOBBY_START_Y + row * (LOBBY_CARD_H + LOBBY_CARD_GAP)) * s,
+            widthPx: LOBBY_CARD_W * s,
+            heightPx: LOBBY_CARD_H * s
+          };
+        });
+      const expansionButtons = EXPANSION_DECKS.map((deck, index) => {
+        const rowY = LOBBY_EXP_Y + LOBBY_EXP_HEADER_H + index * (LOBBY_EXP_ROW_H + LOBBY_EXP_ROW_GAP);
+        return {
+          key: deck.key,
+          leftPx: LOBBY_EXP_X * s,
+          topPx: rowY * s,
+          widthPx: LOBBY_EXP_W * s,
+          heightPx: LOBBY_EXP_ROW_H * s,
+          available: deck.available,
+          enabled: localizedMatch.enabledExpansions[deck.key] ?? false
+        };
+      });
+      return {
+        startMatchLeftPx: smX * s,
+        startMatchTopPx: LOBBY_START_Y * s,
+        startMatchWidthPx: (2 * LOBBY_CARD_W + LOBBY_CARD_GAP) * s,
+        startMatchHeightPx: LOBBY_CARD_H * s,
+        addBotButtons,
+        expansionButtons
+      };
+    })() : null;
     const prevEventLogEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
     const savedEventLogScroll = prevEventLogEl != null
       ? { top: prevEventLogEl.scrollTop, atBottom: prevEventLogEl.scrollTop + prevEventLogEl.clientHeight >= prevEventLogEl.scrollHeight - 4 }
@@ -3944,7 +4015,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     bindOverlayEvents();
 
@@ -4036,14 +4107,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       };
     });
 
-    frameElement.querySelector<HTMLButtonElement>("[data-action='add-bot']")?.addEventListener("click", async () => {
-      try {
-        match = await requestAddBot(session.instanceId, playerSessionToken);
-        errorMessage = "";
-      } catch (error) {
-        errorMessage = error instanceof Error ? error.message : t(language, "error.addBot");
-      }
-      redraw();
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='add-bot']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          match = await requestAddBot(session.instanceId, playerSessionToken);
+          errorMessage = "";
+        } catch (error) {
+          errorMessage = error instanceof Error ? error.message : t(language, "error.addBot");
+        }
+        redraw();
+      });
     });
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='start-match']")?.addEventListener("click", async () => {

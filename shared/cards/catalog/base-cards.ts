@@ -5199,8 +5199,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
       ]
     },
     "implementation": {
-      "status": "needs_handler",
-      "notes": "Migrated from previous explicit rules; this card needs a dedicated gameplay handler."
+      "status": "manual",
+      "handler": "colere-du-magicien",
+      "notes": "paralyze_for_bonus_attack sets game.forcedFollowUp (AD only, suppressDefenseWindow, suppressResistanceCheck, doubleHpLossDamage). disable_riposte with duration 'current_action' is intentionally a no-op since suppressDefenseWindow in forcedFollowUp covers it. Full server and client flow already implemented."
     }
   },
   {

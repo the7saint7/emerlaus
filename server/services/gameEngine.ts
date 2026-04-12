@@ -2275,7 +2275,24 @@ function swapSeatOccupants(
   }
 
   if (effect.swapHp) {
-    [leftSeat.hp, rightSeat.hp] = [rightSeat.hp, leftSeat.hp];
+    const leftPrevHp = leftSeat.hp;
+    const rightPrevHp = rightSeat.hp;
+    const leftResult = setSeatHp(match, leftSeatNumber, rightPrevHp);
+    const rightResult = setSeatHp(match, rightSeatNumber, leftPrevHp);
+
+    if (leftResult.delta > 0) {
+      pushPresentationEvent(match, { type: "hp_gain", seatNumber: leftSeatNumber, amount: leftResult.delta });
+    } else if (leftResult.delta < 0) {
+      pushPresentationEvent(match, { type: "hp_loss", seatNumber: leftSeatNumber, amount: -leftResult.delta });
+    }
+    if (rightResult.delta > 0) {
+      pushPresentationEvent(match, { type: "hp_gain", seatNumber: rightSeatNumber, amount: rightResult.delta });
+    } else if (rightResult.delta < 0) {
+      pushPresentationEvent(match, { type: "hp_loss", seatNumber: rightSeatNumber, amount: -rightResult.delta });
+    }
+
+    handleSeatDeath(match, leftSeatNumber, false);
+    handleSeatDeath(match, rightSeatNumber, false);
   }
 
   if (effect.swapHand) {
@@ -2294,9 +2311,6 @@ function swapSeatOccupants(
     leftStoredSeat.statuses = [...rightTransferableStatuses, ...leftBodyBoundStatuses];
     rightStoredSeat.statuses = [...leftTransferableStatuses, ...rightBodyBoundStatuses];
   }
-
-  setSeatHp(match, leftSeatNumber, leftSeat.hp);
-  setSeatHp(match, rightSeatNumber, rightSeat.hp);
 
   appendServerDebugLog(
     match,

@@ -196,7 +196,12 @@ type TranslationKey =
   | "error.passResponse"
   | "error.selectObject"
   | "error.updateExpansion"
-  | "left.replacedByBot";
+  | "left.replacedByBot"
+  | "table.deck"
+  | "table.discardPile"
+  | "table.resolving"
+  | "table.dropDefense"
+  | "table.draw";
 
 type TranslationTable = Record<TranslationKey, string>;
 
@@ -273,6 +278,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.discard": "Discard",
     "stat.power": "Power",
     "stat.hp": "HP",
+    "table.deck": "Deck",
+    "table.discardPile": "Discard",
+    "table.resolving": "Resolving...",
+    "table.dropDefense": "Drop defense card here",
+    "table.draw": "Draw",
     "response.resist": "Resist",
     "response.annulation": "Annulation",
     "response.resistance_accrue": "Resistance Accrue",
@@ -458,6 +468,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.discard": "Défausser",
     "stat.power": "Puissance",
     "stat.hp": "PV",
+    "table.deck": "Deck",
+    "table.discardPile": "Défausse",
+    "table.resolving": "Résolution...",
+    "table.dropDefense": "Glissez une défense ici",
+    "table.draw": "Piger",
     "response.resist": "Résistance",
     "response.annulation": "Annulation",
     "response.resistance_accrue": "Résistance accrue",

@@ -290,6 +290,20 @@ select {
   pointer-events: none;
 }
 
+.pixi-lobby-cell-btn {
+  position: absolute;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pixi-lobby-cell-btn:disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
 .pixi-seat-action .pixi-overlay-button {
   min-height: 34px;
   padding: 8px 12px;

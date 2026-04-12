@@ -705,7 +705,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual"
+        status: "generic",
+        notes: "Self-heal of 50 HP. Fully handled by the generic heal effect. Annulation allowed during defense window."
       }
     }
   ),
@@ -914,7 +915,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual"
+        status: "generic",
+        notes: "HP swap via swap_bodies effect. swapSeatOccupants emits hp_gain/hp_loss presentation events and calls handleSeatDeath after the swap."
       }
     }
   ),
@@ -1268,7 +1270,8 @@ export const abondanceCardDefinitions = [
         mirrorAllowed: false
       },
       implementation: {
-        status: "manual"
+        status: "generic",
+        notes: "Instant kill on all opponents who fail resistance. resurrectionBlocked: true is passed to handleSeatDeath, preventing resurrection ring from triggering. Fully covered by the generic instant_kill effect."
       }
     }
   ),

@@ -1,11 +1,11 @@
 {
   "instanceId": "local-dev-instance",
   "status": "in_progress",
-  "createdAt": "2026-04-12T07:17:33.619Z",
-  "startedAt": "2026-04-12T07:17:37.940Z",
+  "createdAt": "2026-04-12T14:01:54.044Z",
+  "startedAt": "2026-04-12T14:02:06.445Z",
   "currentTurnSeatNumber": 1,
   "currentTurnDisplayName": "Browser Player 252",
-  "turnNumber": 10,
+  "turnNumber": 1,
   "pendingAction": null,
   "pendingObjectChoice": null,
   "pendingCurseRelease": null,
@@ -19,7 +19,7 @@
       "handCount": 5,
       "objectCount": 0,
       "statusCount": 0,
-      "hp": 194,
+      "hp": 50,
       "isAlive": true
     },
     {
@@ -29,8 +29,8 @@
       "connected": true,
       "handCount": 5,
       "objectCount": 0,
-      "statusCount": 1,
-      "hp": 8,
+      "statusCount": 0,
+      "hp": 50,
       "isAlive": true
     },
     {
@@ -41,7 +41,18 @@
       "handCount": 5,
       "objectCount": 0,
       "statusCount": 0,
-      "hp": 44,
+      "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 4,
+      "displayName": "Bot 3",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 5,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 50,
       "isAlive": true
     }
   ]
