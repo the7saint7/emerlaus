@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { acknowledgePendingHandInspection, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
+import { acknowledgePendingHandInspection, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
 import { createDiscordSession } from "../discord/session";
 import {
   canDiscardCard,
@@ -15,11 +15,14 @@ import {
   objectCardMatchesSelectedTargeting
 } from "../gameplay/interactionRules";
 import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, persistLanguage, t, type AppLanguage } from "../i18n";
+import { diceController, type DiceStagePlacement } from "../features/dice/diceController";
+import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
+import { buildEventLogEntries, type EventLogEntry } from "../render/eventLog";
 import { renderDefenseTooltip } from "../render/tableView";
 import { allCardDefinitions } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
-import type { ActionStartEvent, CardView, CombatPresentationEvent, ExpansionKey, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatState } from "../../../shared/types";
+import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatState } from "../../../shared/types";
 
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
@@ -387,6 +390,36 @@ function requestTextureLoad(imageUrl: string, onReady: () => void): void {
     .finally(() => {
       requestedTextureUrls.delete(imageUrl);
     });
+}
+
+function createAvatarDisplay(
+  avatarUrl: string,
+  cx: number,
+  cy: number,
+  radius: number,
+  fallbackColor: string,
+  fallbackInitials: string,
+  onTextureReady: () => void
+): Container {
+  const container = new Container();
+  const texture = getLoadedTexture(avatarUrl);
+  if (texture != null) {
+    const size = radius * 2;
+    const sprite = new Sprite(texture);
+    sprite.anchor.set(0.5);
+    sprite.position.set(cx, cy);
+    sprite.width = size;
+    sprite.height = size;
+    container.addChild(sprite);
+  } else {
+    requestTextureLoad(avatarUrl, onTextureReady);
+    container.addChild(createCircle(cx, cy, radius, fallbackColor));
+    container.addChild(createLabel(fallbackInitials, cx, cy, {
+      fontSize: Math.round(radius * 0.55),
+      fontWeight: "700"
+    }, 0.5, 0.5));
+  }
+  return container;
 }
 
 function fitSpriteToBox(texture: Texture, maxWidth: number, maxHeight: number): { width: number; height: number } {
@@ -827,7 +860,8 @@ function renderLobbyScene(
   scene: Container,
   match: MatchState,
   localSeatNumber: number,
-  language: AppLanguage
+  language: AppLanguage,
+  onTextureReady: () => void = () => {}
 ): void {
   scene.addChild(createRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT, "#0f1f13"));
   scene.addChild(createRect(34, 34, STAGE_WIDTH - 68, STAGE_HEIGHT - 68, "#183a22", 1, 32));
@@ -902,11 +936,15 @@ function renderLobbyScene(
       return;
     }
 
-    scene.addChild(createCircle(x + 54, y + 74, 32, seat.controllerType === "bot" ? "#8a4f2e" : "#326a8a"));
-    scene.addChild(createLabel(getSeatInitials(seat.displayName), x + 54, y + 74, {
-      fontSize: 22,
-      fontWeight: "700"
-    }, 0.5, 0.5));
+    scene.addChild(createAvatarDisplay(
+      seat.avatarUrl,
+      x + 54,
+      y + 74,
+      32,
+      seat.controllerType === "bot" ? "#8a4f2e" : "#326a8a",
+      getSeatInitials(seat.displayName),
+      onTextureReady
+    ));
     scene.addChild(createLabel(seat.displayName, x + 100, y + 58, {
       fontSize: 24,
       fontWeight: "700"
@@ -989,7 +1027,9 @@ function renderSeatNode(
   y: number,
   isCurrentTurn: boolean,
   isLocal = false,
-  highlight = false
+  highlight = false,
+  onTextureReady: () => void = () => {},
+  displayedHp?: number
 ): void {
   const seatWidth = isLocal ? 440 : 252;
   const seatHeight = isLocal ? 168 : 118;
@@ -1003,17 +1043,21 @@ function renderSeatNode(
   const avatarRadius = isLocal ? 40 : 34;
   const avatarX = x - (seatWidth / 2) + 54;
   const avatarY = y - 6;
-  scene.addChild(createCircle(avatarX, avatarY, avatarRadius, seat.controllerType === "bot" ? "#85573d" : "#2f6a88"));
-  scene.addChild(createLabel(getSeatInitials(seat.displayName), avatarX, avatarY, {
-    fontSize: isLocal ? 24 : 20,
-    fontWeight: "700"
-  }, 0.5, 0.5));
+  scene.addChild(createAvatarDisplay(
+    seat.avatarUrl,
+    avatarX,
+    avatarY,
+    avatarRadius,
+    seat.controllerType === "bot" ? "#85573d" : "#2f6a88",
+    getSeatInitials(seat.displayName),
+    onTextureReady
+  ));
 
   scene.addChild(createLabel(seat.displayName, x - (seatWidth / 2) + 104, y - 24, {
     fontSize: isLocal ? 28 : 21,
     fontWeight: "700"
   }));
-  scene.addChild(createLabel(`HP ${seat.hp}  |  Power ${seat.powerLevel ?? 1}`, x - (seatWidth / 2) + 104, y + 8, {
+  scene.addChild(createLabel(`HP ${displayedHp ?? seat.hp}  |  Power ${seat.powerLevel ?? 1}`, x - (seatWidth / 2) + 104, y + 8, {
     fontSize: isLocal ? 18 : 16,
     fill: "#d0d9cf"
   }));
@@ -1031,6 +1075,10 @@ function renderSeatNode(
     const glow = createRect(x - (seatWidth / 2), y - (seatHeight / 2), seatWidth, seatHeight, "#d6b058", 0.16, 24);
     glow.tint = 0xffd879;
     scene.addChild(glow);
+  }
+
+  if (seat.isAlive === false) {
+    scene.addChild(createRect(x - (seatWidth / 2), y - (seatHeight / 2), seatWidth, seatHeight, "#c8d4cc", 0.55, 24));
   }
 }
 
@@ -1052,7 +1100,8 @@ function renderTableScene(
   activeCardFlights: CardFlightState[],
   activePlaybackArrows: PlaybackArrowState[],
   opponentCursors: Record<number, OpponentCursorState>,
-  onTextureReady: () => void
+  onTextureReady: () => void,
+  displayedHpBySeat: Record<number, number>
 ): TableInteractionGeometry {
   const now = Date.now();
   const localSeat = getLocalSeat(match, localSeatNumber);
@@ -1100,17 +1149,23 @@ function renderTableScene(
   scene.addChild(createCircle(STAGE_WIDTH / 2, STAGE_HEIGHT / 2, 260, "#2d7a3d", 0.4));
   scene.addChild(createCircle(STAGE_WIDTH / 2, STAGE_HEIGHT / 2, 180, "#0e2314", 0.32));
   scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#101812", 0.56, 34));
+  if (localSeat != null && localSeat.seatNumber === currentTurnSeatNumber) {
+    scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#d6b058", 0.12, 34));
+  }
   if (localSeat != null) {
     const hpBadgeWidth = 112;
     const hpBadgeHeight = 38;
     const hpBadgeX = handArea.x + handArea.width - hpBadgeWidth - 18;
     const hpBadgeY = handArea.y + 14;
     scene.addChild(createRect(hpBadgeX, hpBadgeY, hpBadgeWidth, hpBadgeHeight, "#121712", 0.94, 999));
-    scene.addChild(createLabel(`HP ${localSeat.hp}`, hpBadgeX + hpBadgeWidth / 2, hpBadgeY + hpBadgeHeight / 2, {
+    scene.addChild(createLabel(`HP ${displayedHpBySeat[localSeat.seatNumber] ?? localSeat.hp}`, hpBadgeX + hpBadgeWidth / 2, hpBadgeY + hpBadgeHeight / 2, {
       fontSize: 19,
       fontWeight: "700",
       fill: "#f5efde"
     }, 0.5, 0.5));
+    if (localSeat.isAlive === false) {
+      scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8d4cc", 0.55, 34));
+    }
   }
 
   for (const seat of match.seats) {
@@ -1167,7 +1222,9 @@ function renderTableScene(
       ) && (
         interactionState.dragHoverTarget?.seatNumber === seat.seatNumber
         || interactionState.arrowDrag?.nearestSeatNumber === seat.seatNumber
-      )
+      ),
+      onTextureReady,
+      displayedHpBySeat[seat.seatNumber]
     );
 
     const opponentObjectRow = renderObjectRow(
@@ -1558,6 +1615,61 @@ function renderTableScene(
   };
 }
 
+function renderEventLogEntry(entry: EventLogEntry): string {
+  return `
+    <article class="pixi-event-log-entry">
+      <p>${escapeHtml(entry.content).replaceAll("\n", "<br />")}</p>
+    </article>
+  `;
+}
+
+function renderEventLog(
+  match: MatchState,
+  language: AppLanguage,
+  seenEventMessageIds: Set<string>,
+  eventLogExpanded: boolean,
+  eventLogWidth: number,
+  eventLogHeight: number
+): string {
+  const entries = buildEventLogEntries(match, language).filter(
+    (entry) => seenEventMessageIds.has(entry.id)
+  );
+  const visibleEntries = eventLogExpanded ? entries : entries.slice(-3);
+  const messageMarkup =
+    visibleEntries.length > 0
+      ? visibleEntries.map((entry) => renderEventLogEntry(entry)).join("")
+      : `<p class="pixi-event-log-empty">${t(language, "eventLog.empty")}</p>`;
+
+  const panelStyle = `style="--event-log-width:${eventLogWidth}px; --event-log-height:${eventLogHeight}px;"`;
+
+  return `
+    <section class="pixi-event-log ${eventLogExpanded ? "pixi-event-log--expanded" : ""}" ${panelStyle}>
+      <header class="pixi-event-log-header">
+        <div class="pixi-event-log-title">
+          <strong>${t(language, "eventLog.title")}</strong>
+          ${eventLogExpanded ? `<span>${t(language, "eventLog.history")}</span>` : ""}
+        </div>
+        <button type="button" class="pixi-event-log-toggle" data-action="toggle-event-log">
+          ${eventLogExpanded ? t(language, "eventLog.minimize") : t(language, "eventLog.expand")}
+        </button>
+      </header>
+
+      <div class="pixi-event-log-history" data-event-log-history="true">
+        ${messageMarkup}
+      </div>
+
+      ${eventLogExpanded ? `
+        <button
+          type="button"
+          class="pixi-event-log-resize"
+          data-action="resize-event-log"
+          aria-label="Resize event log"
+        ></button>
+      ` : ""}
+    </section>
+  `;
+}
+
 function buildOverlayMarkup(
   match: MatchState,
   localSeatNumber: number,
@@ -1581,6 +1693,10 @@ function buildOverlayMarkup(
   pickpocketSelectedCardInstanceIds: string[],
   pendingSacrificeChoice: PendingSacrificeChoiceState | null,
   sacrificeAmountInput: string,
+  seenEventMessageIds: Set<string>,
+  eventLogExpanded: boolean,
+  eventLogWidth: number,
+  eventLogHeight: number,
   cardReferenceOpen: boolean,
   cardReferencePreviewCardId: string,
   cardReferenceSearchQuery: string,
@@ -1589,6 +1705,7 @@ function buildOverlayMarkup(
   activeCombatFx: ActiveCombatFxState | null,
   playbackLocked: boolean,
   showVictoryCelebration: boolean,
+  sessionMode: "discord" | "browser",
   combatBannerLeftPx = 0,
   combatBannerTopPx = 0,
   passButtonLeftPx = 0,
@@ -1638,14 +1755,16 @@ function buildOverlayMarkup(
           ? `<button type="button" class="pixi-overlay-button" data-action="add-bot" ${amHost ? "" : "disabled"}>${t(language, "lobby.addBot")}</button>
              <button type="button" class="pixi-overlay-button pixi-overlay-button--accent" data-action="start-match" ${amHost ? "" : "disabled"}>${t(language, "lobby.startMatch")}</button>`
           : ""}
-        ${match.status === "in_progress"
+        ${sessionMode === "browser"
           ? `
-            <div class="dev-draw-panel">
-              <select class="dev-draw-select" data-action="dev-draw-card" title="${escapeHtml(language === "fr" ? "Dev : piger une carte dans la main" : "Dev: draw card into hand")}">
-                <option value="">${language === "fr" ? "+ Piger une carte" : "+ Draw card"}</option>
+            <div class="pixi-dev-draw">
+              <select class="pixi-dev-select" data-action="dev-draw-card" title="Dev: draw card">
+                <option value="">+ ${language === "fr" ? "Piger" : "Draw"}</option>
                 ${devDrawOptionsMarkup}
               </select>
             </div>
+            <button type="button" class="pixi-overlay-button pixi-overlay-button--secondary" data-action="download-server-log" title="Download server debug log">SrvLog</button>
+            <button type="button" class="pixi-overlay-button pixi-overlay-button--secondary" data-action="download-client-log" title="Download client debug log">Log</button>
           `
           : ""}
       </div>
@@ -1685,7 +1804,7 @@ function buildOverlayMarkup(
         <button type="button" class="pixi-lang-button ${language === "en" ? "pixi-lang-button--active" : ""}" data-action="set-language" data-language="en">EN</button>
       </div>
       ${match.status !== "lobby"
-        ? `<div class="pixi-footer-note">Phase 2 preview: fixed 16:9 stage, hand hover/drag, seat/object targeting, response slot, and basic play/discard flow.</div>`
+        ? renderEventLog(match, language, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight)
         : `<div class="pixi-expansion-row">${expansionButtons}</div>`}
     </div>
     ${annulationChoice == null
@@ -2369,6 +2488,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let pickpocketPreviewCardInstanceId = "";
   let pickpocketSelectedCardInstanceIds: string[] = [];
   let sacrificeAmountInput = "";
+  let eventLogExpanded = false;
+  let eventLogWidth = 380;
+  let eventLogHeight = 420;
   let cardReferenceOpen = false;
   let cardReferencePreviewCardId = "";
   let cardReferenceSearchQuery = "";
@@ -2378,6 +2500,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let activeCombatFx: ActiveCombatFxState | null = null;
   let activeDamageBursts: Record<number, FloatingBurstState> = {};
   let activeHealBursts: Record<number, FloatingBurstState> = {};
+  let displayedHpBySeat: Record<number, number> = {};
   let activeImpactFlashes: Record<number, ImpactFlashState> = {};
   let activeCardFlights: CardFlightState[] = [];
   let activePlaybackArrows: PlaybackArrowState[] = [];
@@ -2399,6 +2522,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let localSeatNumber = joined.localSeatNumber;
   const playerSessionToken = joined.playerSessionToken;
   let seenGameEventIds = new Set((match.game?.eventLog ?? []).map((event) => event.id));
+  let seenEventMessageIds = new Set(buildEventLogEntries(match, language).map((entry) => entry.id));
   let eventReplayChain: Promise<void> = Promise.resolve();
   const pendingActionPlaybackSnapshots = new Map<string, PendingActionPlaybackSnapshot>();
   let syncInFlight = false;
@@ -2503,6 +2627,41 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       toCardInstanceId: handFocusTransition.toCardInstanceId,
       progress
     };
+  };
+
+  const downloadTextFile = (filename: string, content: string): void => {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  let clientDebugLog: string[] = [];
+  let clientLogDirty = false;
+
+  const logClient = (scope: string, message: string): void => {
+    const entry = `${new Date().toISOString()} [client:${scope}] ${message}`;
+    clientDebugLog.push(entry);
+    clientLogDirty = true;
+    if (clientDebugLog.length > 500) {
+      clientDebugLog.shift();
+    }
+  };
+
+  const persistClientLogNow = async (): Promise<void> => {
+    if (playerSessionToken.trim() === "" || !clientLogDirty) {
+      return;
+    }
+
+    try {
+      await persistClientLogSnapshot(session.instanceId, playerSessionToken, clientDebugLog);
+      clientLogDirty = false;
+    } catch (error) {
+      console.warn("Unable to persist client log snapshot", error);
+    }
   };
 
   const setHoveredCardInstanceId = (nextCardInstanceId: string): void => {
@@ -3126,6 +3285,51 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     redraw();
   };
 
+  const getPixiDiceStagePlacement = (seatNumber?: number): DiceStagePlacement | null => {
+    if (seatNumber == null || currentGeometry == null) {
+      return null;
+    }
+
+    const rect = currentGeometry.seatRects.get(seatNumber);
+    if (rect == null) {
+      return null;
+    }
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const isLocalSeat = seatNumber === localSeatNumber;
+    
+    // Scale the stage-relative coordinates to viewport pixels
+    const scaledX = currentMetrics.left + rect.x * currentMetrics.scale;
+    const scaledY = currentMetrics.top + rect.y * currentMetrics.scale;
+    const scaledWidth = rect.width * currentMetrics.scale;
+    const scaledHeight = rect.height * currentMetrics.scale;
+
+    const desiredWidth = Math.min(isLocalSeat ? 300 : 240, Math.max(180, scaledWidth + (isLocalSeat ? 40 : 60)));
+    const desiredHeight = Math.min(isLocalSeat ? 220 : 180, Math.max(140, scaledHeight + (isLocalSeat ? 24 : 36)));
+    const centeredLeft = scaledX + (scaledWidth / 2) - (desiredWidth / 2);
+    const centeredTop = scaledY + (scaledHeight / 2) - (desiredHeight / 2);
+
+    return {
+      left: Math.max(8, Math.min(centeredLeft, viewportWidth - desiredWidth - 8)),
+      top: Math.max(8, Math.min(centeredTop, viewportHeight - desiredHeight - 8)),
+      width: desiredWidth,
+      height: desiredHeight
+    };
+  };
+
+  const replayDiceRollPresentation = async (event: DiceRollPlaybackEvent): Promise<void> => {
+    await diceController.roll(event.notation, {
+      resolvedResult: {
+        total: event.total,
+        values: event.values
+      },
+      themeColor: getSeatDiceColor(event.seatNumber),
+      placement: getPixiDiceStagePlacement(event.seatNumber)
+    });
+    await delay(250);
+  };
+
   const replayCombatPresentationEvents = (): void => {
     const unseenEvents = (match.game?.eventLog ?? []).filter((event) => !seenGameEventIds.has(event.id));
     if (unseenEvents.length === 0) {
@@ -3133,9 +3337,34 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     unseenEvents.forEach((event) => seenGameEventIds.add(event.id));
-    const replayableEvents = unseenEvents.filter((event) => event.type !== "dice_roll");
+    const replayableEvents = unseenEvents.filter((event) =>
+      event.type === "action_start" ||
+      event.type === "response_choice" ||
+      event.type === "resistance_start" ||
+      event.type === "resistance_result" ||
+      event.type === "attack_impact" ||
+      event.type === "hp_loss" ||
+      event.type === "hp_gain" ||
+      event.type === "dice_roll"
+    );
     if (replayableEvents.length === 0) {
       return;
+    }
+
+    // Seed displayedHpBySeat with pre-damage HP values by reverse-applying
+    // the upcoming hp events from the final (already-updated) match state.
+    for (const event of replayableEvents) {
+      if ((event.type === "hp_loss" || event.type === "hp_gain") && event.seatNumber != null) {
+        if (displayedHpBySeat[event.seatNumber] == null) {
+          displayedHpBySeat[event.seatNumber] =
+            match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0;
+        }
+        if (event.type === "hp_loss") {
+          displayedHpBySeat[event.seatNumber] += event.amount ?? 0;
+        } else {
+          displayedHpBySeat[event.seatNumber] -= event.amount ?? 0;
+        }
+      }
     }
 
     eventPlaybackActive = true;
@@ -3144,7 +3373,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     eventReplayChain = eventReplayChain
       .catch(() => undefined)
       .then(async () => {
+        const lastDiceTotalBySeat = new Map<number, number>();
         for (const event of replayableEvents) {
+          if (event.type === "dice_roll") {
+            if (event.seatNumber != null) {
+              lastDiceTotalBySeat.set(event.seatNumber, event.total);
+            }
+            await replayDiceRollPresentation(event);
+            continue;
+          }
+
           if (event.type === "action_start") {
             await replayActionStartPresentation(event);
             continue;
@@ -3171,15 +3409,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           }
 
           if (event.type === "resistance_result") {
+            const diceTotal = event.seatNumber != null ? lastDiceTotalBySeat.get(event.seatNumber) : undefined;
+            const totalStr = diceTotal != null ? String(diceTotal) : "?";
             const message = event.success === false
               ? event.fatalFailure
                 ? t(language, "combat.resistance.failedCritical", {
                     playerName: getSeatDisplayName(event.seatNumber),
-                    total: "?"
+                    total: totalStr
                   })
                 : t(language, "combat.resistance.failed", {
                     playerName: getSeatDisplayName(event.seatNumber),
-                    total: "?"
+                    total: totalStr
                   })
               : event.criticalSuccess
                 ? t(language, "combat.resistance.critical", {
@@ -3187,7 +3427,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
                   })
                 : t(language, "combat.resistance.success", {
                     playerName: getSeatDisplayName(event.seatNumber),
-                    total: "?"
+                    total: totalStr
                   });
             await showCombatFx(
               message,
@@ -3212,6 +3452,12 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           }
 
           if (event.type === "hp_loss" && (event.amount ?? 0) > 0) {
+            if (event.seatNumber != null) {
+              displayedHpBySeat[event.seatNumber] =
+                (displayedHpBySeat[event.seatNumber] ??
+                  (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
+                - (event.amount ?? 0);
+            }
             await showCombatFx(
               t(language, "combat.tookDamage", {
                 playerName: getSeatDisplayName(event.seatNumber),
@@ -3229,6 +3475,12 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           }
 
           if (event.type === "hp_gain" && (event.amount ?? 0) > 0) {
+            if (event.seatNumber != null) {
+              displayedHpBySeat[event.seatNumber] =
+                (displayedHpBySeat[event.seatNumber] ??
+                  (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
+                + (event.amount ?? 0);
+            }
             await showCombatFx(
               t(language, "combat.gainsHp", {
                 playerName: getSeatDisplayName(event.seatNumber),
@@ -3244,6 +3496,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           }
         }
         eventPlaybackActive = false;
+        displayedHpBySeat = {};
         if (match.game?.pendingAction == null) {
           activeActionVisual = null;
           centerResponseCards = [];
@@ -3257,6 +3510,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       })
       .catch(() => {
         eventPlaybackActive = false;
+        displayedHpBySeat = {};
         if (match.game?.pendingAction == null) {
           activeActionVisual = null;
           centerResponseCards = [];
@@ -3346,6 +3600,37 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       width: layout.width * layout.scale,
       height: layout.height * layout.scale
     };
+  };
+
+  const syncEventLogSeenState = (): void => {
+    const entries = buildEventLogEntries(match, language);
+    for (const entry of entries) {
+      seenEventMessageIds.add(entry.id);
+    }
+  };
+
+  const handleResizeEventLog = (e: MouseEvent): void => {
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = eventLogWidth;
+    const startHeight = eventLogHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent): void => {
+      // Bottom-right anchor: dragging left increases width, dragging up increases height
+      const deltaX = startX - moveEvent.clientX;
+      const deltaY = startY - moveEvent.clientY;
+      eventLogWidth = Math.max(280, startWidth + deltaX);
+      eventLogHeight = Math.max(200, startHeight + deltaY);
+      redraw();
+    };
+
+    const onMouseUp = (): void => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
   };
 
   const renderInspectOverlay = (): void => {
@@ -3606,7 +3891,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       victoryRevealWinnerSeatNumber = null;
       cardInspectState = null;
       inspectLayerActive = false;
-      renderLobbyScene(scene, localizedMatch, localSeatNumber, language);
+      renderLobbyScene(scene, localizedMatch, localSeatNumber, language, scheduleRedraw);
       currentGeometry = null;
     } else {
       currentGeometry = renderTableScene(
@@ -3627,7 +3912,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         activeCardFlights,
         activePlaybackArrows,
         opponentCursors,
-        scheduleRedraw
+        scheduleRedraw,
+        displayedHpBySeat
       );
     }
 
@@ -3645,6 +3931,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       : Math.max(18, (currentGeometry.playSlot.y - 52) * currentMetrics.scale);
     const kickTarget = getKickTarget();
     const kickActionTarget = getSeatKickActionTarget();
+    const prevEventLogEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
+    const savedEventLogScroll = prevEventLogEl != null
+      ? { top: prevEventLogEl.scrollTop, atBottom: prevEventLogEl.scrollTop + prevEventLogEl.clientHeight >= prevEventLogEl.scrollHeight - 4 }
+      : null;
+
     frameElement.innerHTML =
       leftMessage !== ""
         ? `
@@ -3653,9 +3944,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx);
 
     bindOverlayEvents();
+
+    const newEventLogEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
+    if (newEventLogEl != null && savedEventLogScroll != null) {
+      newEventLogEl.scrollTop = savedEventLogScroll.atBottom
+        ? newEventLogEl.scrollHeight
+        : savedEventLogScroll.top;
+    }
     renderInspectOverlay();
     if (handFocusTransition != null || combatVisualsActive) {
       scheduleRedraw();
@@ -3684,6 +3982,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       rememberPendingActionSnapshot(nextMatch);
       match = nextMatch;
       errorMessage = "";
+      syncEventLogSeenState();
       syncPendingAnnulationChoice();
       syncTelepathyPreview();
       syncBoardResetKeepPreview();
@@ -4148,6 +4447,48 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         }
         redraw();
       };
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='toggle-event-log']")?.addEventListener("click", () => {
+      eventLogExpanded = !eventLogExpanded;
+      redraw();
+      if (eventLogExpanded) {
+        const historyEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
+        if (historyEl != null) {
+          historyEl.scrollTop = historyEl.scrollHeight;
+        }
+      }
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='resize-event-log']")?.addEventListener("mousedown", (e) => {
+      handleResizeEventLog(e);
+    });
+
+    frameElement.querySelector<HTMLSelectElement>("[data-action='dev-draw-card']")?.addEventListener("change", async (event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      const cardId = select.value;
+      if (cardId === "") {
+        return;
+      }
+      select.value = "";
+      try {
+        match = await devDrawCard(session.instanceId, playerSessionToken, cardId);
+        errorMessage = "";
+      } catch (err) {
+        errorMessage = err instanceof Error ? err.message : t(language, "error.drawCard");
+      }
+      redraw();
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='download-server-log']")?.addEventListener("click", () => {
+      const lines = (match?.game?.debugLog ?? []).map(
+        (entry) => `${entry.createdAt} [${entry.source}:${entry.scope}] ${entry.message}`
+      );
+      downloadTextFile(`emerlaus-server-log-${session.instanceId}.log`, lines.join("\n"));
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='download-client-log']")?.addEventListener("click", () => {
+      downloadTextFile(`emerlaus-client-log-${session.instanceId}.log`, clientDebugLog.join("\n"));
     });
   };
 

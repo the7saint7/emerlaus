@@ -325,6 +325,133 @@ select {
   padding: 22px;
 }
 
+.pixi-dev-draw {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pixi-dev-select {
+  min-height: 38px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  color: rgba(250, 244, 232, 0.96);
+  background: rgba(9, 15, 10, 0.82);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  font-size: 0.82rem;
+  max-width: 140px;
+}
+
+.pixi-dev-select:hover {
+  background: rgba(14, 24, 16, 0.9);
+  color: #fff;
+}
+
+.pixi-event-log {
+  position: relative;
+  width: var(--event-log-width, 380px);
+  max-width: 520px;
+  pointer-events: auto;
+  border-radius: 22px;
+  background: rgba(9, 15, 10, 0.78);
+  border: 1px solid rgba(255, 239, 196, 0.16);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: height 0.2s ease-out, width 0.2s ease-out;
+}
+
+.pixi-event-log--expanded {
+  height: var(--event-log-height, 420px);
+}
+
+.pixi-event-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 239, 196, 0.08);
+}
+
+.pixi-event-log-title {
+  display: flex;
+  flex-direction: column;
+}
+
+.pixi-event-log-title strong {
+  font-size: 0.95rem;
+  color: rgba(248, 240, 222, 0.94);
+}
+
+.pixi-event-log-title span {
+  font-size: 0.75rem;
+  color: rgba(248, 240, 222, 0.5);
+}
+
+.pixi-event-log-toggle {
+  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(248, 240, 222, 0.8);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.pixi-event-log-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.pixi-event-log-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pixi-event-log-entry p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: rgba(248, 240, 222, 0.88);
+}
+
+.pixi-event-log-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(248, 240, 222, 0.4);
+  font-style: italic;
+}
+
+.pixi-event-log-resize {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: transparent;
+  border: 0;
+}
+
+.pixi-event-log-resize::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid rgba(255, 239, 196, 0.3);
+  border-left: 1px solid rgba(255, 239, 196, 0.3);
+}
+
 .pixi-expansion-row {
   justify-content: flex-end;
 }

@@ -32,7 +32,8 @@
       "Bash(node -e \"const data = require\\('./shared/cards/generated/base-card-dataset.json'\\); const objs = data.cards.filter\\(c => c.category.code === 'O'\\); objs.forEach\\(c => console.log\\(c.name, '|', c.subcategory ?? c.subCategory ?? JSON.stringify\\(Object.keys\\(c\\)\\)\\)\\)\")",
       "Bash(node -e \"const data = require\\('./shared/cards/generated/base-card-dataset.json'\\); const objs = data.cards.filter\\(c => c.category.code === 'O'\\); console.log\\('Total O cards:', objs.length\\); objs.forEach\\(c => console.log\\(c.name\\)\\)\")",
       "Bash(node -e \"const data = require\\('./shared/cards/generated/base-card-dataset.json'\\); const objs = data.cards.filter\\(c => c.category.code === 'O'\\); objs.forEach\\(c => console.log\\(c.name, '| normalization:', JSON.stringify\\(c.normalization\\)\\)\\)\")",
-      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(grep:*)"
     ]
   }
 }

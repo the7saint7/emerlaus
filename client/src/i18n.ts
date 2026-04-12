@@ -41,6 +41,11 @@ type TranslationKey =
   | "chat.placeholder"
   | "chat.send"
   | "chat.dock"
+  | "eventLog.title"
+  | "eventLog.history"
+  | "eventLog.empty"
+  | "eventLog.expand"
+  | "eventLog.minimize"
   | "lobby.activity"
   | "lobby.title"
   | "lobby.copy"
@@ -224,6 +229,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "chat.placeholder": "Type here. Unicode emoji works too.",
     "chat.send": "Send",
     "chat.dock": "Chat",
+    "eventLog.title": "Event Log",
+    "eventLog.history": "Full history",
+    "eventLog.empty": "No events yet.",
+    "eventLog.expand": "Expand",
+    "eventLog.minimize": "Minimize",
     "lobby.activity": "Emerlaus Activity",
     "lobby.title": "Card Table Lobby",
     "lobby.copy": "Seats are fixed in match order. Your screen will always rotate the table so your own hand stays at the bottom.",
@@ -404,6 +414,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "chat.placeholder": "Écrivez ici. Les émojis Unicode fonctionnent aussi.",
     "chat.send": "Envoyer",
     "chat.dock": "Chat",
+    "eventLog.title": "Journal",
+    "eventLog.history": "Historique complet",
+    "eventLog.empty": "Aucun événement.",
+    "eventLog.expand": "Agrandir",
+    "eventLog.minimize": "Réduire",
     "lobby.activity": "Activité Emerlaus",
     "lobby.title": "Salon de la table de cartes",
     "lobby.copy": "Les sièges sont fixes dans l'ordre de la partie. Votre écran fera toujours pivoter la table pour garder votre main en bas.",

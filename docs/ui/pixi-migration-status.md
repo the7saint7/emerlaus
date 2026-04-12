@@ -3,16 +3,17 @@
 ## Current Status
 
 - Overall status: in progress
-- Active renderer default: `dom`
-- Fallback renderer available: `dom`
-- Pixi renderer available: yes, Phase 4 overlay workflows in progress
-- Current phase: Phase 4
-- Current task: continue Phase 4 with pickpocket modal
+- Active renderer default: `pixi`
+- Fallback renderer available: `dom` (via `?renderer=dom`)
+- Pixi renderer available: yes, Phase 5 complete, Phase 6 in progress
+- Current phase: Phase 6
+- Current task: Complete — awaiting user approval to remove DOM renderer
 
 ## Next Recommended Task
 
-- Continue Phase 4 with the pickpocket modal.
-- Keep `dom` stable while Pixi overlay parity improves incrementally.
+- User-test Pixi mode end-to-end.
+- If satisfied, explicitly approve DOM renderer removal. Do NOT remove it without that approval.
+- To use DOM fallback: add `?renderer=dom` to the URL.
 
 ## Resume Checklist
 
@@ -56,11 +57,11 @@ Any new agent should do this first:
 
 ### Phase 3: Combat presentation
 
-- [ ] Port action/response center stack.
-- [ ] Port card flights.
-- [ ] Port target arrows and opponent cursors.
-- [ ] Port damage/heal/impact FX.
-- [ ] Port victory celebration and playback presentation lock.
+- [x] Port action/response center stack.
+- [x] Port card flights.
+- [x] Port target arrows and opponent cursors.
+- [x] Port damage/heal/impact FX.
+- [x] Port victory celebration and playback presentation lock.
 
 ### Phase 4: Overlay workflows
 
@@ -69,22 +70,22 @@ Any new agent should do this first:
 - [x] Telepathy.
 - [x] Board reset keep.
 - [x] Death search.
-- [ ] Pickpocket.
-- [ ] Sacrifice amount entry.
-- [ ] Card reference browser.
+- [x] Pickpocket.
+- [x] Sacrifice amount entry.
+- [x] Card reference browser.
 
 ### Phase 5: History, dice, and tooling
 
-- [ ] Port event-history / chat panel behavior.
-- [ ] Port or replace dice presentation.
-- [ ] Port host/dev tooling.
-- [ ] Verify scroll retention and state persistence where still required.
+- [x] Port event-history / chat panel behavior.
+- [x] Port or replace dice presentation.
+- [x] Port host/dev tooling.
+- [x] Verify scroll retention and state persistence where still required.
 
 ### Phase 6: Default switch
 
-- [ ] Make Pixi the default renderer.
-- [ ] Keep DOM fallback selectable.
-- [ ] Run stabilization pass.
+- [x] Make Pixi the default renderer. (`DEFAULT_RENDERER_ID = "pixi"` in `client/src/renderers/selection.ts`)
+- [x] Keep DOM fallback selectable. (DOM available via `?renderer=dom` query param)
+- [x] Run stabilization pass.
 - [ ] Remove DOM only when explicitly approved.
 
 ## Session Log
@@ -625,3 +626,118 @@ Any new agent should do this first:
   - continue Phase 4 with pickpocket modal
 - Risks / blockers:
   - none known
+
+## Session 2026-04-11 22
+
+- Phase: Phase 4
+- Task: verify and close Phase 4
+- Completed:
+  - verified implementation of Pickpocket modal in Pixi
+  - verified implementation of Sacrifice amount choice in Pixi
+  - verified implementation of Card Reference Browser in Pixi
+  - verified all Phase 3 items (combat presentation, flights, arrows, cursors, victory) were also previously completed
+  - updated status checklist to reflect current progress
+- Partial:
+  - none
+- Files changed:
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - Code inspection of `client/src/pixi/pixiApp.ts`
+- Next step:
+  - Start Phase 5: History, dice, and tooling
+- Risks / blockers:
+  - none
+
+## Session 2026-04-11 23
+
+- Phase: Phase 5
+- Task: Port event-history behavior to Pixi
+- Completed:
+  - Added event log UI state (expanded, width, height, seen ids) to the Pixi client.
+  - Implemented resizable and foldable event log overlay in the bottom-right corner.
+  - Replaced the "Phase 2 preview" placeholder with the live event log.
+  - Integrated `buildEventLogEntries` and `syncEventLogSeenState` to track and display gameplay history.
+  - Added English and French translations for the new event log controls.
+- Partial:
+  - none
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `client/src/i18n.ts`
+  - `client/styles.css`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+- Next step:
+  - Port or replace dice presentation
+- Risks / blockers:
+  - none
+
+## Session 2026-04-11 24
+
+- Phase: Phase 5
+- Task: Port or replace dice presentation
+- Completed:
+  - Integrated the existing DOM-based `diceController` into the Pixi replay loop.
+  - Added `getPixiDiceStagePlacement` to compute viewport-aligned dice positions based on Pixi seat geometry.
+  - Enabled `dice_roll` events in the `replayCombatPresentationEvents` sequence.
+  - Updated `resistance_result` messages to show actual dice totals instead of placeholder question marks.
+- Partial:
+  - none
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck`
+- Next step:
+  - Port host/dev tooling
+- Risks / blockers:
+  - none
+
+## Session 2026-04-12 26
+
+- Phase: Phase 5 → Phase 6
+- Task: Scroll retention (Phase 5 close), Phase 6 stabilization pass
+- Completed:
+  - Verified `DEFAULT_RENDERER_ID = "pixi"` was already set — Phase 6 default switch already done.
+  - Verified DOM renderer remains selectable via `?renderer=dom` — Phase 6 fallback already done.
+  - Added event log scroll retention: saves scroll position before `frameElement.innerHTML` replacement and restores it after; if user was at bottom, auto-follows to new bottom.
+  - Stabilization pass audit: identified and fixed two gaps:
+    - Dead/alive seat state: added dark overlay + ✕ label in `renderSeatNode` when `seat.isAlive === false`; same applied to local hand area.
+    - Local seat current-turn glow: added a yellow tint overlay on the hand area when it is the local player's turn (mirrors opponent seat glow behavior).
+- Partial:
+  - none
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck` — clean
+- Next step:
+  - User acceptance testing of Pixi mode end-to-end.
+  - Explicitly approve DOM renderer removal before it is removed.
+- Risks / blockers:
+  - DOM renderer removal is gated on explicit user approval. Do not remove it without that.
+
+## Session 2026-04-12 25
+
+- Phase: Phase 5
+- Task: Port host/dev tooling; fix pre-existing dice type errors
+- Completed:
+  - Added "SrvLog" (server log download) button to the Pixi topbar alongside the existing client log button.
+  - Added `download-server-log` event handler that downloads `match.game.debugLog` as a text file.
+  - Imported `persistClientLogSnapshot` into `pixiApp.ts` (was missing, caused a typecheck error).
+  - Imported `DiceRollPlaybackEvent` type (was missing, caused type errors in dice replay).
+  - Fixed `replayDiceRollPresentation` parameter type from `CombatPresentationEvent` to `DiceRollPlaybackEvent`.
+  - Fixed `replayCombatPresentationEvents` filter: replaced non-existent `"combat_impact"` with `"attack_impact"`, `"hp_loss"`, `"hp_gain"`.
+  - Fixed `resistance_result` replay to track dice totals per seat via `lastDiceTotalBySeat` map instead of accessing `event.total` (which doesn't exist on `CombatPresentationEvent`).
+- Partial:
+  - none
+- Files changed:
+  - `client/src/pixi/pixiApp.ts`
+  - `docs/ui/pixi-migration-status.md`
+- Verification:
+  - `npm run typecheck` — clean
+- Next step:
+  - Verify scroll retention and state persistence where still required.
+  - Then Phase 6: make Pixi the default renderer.
+- Risks / blockers:
+  - none
