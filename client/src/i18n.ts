@@ -201,7 +201,9 @@ type TranslationKey =
   | "table.discardPile"
   | "table.resolving"
   | "table.dropDefense"
-  | "table.draw";
+  | "table.draw"
+  | "table.hintPlaySlot"
+  | "table.hintTargetSeat";
 
 type TranslationTable = Record<TranslationKey, string>;
 
@@ -283,6 +285,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.resolving": "Resolving...",
     "table.dropDefense": "Drop defense card here",
     "table.draw": "Draw",
+    "table.hintPlaySlot": "Drag a card here to play it",
+    "table.hintTargetSeat": "Drag over a target to attack",
     "response.resist": "Resist",
     "response.annulation": "Annulation",
     "response.resistance_accrue": "Resistance Accrue",
@@ -473,6 +477,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.resolving": "Résolution...",
     "table.dropDefense": "Glissez une défense ici",
     "table.draw": "Piger",
+    "table.hintPlaySlot": "Glissez une carte ici pour la jouer",
+    "table.hintTargetSeat": "Glissez sur une cible pour attaquer",
     "response.resist": "Résistance",
     "response.annulation": "Annulation",
     "response.resistance_accrue": "Résistance accrue",

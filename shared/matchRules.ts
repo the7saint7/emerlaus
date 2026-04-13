@@ -1,8 +1,18 @@
 import { defaultMatchExpansionSettings, type MatchState, type SeatState } from "./types.js";
 
+function generateShortId(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  let id = "";
+  for (let i = 0; i < 5; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return id;
+}
+
 export function createEmptyMatch(instanceId: string, maxSeats = 10): MatchState {
   return {
     instanceId,
+    shortId: generateShortId(),
     status: "lobby",
     maxSeats,
     enabledExpansions: { ...defaultMatchExpansionSettings },

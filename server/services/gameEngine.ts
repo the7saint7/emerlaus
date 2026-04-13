@@ -394,8 +394,8 @@ export function appendServerDebugLog(match: StoredMatchState, scope: string, mes
   };
 
   match.internalGame.debugLog.push(entry);
-  if (match.internalGame.debugLog.length > 300) {
-    match.internalGame.debugLog = match.internalGame.debugLog.slice(-300);
+  if (match.internalGame.debugLog.length > 2000) {
+    match.internalGame.debugLog = match.internalGame.debugLog.slice(-2000);
   }
 }
 
@@ -1538,6 +1538,11 @@ function computeMirrorRobeReflection(
     return 0;
   }
 
+  const mirrorRobeDefinition = requireDefinition("robe-miroir");
+  if (isProtectedFromAttack(match, sourceSeatNumber, mirrorRobeDefinition)) {
+    return 0;
+  }
+
   const roll = rollDiceNotationDetailed("1D6");
   publishSeatDiceRoll(match, targetSeatNumber, "1D6", roll.total, roll.values, boxId);
   const reflectedAmount = Math.min(incomingAmount, roll.total);
@@ -1584,13 +1589,17 @@ function triggerCounterattackRobe(
     return;
   }
 
+  const counterattackDefinition = requireDefinition("robe-de-contre-attaque");
+  if (isProtectedFromAttack(match, sourceSeatNumber, counterattackDefinition)) {
+    return;
+  }
+
   const roll = rollDiceNotationDetailed("1D10");
   publishSeatDiceRoll(match, targetSeatNumber, "1D10", roll.total, roll.values, boxId);
   if (roll.total <= 0) {
     return;
   }
 
-  const counterattackDefinition = requireDefinition("robe-de-contre-attaque");
   pushPresentationEvent(match, {
     boxId,
     type: "attack_impact",
@@ -1647,9 +1656,30 @@ function removeObjectFromSeat(match: StoredMatchState, ownerSeatNumber: number, 
   return removed;
 }
 
-function maybePassChanceRoll(match: StoredMatchState, actorSeatNumber: number, effect: Extract<CardEffect, { type: "remove_target_object" }>, boxId?: string): boolean {
+function maybePassChanceRoll(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  effect: Extract<CardEffect, { type: "remove_target_object" }>,
+  targetSeatNumbers: number[],
+  boxId?: string
+): boolean {
   if (effect.chance == null) {
     return true;
+  }
+
+  const game = match.internalGame;
+  if (game != null) {
+    const anyTargetHasObjects = targetSeatNumbers.some((seatNumber) =>
+      seatHasEligibleTargetObject(game, seatNumber, effect.allowedSlots)
+    );
+    if (!anyTargetHasObjects) {
+      appendServerDebugLog(
+        match,
+        "object",
+        `Skipped ${effect.chance.notation} object-removal chance for seat ${actorSeatNumber} because no target has eligible objects${boxId != null ? ` [box ${boxId}]` : ""}`
+      );
+      return false;
+    }
   }
 
   const roll = rollDiceNotationDetailed(effect.chance.notation);
@@ -2831,6 +2861,9 @@ function movePersistentCard(
         sourceSeatNumber: actorSeatNumber
       });
       appendServerDebugLog(match, "status", `Seat ${targetSeatNumber} received status ${definition.name} from seat ${actorSeatNumber}`);
+      const actorName = getPublicSeat(match, actorSeatNumber).displayName;
+      const targetName = getPublicSeat(match, targetSeatNumber).displayName;
+      appendDealerMessage(match, `${actorName} placed ${definition.name} on ${targetName}.`);
     }
     return;
   }
@@ -3163,7 +3196,7 @@ function applyEffect(
       }
       break;
     case "remove_target_object":
-      if (!maybePassChanceRoll(match, actorSeatNumber, effect, boxId)) {
+      if (!maybePassChanceRoll(match, actorSeatNumber, effect, targetSeatNumbers, boxId)) {
         break;
       }
 
@@ -3588,7 +3621,7 @@ export function initializeMatchGame(match: StoredMatchState): void {
     deck,
     discardPile: [],
     seatStates: orderedSeats.map((seat) => createSeatState(seat.seatNumber)),
-    currentTurnSeatNumber: orderedSeats[0].seatNumber,
+    currentTurnSeatNumber: orderedSeats[Math.floor(Math.random() * orderedSeats.length)].seatNumber,
     turnNumber: 1,
     minimumHandSize,
     diceRolls: [],
@@ -3703,6 +3736,7 @@ export function buildPublicMatchState(match: StoredMatchState, viewerUserId?: st
 
   return {
     instanceId: match.instanceId,
+    shortId: match.shortId,
     status: match.status,
     maxSeats: match.maxSeats,
     enabledExpansions: { ...match.enabledExpansions },
@@ -4169,7 +4203,9 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
       pendingAction.sourceZone === "object" ? "object" : "discard",
       false
     ),
-    summary: newSummary
+    summary: newSummary,
+    fromMirror: true,
+    mirrorOriginActorSeatNumber: originActorSeatNumber
   });
 
   if (!targetAlive) {
@@ -4418,9 +4454,10 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
 
   const definition = requireDefinition(pendingAction.storedCard.cardId);
   const targetSeatNumber = responder.seatNumber;
+  const damageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
   const actorSeat = getActorSeatForAction(
     match,
-    pendingAction.actorSeatNumber,
+    damageRollerSeatNumber,
     definition,
     pendingAction.sourceZone ?? "hand"
   );
@@ -4480,9 +4517,9 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
         ? (
           pendingAction.sharedSacrificeAmount != null
             ? resolveChosenSacrificeDamageAmount(pendingAction.sharedSacrificeAmount, effect.amount)
-            : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId)
+            : evaluateRoll(match, effect.amount, actorSeat, targetSeat, damageRollerSeatNumber, pendingAction.boxId)
         )
-        : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId)
+        : evaluateRoll(match, effect.amount, actorSeat, targetSeat, damageRollerSeatNumber, pendingAction.boxId)
       : 0;
     const amount = shouldEvaluateDamage
       ? adjustDamageForResistance(baseAmount, resistanceOutcome, definition, effect)
@@ -4675,13 +4712,13 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
   if (!resisted || definition.defenseBand?.resistance.color === "yellow") {
 
     if (!resisted && SUCCESSFUL_HIT_KILL_ROLL_BY_CARD_ID[definition.id] != null) {
-      resolveSuccessfulHitKillRoll(match, pendingAction.actorSeatNumber, definition, [targetSeatNumber], pendingAction.boxId);
+      resolveSuccessfulHitKillRoll(match, damageRollerSeatNumber, definition, [targetSeatNumber], pendingAction.boxId);
     }
 
     const successfulHitDamageContext = !resisted
       ? resolveSuccessfulHitDamageContext(
         match,
-        pendingAction.actorSeatNumber,
+        damageRollerSeatNumber,
         definition,
         pendingAction.sourceZone ?? "hand",
         targetSeatNumber,
@@ -4709,9 +4746,10 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         continue;
       }
 
+      const collectiveDamageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
       const actorSeat = successfulHitDamageContext?.actorSeat ?? getActorSeatForAction(
         match,
-        pendingAction.actorSeatNumber,
+        collectiveDamageRollerSeatNumber,
         definition,
         pendingAction.sourceZone ?? "hand"
       );
@@ -4720,14 +4758,14 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         ? (
           pendingAction.sharedSacrificeAmount != null
             ? resolveChosenSacrificeDamageAmount(pendingAction.sharedSacrificeAmount, effect.amount)
-            : evaluateRoll(match, effect.amount, actorSeat, targetSeat, pendingAction.actorSeatNumber, pendingAction.boxId)
+            : evaluateRoll(match, effect.amount, actorSeat, targetSeat, collectiveDamageRollerSeatNumber, pendingAction.boxId)
         )
         : evaluateRoll(
           match,
           effect.amount,
           actorSeat,
           effect.type === "lifesteal" && effect.powerSource !== "target" ? actorSeat : targetSeat,
-          pendingAction.actorSeatNumber,
+          collectiveDamageRollerSeatNumber,
           pendingAction.boxId
         );
       const amount = adjustHpLossAmountForResistance(
@@ -5109,7 +5147,7 @@ function resolvePendingAction(match: StoredMatchState): void {
         !resistedTargets.has(seatNumber) &&
         getStoredSeat(game, seatNumber).alive
     );
-    resolveSuccessfulHitKillRoll(match, pendingAction.actorSeatNumber, definition, resolvedTargetSeatNumbers, pendingAction.boxId);
+    resolveSuccessfulHitKillRoll(match, pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber, definition, resolvedTargetSeatNumbers, pendingAction.boxId);
   }
 
   if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
@@ -5131,7 +5169,7 @@ function resolvePendingAction(match: StoredMatchState): void {
       targetSeatNumber,
       resolveSuccessfulHitDamageContext(
         match,
-        pendingAction.actorSeatNumber,
+        pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber,
         definition,
         pendingAction.sourceZone ?? "hand",
         targetSeatNumber,

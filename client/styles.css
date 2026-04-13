@@ -115,8 +115,20 @@ select {
 
 .pixi-stage-frame {
   position: absolute;
-  overflow: hidden;
   pointer-events: none;
+}
+
+.pixi-session-id {
+  position: absolute;
+  right: 18px;
+  top: 12px;
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(52, 110, 60, 0.85);
+  pointer-events: none;
+  user-select: none;
 }
 
 .pixi-frame-topbar,

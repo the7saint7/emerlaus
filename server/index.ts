@@ -295,10 +295,10 @@ app.post("/api/matches/:instanceId/client-log", (request, response) => {
     const entries = Array.isArray(body.entries)
       ? body.entries.filter((entry): entry is string => typeof entry === "string").slice(-300)
       : [];
-    const displayName =
-      getMatch(request.params.instanceId)?.seats.find((seat) => seat.userId === userId)?.displayName ?? userId;
+    const matchForLog = getMatch(request.params.instanceId);
+    const displayName = matchForLog?.seats.find((seat) => seat.userId === userId)?.displayName ?? userId;
 
-    persistClientLogSnapshot(request.params.instanceId, userId, displayName, entries);
+    persistClientLogSnapshot(request.params.instanceId, matchForLog?.shortId, userId, displayName, entries);
     response.status(204).end();
   } catch (error) {
     response.status(400).json({

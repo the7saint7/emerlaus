@@ -14,8 +14,11 @@ function sanitizePathSegment(value: string): string {
   return trimmed.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
 }
 
-function ensureInstanceLogDir(instanceId: string): string {
-  const instanceDir = path.join(LOG_ROOT, sanitizePathSegment(instanceId));
+function ensureInstanceLogDir(instanceId: string, shortId?: string): string {
+  const folderName = shortId != null
+    ? `${shortId}-${sanitizePathSegment(instanceId)}`
+    : sanitizePathSegment(instanceId);
+  const instanceDir = path.join(LOG_ROOT, folderName);
   fs.mkdirSync(instanceDir, { recursive: true });
   return instanceDir;
 }
@@ -29,7 +32,7 @@ export function persistMatchLogs(match: StoredMatchState): void {
     return;
   }
 
-  const instanceDir = ensureInstanceLogDir(match.instanceId);
+  const instanceDir = ensureInstanceLogDir(match.instanceId, match.shortId);
   const currentTurnSeatNumber = match.internalGame.currentTurnSeatNumber;
   const currentTurnSeat = match.seats.find((seat) => seat.seatNumber === currentTurnSeatNumber);
   const snapshot = {
@@ -94,11 +97,12 @@ export function persistMatchLogs(match: StoredMatchState): void {
 
 export function persistClientLogSnapshot(
   instanceId: string,
+  shortId: string | undefined,
   userId: string,
   displayName: string,
   entries: string[]
 ): void {
-  const instanceDir = ensureInstanceLogDir(instanceId);
+  const instanceDir = ensureInstanceLogDir(instanceId, shortId);
   const fileLabel = `${sanitizePathSegment(displayName)}-${sanitizePathSegment(userId)}`;
   fs.writeFileSync(path.join(instanceDir, `client-${fileLabel}.log`), entries.join("\n"), "utf8");
 }

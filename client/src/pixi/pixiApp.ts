@@ -119,7 +119,7 @@ interface RenderObjectRowResult {
 
 interface InspectTargetGeometry extends RectGeometry {
   card: CardView;
-  group: "center" | "response" | "object";
+  group: "center" | "response" | "object" | "status";
 }
 
 interface TableInteractionGeometry {
@@ -223,6 +223,8 @@ interface ActiveActionVisualState {
   targetObjectInstanceId?: string;
   card: CardView;
   summary: string;
+  // seatNumber of mirror player → seatNumber they reflected to
+  mirroredTargets?: Record<number, number>;
 }
 
 interface OpponentCursorState {
@@ -312,6 +314,15 @@ function getSeatInitials(displayName: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+// Truncates text to fit within maxPx, appending "…" if needed.
+// Uses a conservative per-character estimate for bold Trebuchet MS.
+function fitText(text: string, maxPx: number, fontSize: number): string {
+  const charPx = fontSize * 0.62;
+  const maxChars = Math.floor(maxPx / charPx);
+  if (text.length <= maxChars) return text;
+  return text.slice(0, Math.max(1, maxChars - 1)) + "…";
 }
 
 function computeStageMetrics(hostElement: HTMLElement): PixiStageMetrics {
@@ -465,8 +476,8 @@ function buildHandLayouts(
       if (distance === 0) {
         modifiers.set(hand[index]!.instanceId, {
           offsetX: 0,
-          offsetY: -82,
-          scale: 1.28
+          offsetY: -115,
+          scale: 1.75
         });
         continue;
       }
@@ -480,7 +491,7 @@ function buildHandLayouts(
       modifiers.set(hand[index]!.instanceId, {
         offsetX: direction * spreadOffset,
         offsetY: absDistance === 1 ? 6 : 0,
-        scale: 1
+        scale: 1.25
       });
     }
 
@@ -494,8 +505,8 @@ function buildHandLayouts(
   return hand.map((card, index) => {
     const angle = total <= 1 ? 0 : (-spread / 2 + (index / (total - 1)) * spread) * (Math.PI / 180);
     const dragging = interactionState.draggingCardInstanceId === card.instanceId;
-    const fromModifier = fromModifiers.get(card.instanceId) ?? { offsetX: 0, offsetY: 0, scale: 1 };
-    const toModifier = toModifiers.get(card.instanceId) ?? { offsetX: 0, offsetY: 0, scale: 1 };
+    const fromModifier = fromModifiers.get(card.instanceId) ?? { offsetX: 0, offsetY: 0, scale: 1.25 };
+    const toModifier = toModifiers.get(card.instanceId) ?? { offsetX: 0, offsetY: 0, scale: 1.25 };
     const offsetX = fromModifier.offsetX + (toModifier.offsetX - fromModifier.offsetX) * blend;
     const offsetY = fromModifier.offsetY + (toModifier.offsetY - fromModifier.offsetY) * blend;
     const focusScale = fromModifier.scale + (toModifier.scale - fromModifier.scale) * blend;
@@ -508,7 +519,7 @@ function buildHandLayouts(
       width,
       height,
       rotation: angle * 0.72,
-      scale: dragging ? Math.max(1.1, focusScale) : focusScale,
+      scale: dragging ? Math.max(1.25, focusScale) : focusScale,
       zIndex: isFocused ? 1000 : index
     };
   });
@@ -616,42 +627,51 @@ function renderObjectRow(
   onTextureReady?: () => void
 ): RenderObjectRowResult {
   const objects = seat.objects ?? [];
-  if (objects.length === 0) {
+  const statuses = seat.statuses ?? [];
+  const allCards: Array<{ card: CardView; isStatus: boolean }> = [
+    ...objects.map((card) => ({ card, isStatus: false })),
+    ...statuses.map((card) => ({ card, isStatus: true }))
+  ];
+
+  if (allCards.length === 0) {
     return {
       objectTargets: [],
       inspectTargets: []
     };
   }
 
-  const totalWidth = objects.length * cardWidth + Math.max(0, objects.length - 1) * gap;
+  const totalWidth = allCards.length * cardWidth + Math.max(0, allCards.length - 1) * gap;
   const startX = centerX - totalWidth / 2;
   const objectTargets: ObjectTargetGeometry[] = [];
   const inspectTargets: InspectTargetGeometry[] = [];
 
-  for (let index = 0; index < objects.length; index += 1) {
-    const objectCard = objects[index]!;
+  for (let index = 0; index < allCards.length; index += 1) {
+    const { card, isStatus } = allCards[index]!;
     const x = startX + index * (cardWidth + gap);
     const y = topY;
-    const targetable = objectCardMatchesSelectedTargeting(selectedCard, objectCard, seat.seatNumber, localSeatNumber);
-    const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === objectCard.instanceId;
 
-    if (targetable) {
-      scene.addChild(createRect(x - 4, y - 4, cardWidth + 8, cardHeight + 8, hovered ? "#f0c96d" : "#f0c96d", hovered ? 0.26 : 0.12, 16));
-      objectTargets.push({
-        seatNumber: seat.seatNumber,
-        objectInstanceId: objectCard.instanceId,
-        x,
-        y,
-        width: cardWidth,
-        height: cardHeight,
-        centerX: x + cardWidth / 2,
-        centerY: y + cardHeight / 2
-      });
+    if (!isStatus) {
+      const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber);
+      const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
+
+      if (targetable) {
+        scene.addChild(createRect(x - 4, y - 4, cardWidth + 8, cardHeight + 8, "#f0c96d", hovered ? 0.26 : 0.12, 16));
+        objectTargets.push({
+          seatNumber: seat.seatNumber,
+          objectInstanceId: card.instanceId,
+          x,
+          y,
+          width: cardWidth,
+          height: cardHeight,
+          centerX: x + cardWidth / 2,
+          centerY: y + cardHeight / 2
+        });
+      }
     }
 
     inspectTargets.push({
-      card: objectCard,
-      group: "object",
+      card,
+      group: isStatus ? "status" : "object",
       x,
       y,
       width: cardWidth,
@@ -660,7 +680,7 @@ function renderObjectRow(
 
     scene.addChild(createRect(x, y, cardWidth, cardHeight, "#e7d8b4", 1, 14));
     scene.addChild(createRect(x + 4, y + 4, cardWidth - 8, cardHeight - 8, "#201610", 1, 10));
-    const texture = getLoadedTexture(objectCard.imageUrl);
+    const texture = getLoadedTexture(card.imageUrl);
     if (texture != null) {
       const sprite = new Sprite(texture);
       const fitted = fitSpriteToBox(texture, cardWidth - 12, cardHeight - 12);
@@ -669,7 +689,7 @@ function renderObjectRow(
       sprite.height = fitted.height;
       scene.addChild(sprite);
     } else {
-      requestTextureLoad(objectCard.imageUrl, onTextureReady ?? (() => {}));
+      requestTextureLoad(card.imageUrl, onTextureReady ?? (() => {}));
       scene.addChild(createLabel("Loading", x + cardWidth / 2, y + cardHeight / 2, {
         fontSize: 8,
         fontWeight: "700",
@@ -677,9 +697,9 @@ function renderObjectRow(
       }, 0.5, 0.5));
     }
 
-    if ((objectCard.attachedCardCount ?? 0) > 0) {
+    if (!isStatus && (card.attachedCardCount ?? 0) > 0) {
       scene.addChild(createRect(x + cardWidth - 26, y + 6, 18, 18, "#94682a", 1, 999));
-      scene.addChild(createLabel(`+${objectCard.attachedCardCount}`, x + cardWidth - 17, y + 15, {
+      scene.addChild(createLabel(`+${card.attachedCardCount}`, x + cardWidth - 17, y + 15, {
         fontSize: 9,
         fontWeight: "700",
         fill: "#fff1c8"
@@ -933,7 +953,7 @@ function renderLobbyScene(
     ));
 
     // Name + status stacked on the right of the avatar
-    scene.addChild(createLabel(seat.displayName, x + 82, y + 38, { fontSize: 19, fontWeight: "700" }));
+    scene.addChild(createLabel(fitText(seat.displayName, 218, 19), x + 82, y + 38, { fontSize: 19, fontWeight: "700" }));
     scene.addChild(createLabel(
       seat.controllerType === "bot"
         ? t(language, "seat.bot", { difficulty: seat.difficulty ?? "normal" })
@@ -1010,9 +1030,11 @@ function renderSeatNode(
   highlight = false,
   onTextureReady: () => void = () => {},
   displayedHp?: number,
-  language: AppLanguage = "fr"
+  language: AppLanguage = "fr",
+  displayedAlive?: boolean
 ): void {
   const hp = displayedHp ?? seat.hp;
+  const isDead = (displayedAlive != null ? !displayedAlive : seat.isAlive === false);
 
   // ── Opponent seat: HP bar dominant ──────────────────────────────────────────
   // The seat IS a health bar. The filled portion shows remaining HP. Avatar sits
@@ -1046,7 +1068,7 @@ function renderSeatNode(
       getSeatInitials(seat.displayName), onTextureReady));
 
     // Name + power in center
-    scene.addChild(createLabel(seat.displayName, lx + 68, ly + 12, { fontSize: 17, fontWeight: "700" }));
+    scene.addChild(createLabel(fitText(seat.displayName, 120, 17), lx + 68, ly + 12, { fontSize: 17, fontWeight: "700" }));
     scene.addChild(createLabel(`${t(language, "stat.power")} ${seat.powerLevel ?? 1}`, lx + 69, ly + 36, { fontSize: 11, fill: "#8aaa90" }));
 
     // Live HP number right side
@@ -1055,7 +1077,7 @@ function renderSeatNode(
     if (seat.isHost) {
       scene.addChild(createLabel("H", lx + w - 8, ly + 4, { fontSize: 10, fill: "#f0d070", fontWeight: "700" }, 1, 0));
     }
-    if (seat.isAlive === false) {
+    if (isDead) {
       scene.addChild(createRect(lx, ly, w, h, "#c8d4cc", 0.55, 10));
     }
     return;
@@ -1081,7 +1103,7 @@ function renderSeatNode(
     onTextureReady
   ));
 
-  scene.addChild(createLabel(seat.displayName, x - (seatWidth / 2) + 104, y - 24, { fontSize: 28, fontWeight: "700" }));
+  scene.addChild(createLabel(fitText(seat.displayName, 290, 28), x - (seatWidth / 2) + 104, y - 24, { fontSize: 28, fontWeight: "700" }));
   scene.addChild(createLabel(`${t(language, "stat.hp")} ${hp}  |  ${t(language, "stat.power")} ${seat.powerLevel ?? 1}`, x - (seatWidth / 2) + 104, y + 8, { fontSize: 18, fill: "#d0d9cf" }));
 
   if (seat.isHost) {
@@ -1095,7 +1117,7 @@ function renderSeatNode(
     scene.addChild(glow);
   }
 
-  if (seat.isAlive === false) {
+  if (isDead) {
     scene.addChild(createRect(x - (seatWidth / 2), y - (seatHeight / 2), seatWidth, seatHeight, "#c8d4cc", 0.55, 24));
   }
 }
@@ -1119,7 +1141,8 @@ function renderTableScene(
   activePlaybackArrows: PlaybackArrowState[],
   opponentCursors: Record<number, OpponentCursorState>,
   onTextureReady: () => void,
-  displayedHpBySeat: Record<number, number>
+  displayedHpBySeat: Record<number, number>,
+  targetHintDismissed: boolean
 ): TableInteractionGeometry {
   const now = Date.now();
   const localSeat = getLocalSeat(match, localSeatNumber);
@@ -1129,9 +1152,11 @@ function renderTableScene(
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
   const lastPlayedCard = match.game?.lastPlayedCard?.card;
   const centerSlotTopY = pendingAction == null ? 292 : 302;
-  const responseSlot: RectGeometry | null = pendingAction == null
-    ? null
-    : { x: 544, y: centerSlotTopY - 12, width: 128, height: 214 };
+  const isLocalResponder = pendingAction != null
+    && pendingAction.responderSeatNumbers.includes(localSeatNumber);
+  const responseSlot: RectGeometry | null = isLocalResponder
+    ? { x: 544, y: centerSlotTopY - 12, width: 128, height: 214 }
+    : null;
   const draggedCard = localSeat?.hand?.find((card) =>
     card.instanceId === (interactionState.arrowDrag?.cardInstanceId ?? interactionState.draggingCardInstanceId)
   );
@@ -1168,7 +1193,18 @@ function renderTableScene(
   scene.addChild(createCircle(STAGE_WIDTH / 2, STAGE_HEIGHT / 2, 180, "#0e2314", 0.32));
   scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#101812", 0.56, 34));
   if (localSeat != null && localSeat.seatNumber === currentTurnSeatNumber) {
-    scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#d6b058", 0.12, 34));
+    const pulse = 0.5 + 0.5 * Math.sin(now / 700);
+    // Outer layer: warm gold across the full width
+    scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8900a", 0.10 + 0.28 * pulse, 34));
+    // Inner layer: bright yellow-gold centered, narrower — creates gradient impression
+    const cw = handArea.width * 0.62;
+    const cx = handArea.x + (handArea.width - cw) / 2;
+    scene.addChild(createRect(cx, handArea.y, cw, handArea.height, "#f5d040", 0.06 + 0.18 * pulse, 34));
+    // Pulsing border
+    const border = new Graphics();
+    border.roundRect(handArea.x, handArea.y, handArea.width, handArea.height, 34);
+    border.stroke({ color: "#f5c820", alpha: 0.28 + 0.62 * pulse, width: 2.5 });
+    scene.addChild(border);
   }
   if (localSeat != null) {
     const hpBadgeWidth = 112;
@@ -1181,7 +1217,9 @@ function renderTableScene(
       fontWeight: "700",
       fill: "#f5efde"
     }, 0.5, 0.5));
-    if (localSeat.isAlive === false) {
+    const localDisplayedHp = displayedHpBySeat[localSeat.seatNumber];
+    const localIsDead = localDisplayedHp != null ? localDisplayedHp <= 0 : localSeat.isAlive === false;
+    if (localIsDead) {
       scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8d4cc", 0.55, 34));
     }
   }
@@ -1243,8 +1281,17 @@ function renderTableScene(
       ),
       onTextureReady,
       displayedHpBySeat[seat.seatNumber],
-      language
+      language,
+      displayedHpBySeat[seat.seatNumber] != null ? displayedHpBySeat[seat.seatNumber] > 0 : undefined
     );
+
+    if (interactionState.arrowDrag != null && targetable && !targetHintDismissed) {
+      scene.addChild(createLabel(t(language, "table.hintTargetSeat"), seatX, seatY + seatHeight / 2 + 14, {
+        fontSize: 13,
+        fill: "#8aaa90",
+        align: "center"
+      }, 0.5, 0));
+    }
 
     const opponentObjectRow = renderObjectRow(
       scene,
@@ -1382,21 +1429,13 @@ function renderTableScene(
     scene.addChild(createRect(playSlot.x - 4, playSlot.y - 4, playSlot.width + 8, playSlot.height + 8, "#f0c96d", 0.24, 32));
   }
   if (centerStackCards.length === 0) {
-    scene.addChild(createLabel(t(language, "table.currentTurn"), playSlot.x + playSlot.width / 2, playSlot.y + playSlot.height / 2 - 10, {
-      fontSize: 30,
-      fontWeight: "700"
+    scene.addChild(createLabel(t(language, "table.hintPlaySlot"), playSlot.x + playSlot.width / 2, playSlot.y + playSlot.height / 2, {
+      fontSize: 16,
+      fill: "#5a7a62",
+      wordWrap: true,
+      wordWrapWidth: playSlot.width - 16,
+      align: "center"
     }, 0.5, 0.5));
-    scene.addChild(createLabel(
-      `${t(language, "table.deck")} ${match.game?.deckCount ?? 0}  |  ${t(language, "table.discardPile")} ${match.game?.discardCount ?? 0}`,
-      playSlot.x + playSlot.width / 2,
-      playSlot.y + playSlot.height / 2 + 26,
-      {
-        fontSize: 18,
-        fill: "#cdd5cb"
-      },
-      0.5,
-      0.5
-    ));
   } else {
     centerStackCards.forEach((card, index) => {
       const liftOffset = (centerStackCards.length - 1 - index) * 10;
@@ -1441,6 +1480,10 @@ function renderTableScene(
     }
 
     for (const targetSeatNumber of displayedAction.targetSeatNumbers) {
+      if (targetSeatNumber === displayedAction.actorSeatNumber) {
+        continue;
+      }
+
       const targetCenter = seatCenters.get(targetSeatNumber);
       const targetRect = seatRects.get(targetSeatNumber);
       if (targetCenter == null || targetRect == null) {
@@ -1449,15 +1492,27 @@ function renderTableScene(
 
       const centerEdgeToTarget = rectEdgePoint(targetCenter.x, targetCenter.y, playSlot);
       const targetEdge = rectEdgePoint(playCenterX, playCenterY, targetRect);
+      const reflectToSeatNumber = displayedAction.mirroredTargets?.[targetSeatNumber];
+      const isMirrored = reflectToSeatNumber != null;
 
       scene.addChild(createCurvedArrow(
         centerEdgeToTarget.x,
         centerEdgeToTarget.y,
         targetEdge.x,
         targetEdge.y,
-        "#d23a3a",
+        isMirrored ? "#f5a030" : "#d23a3a",
         8
       ));
+
+      if (isMirrored) {
+        const reflectRect = seatRects.get(reflectToSeatNumber);
+        if (reflectRect != null) {
+          const reflectCenter = getRectCenter(reflectRect);
+          const fromEdge = rectEdgePoint(reflectCenter.x, reflectCenter.y, targetRect);
+          const toEdge = rectEdgePoint(targetCenter.x, targetCenter.y, reflectRect);
+          scene.addChild(createCurvedArrow(fromEdge.x, fromEdge.y, toEdge.x, toEdge.y, "#d23a3a", 8));
+        }
+      }
     }
 
     if (displayedAction.targetObjectInstanceId != null) {
@@ -1760,13 +1815,14 @@ function buildOverlayMarkup(
     .join("");
 
   return `
+    ${match.shortId ? `<div class="pixi-session-id">${escapeHtml(match.shortId)}</div>` : ""}
     <div class="pixi-frame-topbar">
       <div class="pixi-frame-actions">
         ${match.status === "in_progress"
           ? `<button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>`
           : ""}
         ${match.status === "in_progress" || match.status === "lobby" ? "" : ""}
-        ${sessionMode === "browser" && match.status === "in_progress"
+        ${match.status === "in_progress"
           ? `
             <div class="pixi-dev-draw">
               <select class="pixi-dev-select" data-action="dev-draw-card" title="Dev: draw card">
@@ -2503,6 +2559,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let language = loadStoredLanguage();
   let errorMessage = "";
   let leftMessage = "";
+  let lastOverlayMarkup = "";
   let currentMetrics = computeStageMetrics(hostElement);
   let currentGeometry: TableInteractionGeometry | null = null;
   let redrawQueued = false;
@@ -2535,6 +2592,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let activeDamageBursts: Record<number, FloatingBurstState> = {};
   let activeHealBursts: Record<number, FloatingBurstState> = {};
   let displayedHpBySeat: Record<number, number> = {};
+  let displayedSeatsBySeat: Record<number, SeatState> = {};
+  let preUpdateLocalizedSeatsBySeat: Record<number, SeatState> = {};
   let activeImpactFlashes: Record<number, ImpactFlashState> = {};
   let activeCardFlights: CardFlightState[] = [];
   let activePlaybackArrows: PlaybackArrowState[] = [];
@@ -2555,6 +2614,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let match = joined.match;
   let localSeatNumber = joined.localSeatNumber;
   const playerSessionToken = joined.playerSessionToken;
+  let targetHintDismissed = false;
   let seenGameEventIds = new Set((match.game?.eventLog ?? []).map((event) => event.id));
   let seenEventMessageIds = new Set(buildEventLogEntries(match, language).map((entry) => entry.id));
   let eventReplayChain: Promise<void> = Promise.resolve();
@@ -3123,13 +3183,27 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const replayActionStartPresentation = async (event: ActionStartEvent): Promise<void> => {
     centerResponseCards = [];
     const playSlot = currentGeometry?.playSlot;
-    activeActionVisual = {
-      actorSeatNumber: event.actorSeatNumber,
-      targetSeatNumbers: [...event.targetSeatNumbers],
-      targetObjectInstanceId: event.targetObjectInstanceId,
-      card: event.card,
-      summary: event.summary
-    };
+    if (event.fromMirror === true && activeActionVisual != null) {
+      // Mirror bounce: preserve the original multi-target visual but record which seat
+      // mirrored and where they reflected to, so arrows can be recoloured.
+      const mirrorPlayer = event.actorSeatNumber;
+      const reflectTarget = event.targetSeatNumbers[0] ?? event.mirrorOriginActorSeatNumber;
+      activeActionVisual = {
+        ...activeActionVisual,
+        mirroredTargets: {
+          ...(activeActionVisual.mirroredTargets ?? {}),
+          ...(reflectTarget != null ? { [mirrorPlayer]: reflectTarget } : {})
+        }
+      };
+    } else {
+      activeActionVisual = {
+        actorSeatNumber: event.actorSeatNumber,
+        targetSeatNumbers: [...event.targetSeatNumbers],
+        targetObjectInstanceId: event.targetObjectInstanceId,
+        card: event.card,
+        summary: event.summary
+      };
+    }
     if (playSlot == null) {
       await showCombatFx(
         t(language, "combat.actionPlayed", {
@@ -3171,6 +3245,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     const outgoingFlights: Array<Promise<void>> = [];
     for (const targetSeatNumber of event.targetSeatNumbers) {
+      if (targetSeatNumber === event.actorSeatNumber) {
+        continue;
+      }
+
       const targetRect = currentGeometry?.seatRects.get(targetSeatNumber);
       if (targetRect == null) {
         continue;
@@ -3401,6 +3479,26 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
+    // Snapshot pre-death seat data for seats dying in this animation batch.
+    // Their hand/objects are already cleared in the new match state, but we keep
+    // them visible until displayedHpBySeat actually animates down to 0.
+    for (const [key, startingHp] of Object.entries(displayedHpBySeat)) {
+      const seatNumber = Number(key);
+      if (startingHp > 0 && match.seats.find((s) => s.seatNumber === seatNumber)?.isAlive === false) {
+        const preDeath = preUpdateLocalizedSeatsBySeat[seatNumber];
+        if (preDeath != null) {
+          displayedSeatsBySeat[seatNumber] = preDeath;
+        }
+      }
+    }
+
+    // If this batch starts a new action, clear the previous action's targeting
+    // arrows now so the initial redraw() doesn't flash stale targeting.
+    if (replayableEvents.some((e) => e.type === "action_start")) {
+      activeActionVisual = null;
+      centerResponseCards = [];
+    }
+
     eventPlaybackActive = true;
     redraw();
 
@@ -3531,6 +3629,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         }
         eventPlaybackActive = false;
         displayedHpBySeat = {};
+        displayedSeatsBySeat = {};
         if (match.game?.pendingAction == null) {
           activeActionVisual = null;
           centerResponseCards = [];
@@ -3545,6 +3644,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       .catch(() => {
         eventPlaybackActive = false;
         displayedHpBySeat = {};
+        displayedSeatsBySeat = {};
         if (match.game?.pendingAction == null) {
           activeActionVisual = null;
           centerResponseCards = [];
@@ -3861,11 +3961,23 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     scene.scale.set(currentMetrics.scale);
     frameElement.style.left = `${currentMetrics.left}px`;
     frameElement.style.top = `${currentMetrics.top}px`;
-    frameElement.style.width = `${currentMetrics.width}px`;
-    frameElement.style.height = `${currentMetrics.height}px`;
+    frameElement.style.width = `${STAGE_WIDTH}px`;
+    frameElement.style.height = `${STAGE_HEIGHT}px`;
+    frameElement.style.transform = `scale(${currentMetrics.scale})`;
+    frameElement.style.transformOrigin = "top left";
     warningElement.classList.toggle("pixi-landscape-warning--visible", !currentMetrics.isLandscape);
     const combatVisualsActive = pruneExpiredCombatVisuals();
     const localizedMatch = localizeMatchState(match, language);
+    const displayMatch = Object.keys(displayedSeatsBySeat).length > 0
+      ? {
+          ...localizedMatch,
+          seats: localizedMatch.seats.map((seat) => {
+            const snapshot = displayedSeatsBySeat[seat.seatNumber];
+            if (snapshot == null) return seat;
+            return { ...seat, hand: snapshot.hand, objects: snapshot.objects };
+          })
+        }
+      : localizedMatch;
     const handFocusBlend = getHandFocusBlendState();
     cleanupScene();
     const presentationLockActive = eventPlaybackActive || hasUnseenReplayableEvents();
@@ -3930,7 +4042,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     } else {
       currentGeometry = renderTableScene(
         scene,
-        localizedMatch,
+        displayMatch,
         localSeatNumber,
         language,
         presentationLockActive,
@@ -3947,26 +4059,26 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         activePlaybackArrows,
         opponentCursors,
         scheduleRedraw,
-        displayedHpBySeat
+        displayedHpBySeat,
+        targetHintDismissed
       );
     }
 
     const passButtonLeftPx = currentGeometry?.responseSlot == null
       ? 0
-      : (currentGeometry.responseSlot.x + currentGeometry.responseSlot.width / 2) * currentMetrics.scale;
+      : currentGeometry.responseSlot.x + currentGeometry.responseSlot.width / 2;
     const passButtonTopPx = currentGeometry?.responseSlot == null
       ? 0
-      : (currentGeometry.responseSlot.y + currentGeometry.responseSlot.height + 14) * currentMetrics.scale;
+      : currentGeometry.responseSlot.y + currentGeometry.responseSlot.height + 14;
     const combatBannerLeftPx = currentGeometry == null
-      ? currentMetrics.width / 2
-      : (currentGeometry.playSlot.x + currentGeometry.playSlot.width / 2) * currentMetrics.scale;
+      ? STAGE_WIDTH / 2
+      : currentGeometry.playSlot.x + currentGeometry.playSlot.width / 2;
     const combatBannerTopPx = currentGeometry == null
       ? 88
-      : Math.max(18, (currentGeometry.playSlot.y - 52) * currentMetrics.scale);
+      : Math.max(18, currentGeometry.playSlot.y - 52);
     const kickTarget = getKickTarget();
     const kickActionTarget = getSeatKickActionTarget();
     const lobbyLayout: LobbyOverlayLayout | null = localizedMatch.status === "lobby" ? (() => {
-      const s = currentMetrics.scale;
       const smX = LOBBY_START_X + (LOBBY_CARD_W + LOBBY_CARD_GAP);
       const addBotButtons = Array.from({ length: localizedMatch.maxSeats }, (_, i) => i + 2)
         .filter((seatNumber) => localizedMatch.seats.find((seat) => seat.seatNumber === seatNumber) == null)
@@ -3975,29 +4087,29 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           const col = i % LOBBY_COLUMNS;
           const row = 1 + Math.floor(i / LOBBY_COLUMNS);
           return {
-            leftPx: (LOBBY_START_X + col * (LOBBY_CARD_W + LOBBY_CARD_GAP)) * s,
-            topPx: (LOBBY_START_Y + row * (LOBBY_CARD_H + LOBBY_CARD_GAP)) * s,
-            widthPx: LOBBY_CARD_W * s,
-            heightPx: LOBBY_CARD_H * s
+            leftPx: LOBBY_START_X + col * (LOBBY_CARD_W + LOBBY_CARD_GAP),
+            topPx: LOBBY_START_Y + row * (LOBBY_CARD_H + LOBBY_CARD_GAP),
+            widthPx: LOBBY_CARD_W,
+            heightPx: LOBBY_CARD_H
           };
         });
       const expansionButtons = EXPANSION_DECKS.map((deck, index) => {
         const rowY = LOBBY_EXP_Y + LOBBY_EXP_HEADER_H + index * (LOBBY_EXP_ROW_H + LOBBY_EXP_ROW_GAP);
         return {
           key: deck.key,
-          leftPx: LOBBY_EXP_X * s,
-          topPx: rowY * s,
-          widthPx: LOBBY_EXP_W * s,
-          heightPx: LOBBY_EXP_ROW_H * s,
+          leftPx: LOBBY_EXP_X,
+          topPx: rowY,
+          widthPx: LOBBY_EXP_W,
+          heightPx: LOBBY_EXP_ROW_H,
           available: deck.available,
           enabled: localizedMatch.enabledExpansions[deck.key] ?? false
         };
       });
       return {
-        startMatchLeftPx: smX * s,
-        startMatchTopPx: LOBBY_START_Y * s,
-        startMatchWidthPx: (2 * LOBBY_CARD_W + LOBBY_CARD_GAP) * s,
-        startMatchHeightPx: LOBBY_CARD_H * s,
+        startMatchLeftPx: smX,
+        startMatchTopPx: LOBBY_START_Y,
+        startMatchWidthPx: 2 * LOBBY_CARD_W + LOBBY_CARD_GAP,
+        startMatchHeightPx: LOBBY_CARD_H,
         addBotButtons,
         expansionButtons
       };
@@ -4007,7 +4119,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       ? { top: prevEventLogEl.scrollTop, atBottom: prevEventLogEl.scrollTop + prevEventLogEl.clientHeight >= prevEventLogEl.scrollHeight - 4 }
       : null;
 
-    frameElement.innerHTML =
+    const nextOverlayMarkup =
       leftMessage !== ""
         ? `
           <div class="pixi-frame-center-card">
@@ -4017,16 +4129,24 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         `
         : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
-    bindOverlayEvents();
+    if (nextOverlayMarkup !== lastOverlayMarkup) {
+      frameElement.innerHTML = nextOverlayMarkup;
+      lastOverlayMarkup = nextOverlayMarkup;
+      bindOverlayEvents();
 
-    const newEventLogEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
-    if (newEventLogEl != null && savedEventLogScroll != null) {
-      newEventLogEl.scrollTop = savedEventLogScroll.atBottom
-        ? newEventLogEl.scrollHeight
-        : savedEventLogScroll.top;
+      const newEventLogEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
+      if (newEventLogEl != null && savedEventLogScroll != null) {
+        newEventLogEl.scrollTop = savedEventLogScroll.atBottom
+          ? newEventLogEl.scrollHeight
+          : savedEventLogScroll.top;
+      }
     }
     renderInspectOverlay();
-    if (handFocusTransition != null || combatVisualsActive) {
+    const isLocalTurn = match.status === "in_progress"
+      && !presentationLockActive
+      && match.game?.currentTurnSeatNumber === localSeatNumber;
+
+    if (handFocusTransition != null || combatVisualsActive || isLocalTurn) {
       scheduleRedraw();
     }
   };
@@ -4051,6 +4171,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       rememberPendingActionSnapshot(match);
       const nextMatch = await fetchMatch(session.instanceId, playerSessionToken);
       rememberPendingActionSnapshot(nextMatch);
+      preUpdateLocalizedSeatsBySeat = Object.fromEntries(
+        localizeMatchState(match, language).seats.map((s) => [s.seatNumber, s])
+      );
       match = nextMatch;
       errorMessage = "";
       syncEventLogSeenState();
@@ -4686,6 +4809,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const { cardInstanceId, nearestSeatNumber } = interactionState.arrowDrag;
       broadcastCursorTarget(null);
       if (nearestSeatNumber != null) {
+        targetHintDismissed = true;
         await performCardPlay({
           cardInstanceId,
           mode: "active",

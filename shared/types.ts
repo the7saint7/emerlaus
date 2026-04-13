@@ -134,6 +134,8 @@ export interface ActionStartEvent {
   targetObjectInstanceId?: string;
   card: CardView;
   summary: string;
+  fromMirror?: boolean;
+  mirrorOriginActorSeatNumber?: number;
 }
 
 export interface CombatPresentationEvent {
@@ -298,6 +300,7 @@ export interface GameState {
 
 export interface MatchState {
   instanceId: string;
+  shortId: string;
   status: MatchStatus;
   maxSeats: number;
   enabledExpansions: MatchExpansionSettings;

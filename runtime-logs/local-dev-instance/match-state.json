@@ -1,12 +1,25 @@
 {
   "instanceId": "local-dev-instance",
   "status": "in_progress",
-  "createdAt": "2026-04-12T14:01:54.044Z",
-  "startedAt": "2026-04-12T14:02:06.445Z",
-  "currentTurnSeatNumber": 1,
-  "currentTurnDisplayName": "Browser Player 252",
-  "turnNumber": 1,
-  "pendingAction": null,
+  "createdAt": "2026-04-12T22:49:38.381Z",
+  "startedAt": "2026-04-12T22:49:42.480Z",
+  "currentTurnSeatNumber": 5,
+  "currentTurnDisplayName": "Bot 4",
+  "turnNumber": 10,
+  "pendingAction": {
+    "actorSeatNumber": 5,
+    "targetSeatNumbers": [
+      1
+    ],
+    "responseMode": "per_target",
+    "responders": [
+      {
+        "seatNumber": 1,
+        "state": "pending",
+        "choice": "pending"
+      }
+    ]
+  },
   "pendingObjectChoice": null,
   "pendingCurseRelease": null,
   "forcedFollowUp": null,
@@ -16,8 +29,8 @@
       "displayName": "Browser Player 252",
       "controllerType": "human",
       "connected": true,
-      "handCount": 5,
-      "objectCount": 0,
+      "handCount": 4,
+      "objectCount": 2,
       "statusCount": 0,
       "hp": 50,
       "isAlive": true
@@ -41,7 +54,7 @@
       "handCount": 5,
       "objectCount": 0,
       "statusCount": 0,
-      "hp": 50,
+      "hp": 92,
       "isAlive": true
     },
     {
@@ -53,6 +66,17 @@
       "objectCount": 0,
       "statusCount": 0,
       "hp": 50,
+      "isAlive": true
+    },
+    {
+      "seatNumber": 5,
+      "displayName": "Bot 4",
+      "controllerType": "bot",
+      "connected": true,
+      "handCount": 4,
+      "objectCount": 0,
+      "statusCount": 0,
+      "hp": 52,
       "isAlive": true
     }
   ]
