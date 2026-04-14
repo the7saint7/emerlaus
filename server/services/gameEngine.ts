@@ -1984,6 +1984,10 @@ function queueDeathSearch(
     return false;
   }
 
+  if (aliveSeatNumbers(game).length <= 1) {
+    return false;
+  }
+
   const existingPending = game.pendingDeathSearch;
   if (existingPending != null) {
     existingPending.corpses.push({
@@ -6547,6 +6551,17 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
     const playState = canPlayCardActively(match, seatNumber, handCard);
     if (!playState.canPlay) {
       continue;
+    }
+
+    // Don't play a résistance diminuée card unless the hand has an attack that benefits from it
+    if (handCard.cardId.startsWith("resistance-diminuee-")) {
+      const hasResistableFollowUp = seatState.hand.some((other) =>
+        other.instanceId !== handCard.instanceId
+        && requireDefinition(other.cardId).rules.requiresResistanceCheck
+      );
+      if (!hasResistableFollowUp) {
+        continue;
+      }
     }
 
     const request: PlayCardRequest = {
