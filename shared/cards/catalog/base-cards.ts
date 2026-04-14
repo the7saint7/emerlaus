@@ -5804,7 +5804,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "grant_attack_immunity",
           "durationTurns": 1,
-          "onlyAgainstAttacks": true,
+          "onlyAgainstAttacks": false,
           "bonusHeal": {
             "kind": "dice",
             "notation": "1D8",

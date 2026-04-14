@@ -548,6 +548,7 @@ function listTargetableObjectOwners(game: StoredGameState, actorSeatNumber: numb
     .filter((seat) =>
       seat.seatNumber !== actorSeatNumber
       && seat.alive
+      && seat.attackImmunityTurns === 0
       && seat.objects.some((card) => requireDefinition(card.cardId).category.code === "O")
     )
     .map((seat) => seat.seatNumber);
@@ -1241,7 +1242,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     case "none":
       return { canPlay: true };
     case "all_opponents":
-      return (isAttackDefinition(definition) ? attackableOpponents.length : livingOpponents.length) > 0
+      return attackableOpponents.length > 0
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid opponent target" };
     case "single_opponent":
@@ -1255,7 +1256,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
           ? { canPlay: true }
           : { canPlay: false, reason: "The target opponent must have at least one object on the table" };
       }
-      return attackableOpponents.length > 0
+      return livingOpponents.length > 0
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid opponent target" };
     case "self_or_single_opponent":
@@ -1487,7 +1488,7 @@ function getTargetSeatNumbers(game: StoredGameState, actorSeatNumber: number, re
 
 function isProtectedFromAttack(match: StoredMatchState, targetSeatNumber: number, sourceDefinition: BaseCardDefinition): boolean {
   const game = match.internalGame;
-  if (game == null || !isAttackLikeDefinition(sourceDefinition)) {
+  if (game == null) {
     return false;
   }
 
@@ -6050,7 +6051,7 @@ function resolveRemovedCardPlay(
       ? [forcedFollowUp.targetSeatNumber]
       : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets);
   const effectiveTargetSeatNumbers =
-    request.mode === "active" && definition.rules.targets === "all_opponents" && isAttackDefinition(definition)
+    request.mode === "active" && definition.rules.targets === "all_opponents"
       ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
       : targetSeatNumbers;
 
@@ -6085,7 +6086,6 @@ function resolveRemovedCardPlay(
   } else if (
     request.mode === "active"
     && definition.rules.targets === "all_opponents"
-    && isAttackDefinition(definition)
     && effectiveTargetSeatNumbers.length === 0
   ) {
     invalidReason = "No valid opponent target";

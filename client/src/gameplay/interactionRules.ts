@@ -134,7 +134,7 @@ export function isSeatTargetable(
     return false;
   }
 
-  if (isAttackCard(selectedCard) && (seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")) {
+  if ((seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")) {
     return false;
   }
 
@@ -169,9 +169,18 @@ export function isObjectTargetable(
   selectedCard: CardView | undefined,
   objectCard: CardView,
   ownerSeatNumber: number,
-  localSeatNumber: number
+  localSeatNumber: number,
+  ownerObjects?: CardView[]
 ): boolean {
   if (selectedCard == null || !selectedCard.canPlay) {
+    return false;
+  }
+
+  if (
+    ownerSeatNumber !== localSeatNumber
+    && ownerObjects != null
+    && ownerObjects.some((card) => card.cardId === "sanctuaire-demmerlaus")
+  ) {
     return false;
   }
 
@@ -184,9 +193,10 @@ export function objectCardMatchesSelectedTargeting(
   selectedCard: CardView | undefined,
   objectCard: CardView,
   ownerSeatNumber: number,
-  localSeatNumber: number
+  localSeatNumber: number,
+  ownerObjects?: CardView[]
 ): boolean {
-  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber) || objectCard.categoryCode !== "O") {
+  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber, ownerObjects) || objectCard.categoryCode !== "O") {
     return false;
   }
 
