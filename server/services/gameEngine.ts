@@ -3215,6 +3215,7 @@ function applyEffect(
             cardName: definition.name,
             amount: targetSeat.hp
           });
+          setSeatHp(match, targetSeatNumber, 0);
         }
         handleSeatDeath(match, targetSeatNumber, effect.resurrectionBlocked ?? false);
       }
