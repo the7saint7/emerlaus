@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { acknowledgePendingHandInspection, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
+import { acknowledgePendingHandInspection, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
 import { createDiscordSession } from "../discord/session";
 import {
   canDiscardCard,
@@ -22,7 +22,7 @@ import { buildEventLogEntries, type EventLogEntry } from "../render/eventLog";
 import { renderDefenseTooltip } from "../render/tableView";
 import { allCardDefinitions } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
-import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatState } from "../../../shared/types";
+import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatState } from "../../../shared/types";
 
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
@@ -624,6 +624,7 @@ function renderObjectRow(
   localSeatNumber: number,
   selectedCard: CardView | undefined,
   hoverTarget: PixiDragHoverTarget | null,
+  batonLoadScale?: number,
   onTextureReady?: () => void
 ): RenderObjectRowResult {
   const objects = seat.objects ?? [];
@@ -649,13 +650,35 @@ function renderObjectRow(
     const { card, isStatus } = allCards[index]!;
     const x = startX + index * (cardWidth + gap);
     const y = topY;
+    const cardCenterX = x + cardWidth / 2;
+    const cardCenterY = y + cardHeight / 2;
+
+    let dX = x;
+    let dY = y;
+    let dW = cardWidth;
+    let dH = cardHeight;
+    let isAmLoadHover = false;
 
     if (!isStatus) {
       const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber);
       const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
+      isAmLoadHover = hovered && canLoadMassAttackStaff(selectedCard, card, seat.seatNumber, localSeatNumber);
+
+      if (isAmLoadHover && batonLoadScale != null && batonLoadScale > 1) {
+        dW = cardWidth * batonLoadScale;
+        dH = cardHeight * batonLoadScale;
+        const shiftProgress = (batonLoadScale - 1) / 0.45;
+        const shiftX = -Math.round(180 * shiftProgress);
+        dX = cardCenterX - dW / 2 + shiftX;
+        dY = cardCenterY - dH / 2;
+      }
 
       if (targetable) {
-        scene.addChild(createRect(x - 4, y - 4, cardWidth + 8, cardHeight + 8, "#f0c96d", hovered ? 0.26 : 0.12, 16));
+        if (isAmLoadHover) {
+          scene.addChild(createRect(dX - 7, dY - 7, dW + 14, dH + 14, "#f5c842", 0.62, 18));
+        } else {
+          scene.addChild(createRect(x - 4, y - 4, cardWidth + 8, cardHeight + 8, "#f0c96d", hovered ? 0.26 : 0.12, 16));
+        }
         objectTargets.push({
           seatNumber: seat.seatNumber,
           objectInstanceId: card.instanceId,
@@ -678,19 +701,19 @@ function renderObjectRow(
       height: cardHeight
     });
 
-    scene.addChild(createRect(x, y, cardWidth, cardHeight, "#e7d8b4", 1, 14));
-    scene.addChild(createRect(x + 4, y + 4, cardWidth - 8, cardHeight - 8, "#201610", 1, 10));
+    scene.addChild(createRect(dX, dY, dW, dH, "#e7d8b4", 1, 14));
+    scene.addChild(createRect(dX + 4, dY + 4, dW - 8, dH - 8, "#201610", 1, 10));
     const texture = getLoadedTexture(card.imageUrl);
     if (texture != null) {
       const sprite = new Sprite(texture);
-      const fitted = fitSpriteToBox(texture, cardWidth - 12, cardHeight - 12);
-      sprite.position.set(x + (cardWidth - fitted.width) / 2, y + (cardHeight - fitted.height) / 2);
+      const fitted = fitSpriteToBox(texture, dW - 12, dH - 12);
+      sprite.position.set(dX + (dW - fitted.width) / 2, dY + (dH - fitted.height) / 2);
       sprite.width = fitted.width;
       sprite.height = fitted.height;
       scene.addChild(sprite);
     } else {
       requestTextureLoad(card.imageUrl, onTextureReady ?? (() => {}));
-      scene.addChild(createLabel("Loading", x + cardWidth / 2, y + cardHeight / 2, {
+      scene.addChild(createLabel("Loading", cardCenterX, cardCenterY, {
         fontSize: 8,
         fontWeight: "700",
         fill: "#d4c7ac"
@@ -698,11 +721,23 @@ function renderObjectRow(
     }
 
     if (!isStatus && (card.attachedCardCount ?? 0) > 0) {
-      scene.addChild(createRect(x + cardWidth - 26, y + 6, 18, 18, "#94682a", 1, 999));
-      scene.addChild(createLabel(`+${card.attachedCardCount}`, x + cardWidth - 17, y + 15, {
+      scene.addChild(createRect(dX + dW - 26, dY + 6, 18, 18, "#94682a", 1, 999));
+      scene.addChild(createLabel(`+${card.attachedCardCount}`, dX + dW - 17, dY + 15, {
         fontSize: 9,
         fontWeight: "700",
         fill: "#fff1c8"
+      }, 0.5, 0.5));
+    }
+
+    if (isAmLoadHover) {
+      const badgeR = Math.round(dH * 0.17);
+      const badgeX = dX + dW + badgeR * 0.1;
+      const badgeY = dY - badgeR * 0.1;
+      scene.addChild(createRect(badgeX - badgeR, badgeY - badgeR, badgeR * 2, badgeR * 2, "#f5c842", 1, badgeR));
+      scene.addChild(createLabel("+", badgeX, badgeY, {
+        fontSize: Math.round(badgeR * 1.4),
+        fontWeight: "900",
+        fill: "#1a1200"
       }, 0.5, 0.5));
     }
   }
@@ -1142,7 +1177,8 @@ function renderTableScene(
   opponentCursors: Record<number, OpponentCursorState>,
   onTextureReady: () => void,
   displayedHpBySeat: Record<number, number>,
-  targetHintDismissed: boolean
+  targetHintDismissed: boolean,
+  batonLoadScale: number
 ): TableInteractionGeometry {
   const now = Date.now();
   const localSeat = getLocalSeat(match, localSeatNumber);
@@ -1304,6 +1340,7 @@ function renderTableScene(
       localSeatNumber,
       draggedCard,
       interactionState.dragHoverTarget,
+      undefined,
       onTextureReady
     );
     objectTargets.push(...opponentObjectRow.objectTargets);
@@ -1324,6 +1361,7 @@ function renderTableScene(
       localSeatNumber,
       draggedCard,
       interactionState.dragHoverTarget,
+      batonLoadScale,
       onTextureReady
     );
     objectTargets.push(...localObjectRow.objectTargets);
@@ -1621,6 +1659,7 @@ function renderTableScene(
       };
       scene.addChild(createCardFace(floatingLayout, false, onTextureReady));
     }
+
   }
 
   if (interactionState.arrowDrag != null) {
@@ -1776,6 +1815,8 @@ function buildOverlayMarkup(
   pickpocketSelectedCardInstanceIds: string[],
   pendingSacrificeChoice: PendingSacrificeChoiceState | null,
   sacrificeAmountInput: string,
+  forcedFollowUp: ForcedFollowUpState | undefined,
+  consumePreviewCardInstanceId: string,
   seenEventMessageIds: Set<string>,
   eventLogExpanded: boolean,
   eventLogWidth: number,
@@ -2077,6 +2118,62 @@ function buildOverlayMarkup(
                             type="button"
                             class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""}"
                             data-action="preview-telepathy-card"
+                            data-card-instance-id="${card.instanceId}"
+                          >
+                            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                            <div class="telepathy-card__meta">
+                              <strong>${escapeHtml(card.name)}</strong>
+                              <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                            </div>
+                          </button>
+                        `).join("")}
+                      </div>
+                    `}
+                </div>
+              </article>
+            </div>
+          `;
+        })()}
+    ${forcedFollowUp == null || forcedFollowUp.consumeMode !== true || forcedFollowUp.actorSeatNumber !== localSeatNumber
+      ? ""
+      : (() => {
+          const localSeatState = match.seats.find((s) => s.seatNumber === localSeatNumber);
+          const eligibleCards = localSeatState?.hand?.filter((c) => forcedFollowUp.allowedCategories.includes(c.categoryCode)) ?? [];
+          const previewCard = eligibleCards.find((c) => c.instanceId === consumePreviewCardInstanceId) ?? eligibleCards[0];
+          return `
+            <div class="pixi-modal-backdrop">
+              <article class="telepathy-panel" data-pixi-modal-card="true">
+                <div class="telepathy-panel__header">
+                  <div>
+                    <p class="eyebrow">${escapeHtml(forcedFollowUp.sourceCardName)}</p>
+                    <h2>${escapeHtml(t(language, "consume.title"))}</h2>
+                    <p>${escapeHtml(t(language, "consume.body", { categories: forcedFollowUp.allowedCategories.join("/"), cardName: forcedFollowUp.sourceCardName }))}</p>
+                  </div>
+                  <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
+                    <button type="button" class="action-button action-button--secondary" data-action="pass-forced-follow-up">${escapeHtml(t(language, "response.pass"))}</button>
+                    <button type="button" class="action-button" data-action="confirm-consume-card" data-card-instance-id="${previewCard?.instanceId ?? ""}" ${previewCard == null ? "disabled" : ""}>${escapeHtml(t(language, "consume.confirm"))}</button>
+                  </div>
+                </div>
+                <div class="telepathy-grid">
+                  ${eligibleCards.length === 0
+                    ? `<p class="telepathy-empty">${escapeHtml(t(language, "response.pass"))}</p>`
+                    : `
+                      <div class="telepathy-preview">
+                        ${previewCard == null ? "" : `
+                          <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                          <div class="telepathy-preview__meta">
+                            <strong>${escapeHtml(previewCard.name)}</strong>
+                            <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
+                            <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
+                          </div>
+                        `}
+                      </div>
+                      <div class="telepathy-list" data-modal-list-scroll="true">
+                        ${eligibleCards.map((card) => `
+                          <button
+                            type="button"
+                            class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""}"
+                            data-action="preview-consume-card"
                             data-card-instance-id="${card.instanceId}"
                           >
                             <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
@@ -2574,6 +2671,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let confirmingKickSeatNumber = 0;
   let telepathyPreviewCardInstanceId = "";
   let boardResetKeepPreviewCardInstanceId = "";
+  let consumePreviewCardInstanceId = "";
   let deathSearchPreviewCardInstanceId = "";
   let deathSearchSelectedCardInstanceIds: string[] = [];
   let pickpocketPreviewCardInstanceId = "";
@@ -2594,6 +2692,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let displayedHpBySeat: Record<number, number> = {};
   let displayedSeatsBySeat: Record<number, SeatState> = {};
   let preUpdateLocalizedSeatsBySeat: Record<number, SeatState> = {};
+  let batonLoadHoverTs: number | null = null;
   let activeImpactFlashes: Record<number, ImpactFlashState> = {};
   let activeCardFlights: CardFlightState[] = [];
   let activePlaybackArrows: PlaybackArrowState[] = [];
@@ -2918,6 +3017,19 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     if (boardResetKeepPreviewCardInstanceId === "" || !keep.cardOptions.some((c) => c.instanceId === boardResetKeepPreviewCardInstanceId)) {
       boardResetKeepPreviewCardInstanceId = keep.cardOptions[0]?.instanceId ?? "";
+    }
+  };
+
+  const syncConsumePreview = (): void => {
+    const ffu = match.game?.forcedFollowUp;
+    if (ffu == null || ffu.consumeMode !== true || ffu.actorSeatNumber !== localSeatNumber) {
+      consumePreviewCardInstanceId = "";
+      return;
+    }
+    const localSeatState = match.seats.find((s) => s.seatNumber === localSeatNumber);
+    const eligibleCards = localSeatState?.hand?.filter((c) => ffu.allowedCategories.includes(c.categoryCode)) ?? [];
+    if (consumePreviewCardInstanceId === "" || !eligibleCards.some((c) => c.instanceId === consumePreviewCardInstanceId)) {
+      consumePreviewCardInstanceId = eligibleCards[0]?.instanceId ?? "";
     }
   };
 
@@ -3492,6 +3604,22 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
+    // Snapshot seats that gained new statuses in this batch so the status card
+    // doesn't appear before the animation sequence completes.
+    for (const [seatNumberStr, preSeat] of Object.entries(preUpdateLocalizedSeatsBySeat)) {
+      const seatNumber = Number(seatNumberStr);
+      const newSeat = match.seats.find((s) => s.seatNumber === seatNumber);
+      if (newSeat == null) continue;
+      const oldCount = (preSeat.statuses ?? []).length;
+      const newCount = (newSeat.statuses ?? []).length;
+      if (newCount > oldCount) {
+        const existing = displayedSeatsBySeat[seatNumber];
+        displayedSeatsBySeat[seatNumber] = existing != null
+          ? { ...existing, statuses: preSeat.statuses }
+          : preSeat;
+      }
+    }
+
     // If this batch starts a new action, clear the previous action's targeting
     // arrows now so the initial redraw() doesn't flash stale targeting.
     if (replayableEvents.some((e) => e.type === "action_start")) {
@@ -3659,7 +3787,12 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return false;
     }
 
-    if (match.game.pendingCurseRelease != null || match.game.forcedFollowUp != null) {
+    if (match.game.pendingCurseRelease != null) {
+      return false;
+    }
+
+    if (match.game.forcedFollowUp != null) {
+      // Consume mode uses a modal overlay — cards are not draggable.
       return false;
     }
 
@@ -3922,6 +4055,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       match = nextMatch;
       errorMessage = "";
       confirmingDiscardCardInstanceId = "";
+      syncConsumePreview();
       updateVictoryCelebrationState();
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : t(language, "error.playCard");
@@ -3974,7 +4108,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           seats: localizedMatch.seats.map((seat) => {
             const snapshot = displayedSeatsBySeat[seat.seatNumber];
             if (snapshot == null) return seat;
-            return { ...seat, hand: snapshot.hand, objects: snapshot.objects };
+            return { ...seat, hand: snapshot.hand, objects: snapshot.objects, statuses: snapshot.statuses };
           })
         }
       : localizedMatch;
@@ -4040,6 +4174,30 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       renderLobbyScene(scene, localizedMatch, localSeatNumber, language, scheduleRedraw);
       currentGeometry = null;
     } else {
+      // Compute baton load hover scale (smooth scale-up animation)
+      const draggedCard = getDraggedCard();
+      const isHoveringAmOverBaton = (
+        interactionState.draggingCardInstanceId !== ""
+        && interactionState.dragHoverTarget?.kind === "object"
+        && draggedCard != null
+        && (() => {
+          const hoveredId = interactionState.dragHoverTarget!.objectInstanceId!;
+          const localSeat = getLocalSeat(displayMatch, localSeatNumber);
+          const batonCard = localSeat?.objects?.find((c) => c.instanceId === hoveredId);
+          return localSeat != null && batonCard != null && canLoadMassAttackStaff(draggedCard, batonCard, localSeat.seatNumber, localSeatNumber);
+        })()
+      );
+      if (isHoveringAmOverBaton) {
+        if (batonLoadHoverTs == null) {
+          batonLoadHoverTs = Date.now();
+        }
+      } else {
+        batonLoadHoverTs = null;
+      }
+      const batonLoadProgress = batonLoadHoverTs == null ? 0 : Math.min(1, (Date.now() - batonLoadHoverTs) / 220);
+      const batonEased = batonLoadProgress < 1 ? 1 - Math.pow(1 - batonLoadProgress, 3) : 1;
+      const batonLoadScale = 1 + 0.45 * batonEased;
+
       currentGeometry = renderTableScene(
         scene,
         displayMatch,
@@ -4060,7 +4218,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         opponentCursors,
         scheduleRedraw,
         displayedHpBySeat,
-        targetHintDismissed
+        targetHintDismissed,
+        batonLoadScale
       );
     }
 
@@ -4127,7 +4286,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -4146,7 +4305,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       && !presentationLockActive
       && match.game?.currentTurnSeatNumber === localSeatNumber;
 
-    if (handFocusTransition != null || combatVisualsActive || isLocalTurn) {
+    if (handFocusTransition != null || combatVisualsActive || isLocalTurn || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
       scheduleRedraw();
     }
   };
@@ -4180,6 +4339,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       syncPendingAnnulationChoice();
       syncTelepathyPreview();
       syncBoardResetKeepPreview();
+      syncConsumePreview();
       syncDeathSearchState();
       syncPickpocketState();
       if (match.game?.pendingSacrificeChoice == null) {
@@ -4424,6 +4584,39 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           if (listEl != null) listEl.scrollTop = savedScrollTop;
         }
       });
+    });
+
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-consume-card']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const id = button.dataset.cardInstanceId ?? "";
+        if (id !== "" && id !== consumePreviewCardInstanceId) {
+          consumePreviewCardInstanceId = id;
+          const savedScrollTop = frameElement.querySelector<HTMLElement>(".telepathy-list")?.scrollTop ?? 0;
+          redraw();
+          const listEl = frameElement.querySelector<HTMLElement>(".telepathy-list");
+          if (listEl != null) listEl.scrollTop = savedScrollTop;
+        }
+      });
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='confirm-consume-card']")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const cardInstanceId = button.dataset.cardInstanceId ?? "";
+      if (cardInstanceId === "") {
+        return;
+      }
+      await performCardPlay({ cardInstanceId, mode: "active" });
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='pass-forced-follow-up']")?.addEventListener("click", async () => {
+      try {
+        match = await passForcedFollowUp(session.instanceId, playerSessionToken);
+        errorMessage = "";
+        consumePreviewCardInstanceId = "";
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : t(language, "error.passFollowUp");
+      }
+      redraw();
     });
 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-board-reset-card']").forEach((button) => {

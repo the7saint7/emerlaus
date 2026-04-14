@@ -271,6 +271,7 @@ export interface ForcedFollowUpState {
   targetSeatNumber: number;
   allowedCategories: CardCategoryCode[];
   doubleHpLossDamage: boolean;
+  consumeMode?: boolean;
 }
 
 export interface GameState {

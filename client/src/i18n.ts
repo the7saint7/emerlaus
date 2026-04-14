@@ -158,7 +158,11 @@ type TranslationKey =
   | "curse.accept"
   | "curse.pass"
   | "forced.followUp"
+  | "forced.consume"
   | "forced.cursePrompt"
+  | "consume.title"
+  | "consume.body"
+  | "consume.confirm"
   | "combat.rollResistance"
   | "combat.rollDamage"
   | "combat.rollCard"
@@ -360,7 +364,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "curse.accept": "Accept",
     "curse.pass": "Pass",
     "forced.followUp": "{actorName} must play {categories} on {targetName} for {cardName}.",
+    "forced.consume": "Drag a {categories} card to the center to consume it for {cardName} (or pass).",
     "forced.cursePrompt": "{actorName} may discard {count} {releaseCardName} to remove {cardName}.",
+    "consume.title": "Sacrifice a card",
+    "consume.body": "Choose a {categories} card to sacrifice for {cardName}.",
+    "consume.confirm": "Sacrifice",
     "combat.rollResistance": "{playerName} throws {notation} for resistance{bonus} (threshold {threshold})",
     "combat.rollDamage": "{actorName} throws {notation} for damage on {targetName}",
     "combat.rollCard": "{playerName} throws {notation} for the current action",
@@ -552,7 +560,11 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "curse.accept": "Accepter",
     "curse.pass": "Passer",
     "forced.followUp": "{actorName} doit jouer {categories} sur {targetName} à cause de {cardName}.",
+    "forced.consume": "Glisser une carte {categories} au centre pour la consommer pour {cardName} (ou passer).",
     "forced.cursePrompt": "{actorName} peut défausser {count} {releaseCardName} pour retirer {cardName}.",
+    "consume.title": "Sacrifier une carte",
+    "consume.body": "Choisissez une carte {categories} à sacrifier pour {cardName}.",
+    "consume.confirm": "Sacrifier",
     "combat.rollResistance": "{playerName} lance {notation} pour la résistance{bonus} (seuil {threshold})",
     "combat.rollDamage": "{actorName} lance {notation} pour infliger des dégâts à {targetName}",
     "combat.rollCard": "{playerName} lance {notation} pour l'action en cours",

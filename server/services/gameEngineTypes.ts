@@ -59,7 +59,7 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
 }
 
 export interface StoredForcedFollowUpState {
-  sourceCardId: "colere-du-magicien";
+  sourceCardId: string;
   actorSeatNumber: number;
   targetSeatNumber: number;
   turnOwnerSeatNumber: number;
@@ -67,6 +67,7 @@ export interface StoredForcedFollowUpState {
   doubleHpLossDamage: boolean;
   suppressDefenseWindow: boolean;
   suppressResistanceCheck: boolean;
+  consumeMode?: boolean;
 }
 
 export interface StoredExtraPlayModeState {

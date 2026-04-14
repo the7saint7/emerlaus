@@ -1195,10 +1195,14 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     }
 
     if (!game.forcedFollowUp.allowedCategories.includes(definition.category.code)) {
-      return { canPlay: false, reason: "Colère du magicien requires an AD card" };
+      const categories = game.forcedFollowUp.allowedCategories.join("/");
+      const reason = game.forcedFollowUp.consumeMode === true
+        ? `${requireDefinition(game.forcedFollowUp.sourceCardId).name} requires a ${categories} card to consume`
+        : `Colère du magicien requires an AD card`;
+      return { canPlay: false, reason };
     }
 
-    if (definition.rules.targets !== "single_opponent") {
+    if (game.forcedFollowUp.consumeMode !== true && definition.rules.targets !== "single_opponent") {
       return { canPlay: false, reason: "This forced follow-up must target the paralyzed opponent" };
     }
   }
@@ -2701,6 +2705,7 @@ function resolvePersistentOwnerTurnMassDamageTick(
   match: StoredMatchState,
   ownerSeatNumber: number,
   definition: BaseCardDefinition,
+  statusInstance?: StoredSeatStatus,
   boxId?: string
 ): void {
   const game = match.internalGame;
@@ -2713,12 +2718,31 @@ function resolvePersistentOwnerTurnMassDamageTick(
   const affectedTargetSeatNumbers = targetSeatNumbers.filter((targetSeatNumber) =>
     !isProtectedFromAttack(match, targetSeatNumber, definition)
   );
+
+  const actionBoxId = boxId ?? randomUUID();
+
+  // On turn-triggered ticks (statusInstance provided), push an action_start so the
+  // client can animate the card sliding to centre and targeting all opponents.
+  if (statusInstance != null) {
+    const summary = `${getPublicSeat(match, ownerSeatNumber).displayName}'s ${definition.name} deals ${config.damageNotation} to all opponents.`;
+    pushGameEvent(match, {
+      id: randomUUID(),
+      boxId: actionBoxId,
+      type: "action_start",
+      createdAt: new Date().toISOString(),
+      actorSeatNumber: ownerSeatNumber,
+      targetSeatNumbers: [...targetSeatNumbers],
+      card: buildCardView(statusInstance, definition, "status", false),
+      summary
+    });
+  }
+
   const roll = rollDiceNotationDetailed(config.damageNotation);
-  publishSeatDiceRoll(match, ownerSeatNumber, config.damageNotation, roll.total, roll.values, boxId);
+  publishSeatDiceRoll(match, ownerSeatNumber, config.damageNotation, roll.total, roll.values, actionBoxId);
   appendServerDebugLog(
     match,
     "effect",
-    `${definition.name} rolled ${config.damageNotation} => ${roll.total} against targets ${targetSeatNumbers.join(", ")}${boxId != null ? ` [box ${boxId}]` : ""}`
+    `${definition.name} rolled ${config.damageNotation} => ${roll.total} against targets ${targetSeatNumbers.join(", ")} [box ${actionBoxId}]`
   );
 
   if (affectedTargetSeatNumbers.length === 0) {
@@ -2733,13 +2757,13 @@ function resolvePersistentOwnerTurnMassDamageTick(
 
   for (const targetSeatNumber of affectedTargetSeatNumbers) {
     pushPresentationEvent(match, {
-      boxId,
+      boxId: actionBoxId,
       type: "attack_impact",
       actorSeatNumber: ownerSeatNumber,
       targetSeatNumber,
       cardName: definition.name
     });
-    applyDamage(match, targetSeatNumber, roll.total, definition, false, boxId, ownerSeatNumber);
+    applyDamage(match, targetSeatNumber, roll.total, definition, false, actionBoxId, ownerSeatNumber);
   }
 }
 
@@ -3468,7 +3492,7 @@ function resolvePersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, s
 
   for (const status of persistentStatuses) {
     const definition = requireDefinition(status.cardId);
-    resolvePersistentOwnerTurnMassDamageTick(match, seatNumber, definition);
+    resolvePersistentOwnerTurnMassDamageTick(match, seatNumber, definition, status);
 
     const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
     if (nextRemainingTurnTriggers > 0) {
@@ -3723,7 +3747,8 @@ function buildPublicGameState(match: StoredMatchState, viewerSeatNumber?: number
         actorSeatNumber: game.forcedFollowUp.actorSeatNumber,
         targetSeatNumber: game.forcedFollowUp.targetSeatNumber,
         allowedCategories: [...game.forcedFollowUp.allowedCategories],
-        doubleHpLossDamage: game.forcedFollowUp.doubleHpLossDamage
+        doubleHpLossDamage: game.forcedFollowUp.doubleHpLossDamage,
+        consumeMode: game.forcedFollowUp.consumeMode
       },
     winnerSeatNumber: game.winnerSeatNumber
   };
@@ -4563,6 +4588,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
   const definition = requireDefinition(pendingAction.storedCard.cardId);
   const targetSeatNumber = responder.seatNumber;
+  const damageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
   const shouldDeferCollectiveMirrorHit =
     pendingAction.fromMirror === true
     && game.pausedSequentialAction?.responseMode === "collective"
@@ -4965,7 +4991,11 @@ function resolvePendingAction(match: StoredMatchState): void {
     const cancelingSeatNumber = pendingAction.responders.find((responder) => responder.choice === "annulation")?.seatNumber;
     discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
     if (pendingAction.sourceZone !== "object") {
-      discardInstances(game, [pendingAction.storedCard]);
+      if (definition.rules.staysInPlay) {
+        movePersistentCard(match, pendingAction.actorSeatNumber, pendingAction.targetSeatNumbers, pendingAction.storedCard, definition, pendingAction.sourceZone ?? "hand");
+      } else {
+        discardInstances(game, [pendingAction.storedCard]);
+      }
     }
     if (cancelingSeatNumber != null) {
       appendServerDebugLog(
@@ -5019,39 +5049,80 @@ function resolvePendingAction(match: StoredMatchState): void {
   const actorState = getStoredSeat(game, pendingAction.actorSeatNumber);
   const requiredFollowUpCategory = getRequiredFollowUpCategory(definition);
   if (requiredFollowUpCategory != null) {
-    const consumedFollowUpCard = consumeHandCardByCategory(actorState.hand, requiredFollowUpCategory);
-    discardInstances(game, [consumedFollowUpCard]);
-    appendServerDebugLog(
-      match,
-      "play_card",
-      `Seat ${pendingAction.actorSeatNumber} discarded ${requireDefinition(consumedFollowUpCard.cardId).name} to complete ${definition.name}`
+    const eligibleCards = actorState.hand.filter(
+      (c) => requireDefinition(c.cardId).category.code === requiredFollowUpCategory
     );
-    const followUpHeal = resolveFollowUpCategoryHeal(
-      match,
-      definition,
-      consumedFollowUpCard,
-      pendingAction.actorSeatNumber,
-      pendingAction.boxId
-    );
-    if (followUpHeal > 0) {
-      const healResult = setSeatHp(
-        match,
-        pendingAction.actorSeatNumber,
-        getPublicSeat(match, pendingAction.actorSeatNumber).hp + followUpHeal
-      );
-      if (healResult.delta > 0) {
-        pushPresentationEvent(match, {
-          boxId: pendingAction.boxId,
-          type: "hp_gain",
-          seatNumber: pendingAction.actorSeatNumber,
-          cardName: definition.name,
-          amount: healResult.delta
-        });
-      }
+
+    if (eligibleCards.length === 0) {
       appendServerDebugLog(
         match,
-        "effect",
-        `${definition.name} converted ${requireDefinition(consumedFollowUpCard.cardId).name} into ${healResult.delta} HP`
+        "play_card",
+        `Seat ${pendingAction.actorSeatNumber} has no ${requiredFollowUpCategory} card to consume for ${definition.name}`
+      );
+    } else if (eligibleCards.length === 1) {
+      const consumedFollowUpCard = consumeHandCardByCategory(actorState.hand, requiredFollowUpCategory);
+      discardInstances(game, [consumedFollowUpCard]);
+      const consumedDefinition = requireDefinition(consumedFollowUpCard.cardId);
+      pushGameEvent(match, {
+        id: randomUUID(),
+        boxId: pendingAction.boxId,
+        type: "action_start",
+        createdAt: new Date().toISOString(),
+        actorSeatNumber: pendingAction.actorSeatNumber,
+        targetSeatNumbers: [pendingAction.actorSeatNumber],
+        card: buildCardView(consumedFollowUpCard, consumedDefinition, "hand", false),
+        summary: `${getPublicSeat(match, pendingAction.actorSeatNumber).displayName} consumes ${consumedDefinition.name} for ${definition.name}.`
+      });
+      appendServerDebugLog(
+        match,
+        "play_card",
+        `Seat ${pendingAction.actorSeatNumber} auto-consumed ${consumedDefinition.name} for ${definition.name}`
+      );
+      const followUpHeal = resolveFollowUpCategoryHeal(
+        match,
+        definition,
+        consumedFollowUpCard,
+        pendingAction.actorSeatNumber,
+        pendingAction.boxId
+      );
+      if (followUpHeal > 0) {
+        const healResult = setSeatHp(
+          match,
+          pendingAction.actorSeatNumber,
+          getPublicSeat(match, pendingAction.actorSeatNumber).hp + followUpHeal
+        );
+        if (healResult.delta > 0) {
+          pushPresentationEvent(match, {
+            boxId: pendingAction.boxId,
+            type: "hp_gain",
+            seatNumber: pendingAction.actorSeatNumber,
+            cardName: definition.name,
+            amount: healResult.delta
+          });
+        }
+        appendServerDebugLog(
+          match,
+          "effect",
+          `${definition.name} auto-consumed ${consumedDefinition.name} for ${healResult.delta} HP`
+        );
+      }
+    } else {
+      // Multiple eligible cards — let player choose; finalizeResolvedAction will pause on forcedFollowUp
+      game.forcedFollowUp = {
+        sourceCardId: definition.id,
+        actorSeatNumber: pendingAction.actorSeatNumber,
+        targetSeatNumber: pendingAction.actorSeatNumber,
+        turnOwnerSeatNumber: pendingAction.actorSeatNumber,
+        allowedCategories: [requiredFollowUpCategory],
+        doubleHpLossDamage: false,
+        suppressDefenseWindow: false,
+        suppressResistanceCheck: false,
+        consumeMode: true
+      };
+      appendServerDebugLog(
+        match,
+        "play_card",
+        `Seat ${pendingAction.actorSeatNumber} must choose a ${requiredFollowUpCategory} card to consume for ${definition.name} (${eligibleCards.length} options)`
       );
     }
   }
@@ -5151,7 +5222,7 @@ function resolvePendingAction(match: StoredMatchState): void {
   }
 
   if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
-    resolvePersistentOwnerTurnMassDamageTick(match, pendingAction.actorSeatNumber, definition, pendingAction.boxId);
+    resolvePersistentOwnerTurnMassDamageTick(match, pendingAction.actorSeatNumber, definition, undefined, pendingAction.boxId);
   }
 
   const successfulHitDamageContextBySeatNumber = new Map<number, SuccessfulHitDamageContext>();
@@ -6238,18 +6309,22 @@ export function passForcedFollowUp(match: StoredMatchState, userId: string): voi
     throw new Error("This seat cannot pass the forced follow-up");
   }
 
-  const actorState = getStoredSeat(game, actorSeat.seatNumber);
-  const playableAd = actorState.hand.find((card) => canPlayCardActively(match, actorSeat.seatNumber, card).canPlay);
-  if (playableAd != null) {
-    throw new Error("You still have an AD card to play for Colère du magicien");
+  if (forcedFollowUp.consumeMode !== true) {
+    const actorState = getStoredSeat(game, actorSeat.seatNumber);
+    const playableAd = actorState.hand.find((card) => canPlayCardActively(match, actorSeat.seatNumber, card).canPlay);
+    if (playableAd != null) {
+      throw new Error("You still have an AD card to play for Colère du magicien");
+    }
   }
 
-  appendDealerMessage(match, `${actorSeat.displayName} has no AD card for ${requireDefinition(forcedFollowUp.sourceCardId).name} and passes.`);
-  appendServerDebugLog(
-    match,
-    "forced_follow_up",
-    `Seat ${actorSeat.seatNumber} passed ${requireDefinition(forcedFollowUp.sourceCardId).name} follow-up with no playable AD`
-  );
+  const sourceName = requireDefinition(forcedFollowUp.sourceCardId).name;
+  if (forcedFollowUp.consumeMode === true) {
+    appendDealerMessage(match, `${actorSeat.displayName} passes the card consume for ${sourceName}.`);
+    appendServerDebugLog(match, "forced_follow_up", `Seat ${actorSeat.seatNumber} passed consume for ${sourceName}`);
+  } else {
+    appendDealerMessage(match, `${actorSeat.displayName} has no AD card for ${sourceName} and passes.`);
+    appendServerDebugLog(match, "forced_follow_up", `Seat ${actorSeat.seatNumber} passed ${sourceName} follow-up with no playable AD`);
+  }
   const turnOwnerSeatNumber = forcedFollowUp.turnOwnerSeatNumber;
   game.forcedFollowUp = undefined;
   finalizeResolvedAction(match, turnOwnerSeatNumber);
@@ -6308,6 +6383,49 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
   const forcedFollowUp = game.forcedFollowUp?.actorSeatNumber === actorSeat.seatNumber
     ? game.forcedFollowUp
     : undefined;
+  // Consume mode: player is choosing which card to sacrifice for AD/CA > Points de vie
+  if (forcedFollowUp != null && forcedFollowUp.consumeMode === true) {
+    if (!forcedFollowUp.allowedCategories.includes(definition.category.code)) {
+      throw new Error(`Must play a ${forcedFollowUp.allowedCategories.join("/")} card for ${requireDefinition(forcedFollowUp.sourceCardId).name}`);
+    }
+
+    const consumeBoxId = randomUUID();
+    const removedCard = moveCardFromHand(actorState.hand, handCard.instanceId);
+    discardInstances(game, [removedCard]);
+
+    pushGameEvent(match, {
+      id: randomUUID(),
+      boxId: consumeBoxId,
+      type: "action_start",
+      createdAt: new Date().toISOString(),
+      actorSeatNumber: actorSeat.seatNumber,
+      targetSeatNumbers: [actorSeat.seatNumber],
+      card: buildCardView(removedCard, definition, "hand", false),
+      summary: `${actorSeat.displayName} consumes ${definition.name} for ${requireDefinition(forcedFollowUp.sourceCardId).name}.`
+    });
+
+    const sourceDef = requireDefinition(forcedFollowUp.sourceCardId);
+    const followUpHeal = resolveFollowUpCategoryHeal(match, sourceDef, removedCard, actorSeat.seatNumber, consumeBoxId);
+    if (followUpHeal > 0) {
+      const healResult = setSeatHp(match, actorSeat.seatNumber, getPublicSeat(match, actorSeat.seatNumber).hp + followUpHeal);
+      if (healResult.delta > 0) {
+        pushPresentationEvent(match, {
+          boxId: consumeBoxId,
+          type: "hp_gain",
+          seatNumber: actorSeat.seatNumber,
+          cardName: sourceDef.name,
+          amount: healResult.delta
+        });
+      }
+      appendServerDebugLog(match, "effect", `${sourceDef.name} consumed ${definition.name} for ${healResult.delta} HP`);
+    }
+
+    const turnOwnerSeatNumber = forcedFollowUp.turnOwnerSeatNumber;
+    game.forcedFollowUp = undefined;
+    finalizeResolvedAction(match, turnOwnerSeatNumber);
+    return;
+  }
+
   const extraPlayMode = getActiveExtraPlayMode(match, actorSeat.seatNumber);
   if (extraPlayMode != null && request.mode === "inactive" && extraPlayMode.requiredActivePlaysRemaining > 0) {
     const requiredCategories = extraPlayMode.allowedCategories === "any" ? "allowed" : extraPlayMode.allowedCategories.join("/");
@@ -6407,6 +6525,18 @@ export function getCurrentTurnSeat(match: StoredMatchState): SeatState | undefin
 export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number): PlayCardRequest | undefined {
   const game = match.internalGame;
   if (game == null) {
+    return undefined;
+  }
+
+  // In consume mode, pick any eligible card (target is irrelevant — the intercept handles it)
+  if (game.forcedFollowUp?.consumeMode === true && game.forcedFollowUp.actorSeatNumber === seatNumber) {
+    const seatStateForConsume = getStoredSeat(game, seatNumber);
+    const consumeCard = seatStateForConsume.hand.find(
+      (c) => game.forcedFollowUp!.allowedCategories.includes(requireDefinition(c.cardId).category.code)
+    );
+    if (consumeCard != null) {
+      return { cardInstanceId: consumeCard.instanceId, mode: "active" };
+    }
     return undefined;
   }
 

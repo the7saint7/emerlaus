@@ -63,6 +63,7 @@ interface TableViewParams {
   inspectedSeatNumber: number;
   telepathyPreviewCardInstanceId: string;
   boardResetKeepPreviewCardInstanceId: string;
+  consumePreviewCardInstanceId: string;
   deathSearchPreviewCardInstanceId: string;
   deathSearchSelectedCardInstanceIds: string[];
   pickpocketPreviewCardInstanceId: string;
@@ -525,9 +526,10 @@ function renderCenterPlayArea(
   ) ?? [];
   const showForcedPassButton =
     forcedFollowUp?.actorSeatNumber === localSeatNumber &&
+    forcedFollowUp.consumeMode !== true &&
     localForcedCards.length === 0;
   const showCurseReleaseOptions = pendingCurseRelease?.seatNumber === localSeatNumber;
-  const forcedPrompt = forcedFollowUp == null
+  const forcedPrompt = forcedFollowUp == null || forcedFollowUp.consumeMode === true
     ? ""
     : t(language, "forced.followUp", {
         actorName: getLocalSeat(match, forcedFollowUp.actorSeatNumber)?.displayName ?? t(language, "fallback.unknownPlayer"),
@@ -546,7 +548,6 @@ function renderCenterPlayArea(
 
   const isShowingLastPlayed = singleStackCards.length > 0 && displayedAction == null;
 
-  // Attack slot classes (shared between split and single layouts)
   const attackSlotClass = [
     "center-play-slot",
     singleStackCards.length > 0 || splitView ? "center-play-slot--filled" : "",
@@ -580,10 +581,14 @@ function renderCenterPlayArea(
       ${cursePrompt !== "" ? `<div class="forced-follow-up-banner">${escapeHtml(cursePrompt)}</div>` : ""}
         <div class="center-play-slots${splitView ? " center-play-slots--split" : ""}">
         ${splitView ? `
-          <article class="${responseSlotClass}" data-center-hover-slot="response">
-            <div class="center-card-stack">
-              ${activeResponseCards.map((card, i) => renderSingleCard(card, i === activeResponseCards.length - 1, i * 4, i * 4)).join("")}
-            </div>
+          <article
+            class="${responseSlotClass}${responseSlotCompatible ? " center-play-slot--targetable" : ""}${isHoverTarget(hoverTarget, "response-slot") ? " center-play-slot--hovered" : ""}${isDropReady && isHoverTarget(hoverTarget, "response-slot") ? " center-play-slot--drop-ready" : ""}"
+            data-center-hover-slot="response"
+            ${centerDropTargetKind === "response-slot" ? `data-drop-target="response-slot"` : ""}
+          >
+            ${activeResponseCards.length > 0
+              ? `<div class="center-card-stack">${activeResponseCards.map((card, i) => renderSingleCard(card, i === activeResponseCards.length - 1, i * 4, i * 4)).join("")}</div>`
+              : `<div class="center-play-slot-placeholder"></div>`}
           </article>
         ` : ""}
         <article
@@ -591,15 +596,15 @@ function renderCenterPlayArea(
           data-center-hover-slot="attack"
           data-center-card-stack="true"
           ${displayedAction != null ? `data-pending-card-center="true"` : ""}
-          ${centerDropTargetKind != null ? `data-drop-target="${centerDropTargetKind}"` : ""}
+          ${centerDropTargetKind != null && centerDropTargetKind !== "response-slot" ? `data-drop-target="${centerDropTargetKind}"` : ""}
         >
           ${splitView
-            ? `
-              <div class="center-card-stack">
-                ${attackUnderCards.map((card, i) => renderSingleCard(card, false, i * 8, i * 4)).join("")}
-                ${renderSingleCard(displayedAction!.card, attackUnderCards.length === 0, attackUnderCards.length * 8, attackUnderCards.length * 4)}
-              </div>
-            `
+            ? (() => {
+                const splitCard = displayedAction?.card ?? match.game?.lastPlayedCard?.card;
+                return splitCard != null
+                  ? `<div class="center-card-stack">${attackUnderCards.map((card, i) => renderSingleCard(card, false, i * 8, i * 4)).join("")}${renderSingleCard(splitCard, attackUnderCards.length === 0, attackUnderCards.length * 8, attackUnderCards.length * 4)}</div>`
+                  : `<div class="center-play-slot-placeholder"></div>`;
+              })()
             : singleStackCards.length > 0
               ? `
                 <div class="center-card-stack">
@@ -927,6 +932,78 @@ function renderTelepathyInspectionModal(
                     type="button"
                     class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""}"
                     data-action="preview-telepathy-card"
+                    data-card-instance-id="${card.instanceId}"
+                  >
+                    <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                    <div class="telepathy-card__meta">
+                      <strong>${escapeHtml(card.name)}</strong>
+                      <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
+                    </div>
+                  </button>
+                `).join("")}
+              </div>
+            `}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderConsumeChoiceModal(
+  match: MatchState,
+  localSeatNumber: number,
+  consumePreviewCardInstanceId: string
+): string {
+  const language = (match as MatchState & { __language?: AppLanguage }).__language ?? "en";
+  const ffu = match.game?.forcedFollowUp;
+
+  if (ffu == null || ffu.consumeMode !== true || ffu.actorSeatNumber !== localSeatNumber) {
+    return "";
+  }
+
+  const localSeat = getLocalSeat(match, localSeatNumber);
+  const eligibleCards = localSeat?.hand?.filter(
+    (card) => ffu.allowedCategories.includes(card.categoryCode)
+  ) ?? [];
+
+  const previewCard =
+    eligibleCards.find((c) => c.instanceId === consumePreviewCardInstanceId) ?? eligibleCards[0];
+
+  return `
+    <section class="telepathy-overlay">
+      <article class="telepathy-panel" data-modal-panel-scroll="true">
+        <div class="telepathy-panel__header">
+          <div>
+            <p class="eyebrow">${escapeHtml(ffu.sourceCardName)}</p>
+            <h2>${t(language, "consume.title")}</h2>
+            <p>${t(language, "consume.body", { categories: ffu.allowedCategories.join("/"), cardName: ffu.sourceCardName })}</p>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
+            <button type="button" class="action-button action-button--secondary" data-action="pass-forced-follow-up">${t(language, "response.pass")}</button>
+            <button type="button" class="action-button" data-action="confirm-consume-card" data-card-instance-id="${previewCard?.instanceId ?? ""}" ${previewCard == null ? "disabled" : ""}>${t(language, "consume.confirm")}</button>
+          </div>
+        </div>
+        <div class="telepathy-grid">
+          ${eligibleCards.length === 0
+            ? `<p class="telepathy-empty">${t(language, "response.pass")}</p>`
+            : `
+              <div class="telepathy-preview">
+                ${previewCard == null ? "" : `
+                  <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                  <div class="telepathy-preview__meta">
+                    <strong>${escapeHtml(previewCard.name)}</strong>
+                    <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
+                    <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
+                    ${renderDefenseTooltip(previewCard, language)}
+                  </div>
+                `}
+              </div>
+              <div class="telepathy-list" data-modal-list-scroll="true">
+                ${eligibleCards.map((card) => `
+                  <button
+                    type="button"
+                    class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""}"
+                    data-action="preview-consume-card"
                     data-card-instance-id="${card.instanceId}"
                   >
                     <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
@@ -1470,6 +1547,7 @@ export function renderTableView({
   inspectedSeatNumber,
   telepathyPreviewCardInstanceId,
   boardResetKeepPreviewCardInstanceId,
+  consumePreviewCardInstanceId,
   deathSearchPreviewCardInstanceId,
   deathSearchSelectedCardInstanceIds,
   pickpocketPreviewCardInstanceId,
@@ -1625,6 +1703,7 @@ export function renderTableView({
 
         ${renderPendingObjectChoice(localizedMatch, localSeatNumber)}
         ${renderTelepathyInspectionModal(localizedMatch, localSeatNumber, telepathyPreviewCardInstanceId)}
+        ${renderConsumeChoiceModal(localizedMatch, localSeatNumber, consumePreviewCardInstanceId)}
         ${renderBoardResetKeepModal(localizedMatch, localSeatNumber, boardResetKeepPreviewCardInstanceId)}
         ${renderPendingDeathSearchModal(localizedMatch, localSeatNumber, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds)}
         ${renderPendingPickpocketModal(localizedMatch, localSeatNumber, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds)}

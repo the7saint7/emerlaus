@@ -115,6 +115,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
     hoveredCenterSlotKind: "",
     telepathyPreviewCardInstanceId: "",
     boardResetKeepPreviewCardInstanceId: "",
+    consumePreviewCardInstanceId: "",
     deathSearchPreviewCardInstanceId: "",
     deathSearchSelectedCardInstanceIds: [],
     pickpocketPreviewCardInstanceId: "",
@@ -2364,6 +2365,7 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
             inspectedSeatNumber: state.inspectedSeatNumber,
             telepathyPreviewCardInstanceId: state.telepathyPreviewCardInstanceId,
             boardResetKeepPreviewCardInstanceId: state.boardResetKeepPreviewCardInstanceId,
+            consumePreviewCardInstanceId: state.consumePreviewCardInstanceId,
             deathSearchPreviewCardInstanceId: state.deathSearchPreviewCardInstanceId,
             deathSearchSelectedCardInstanceIds: state.deathSearchSelectedCardInstanceIds,
             pickpocketPreviewCardInstanceId: state.pickpocketPreviewCardInstanceId,
@@ -2646,6 +2648,33 @@ export async function createApp(rootElement: HTMLDivElement): Promise<void> {
         state.boardResetKeepPreviewCardInstanceId = previewCardInstanceId;
         render();
       });
+    });
+
+    rootElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-consume-card']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const previewCardInstanceId = button.dataset.cardInstanceId ?? "";
+        if (previewCardInstanceId === "" || state.consumePreviewCardInstanceId === previewCardInstanceId) {
+          return;
+        }
+
+        state.consumePreviewCardInstanceId = previewCardInstanceId;
+        render();
+      });
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-action='confirm-consume-card']")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const cardInstanceId = button.dataset.cardInstanceId ?? "";
+      if (cardInstanceId === "") {
+        return;
+      }
+
+      try {
+        await executePlayRequest({ cardInstanceId, mode: "active" });
+      } catch (error) {
+        state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.playCard");
+        render();
+      }
     });
 
     rootElement.querySelectorAll<HTMLButtonElement>("[data-action='choose-death-search-corpse']").forEach((button) => {
