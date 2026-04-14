@@ -19,7 +19,6 @@ import { diceController, type DiceStagePlacement } from "../features/dice/diceCo
 import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
 import { buildEventLogEntries, type EventLogEntry } from "../render/eventLog";
-import { renderDefenseTooltip } from "../render/tableView";
 import { allCardDefinitions } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatState } from "../../../shared/types";
@@ -27,6 +26,30 @@ import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlayb
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
 const POLL_INTERVAL_MS = 2500;
+
+function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
+  const defenseBand = card.defenseBand;
+  if (defenseBand == null) {
+    return "";
+  }
+
+  return `
+    <div class="card-tooltip-defense">
+      <span class="card-defense-pill card-defense-pill--${defenseBand.resistance.color}">
+        ${t(language, "defense.resist")} ${defenseBand.resistance.color === "red" ? t(language, "defense.notAvailable") : `${Math.max(1, defenseBand.resistance.rollsRequired)}x`}
+      </span>
+      <span class="card-defense-pill ${defenseBand.resistanceAccrueAllowed ? "card-defense-pill--allowed" : "card-defense-pill--blocked"}">
+        ${t(language, "defense.ra")} ${defenseBand.resistanceAccrueAllowed ? t(language, "defense.yes") : t(language, "defense.no")}
+      </span>
+      <span class="card-defense-pill ${defenseBand.annulationAllowed ? "card-defense-pill--allowed" : "card-defense-pill--blocked"}">
+        ${t(language, "defense.cancel")} ${defenseBand.annulationAllowed ? `${Math.max(1, defenseBand.annulationCardsRequired)}x` : t(language, "defense.no")}
+      </span>
+      <span class="card-defense-pill ${defenseBand.mirrorAllowed ? "card-defense-pill--allowed" : "card-defense-pill--blocked"}">
+        ${t(language, "defense.mirror")} ${defenseBand.mirrorAllowed ? t(language, "defense.yes") : t(language, "defense.no")}
+      </span>
+    </div>
+  `;
+}
 
 const EXPANSION_DECKS: Array<{ key: ExpansionKey; label: string; available: boolean }> = [
   { key: "sorcellerie", label: "Sorcellerie", available: false },
