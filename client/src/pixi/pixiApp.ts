@@ -476,11 +476,11 @@ function buildHandLayouts(
 ): HandCardLayout[] {
   const total = hand.length;
   const centerX = STAGE_WIDTH / 2;
-  const baseY = 846;
+  const baseY = 786;
   const radius = 632;
   const spread = total <= 1 ? 0 : Math.min(34, 8 + (total - 2) * 4);
-  const width = 148;
-  const height = 206;
+  const width = 222;
+  const height = 309;
   const focusedCardInstanceId =
     interactionState.arrowDrag?.cardInstanceId
     || interactionState.draggingCardInstanceId
@@ -683,7 +683,7 @@ function renderObjectRow(
     let isAmLoadHover = false;
 
     if (!isStatus) {
-      const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber);
+      const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber, seat.objects);
       const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
       isAmLoadHover = hovered && canLoadMassAttackStaff(selectedCard, card, seat.seatNumber, localSeatNumber);
 
@@ -1222,8 +1222,8 @@ function renderTableScene(
   const playSlot: RectGeometry = pendingAction == null
     ? { x: 708, y: centerSlotTopY - 12, width: 184, height: 214 }
     : { x: 698, y: centerSlotTopY - 12, width: 196, height: 214 };
-  const handArea: RectGeometry = { x: 390, y: 720, width: 820, height: 180 };
-  const discardZone: RectGeometry = { x: handArea.x - 198, y: 734, width: 182, height: 86 };
+  const handArea: RectGeometry = { x: 390, y: 660, width: 820, height: 180 };
+  const discardZone: RectGeometry = { x: handArea.x - 198, y: handArea.y, width: 182, height: handArea.height };
   const seatTargets: SeatTargetGeometry[] = [];
   const objectTargets: ObjectTargetGeometry[] = [];
   const inspectTargets: InspectTargetGeometry[] = [];
@@ -1377,7 +1377,7 @@ function renderTableScene(
       scene,
       localSeat,
       STAGE_WIDTH / 2 + (seatShakeOffsets.get(localSeat.seatNumber) ?? 0),
-      598,
+      500,
       72,
       98,
       12,
@@ -1412,7 +1412,9 @@ function renderTableScene(
     if (damageBurst != null) {
       const progress = Math.max(0, Math.min(1, (now - damageBurst.startedAt) / damageBurst.durationMs));
       const lift = (seatNumber === localSeatNumber ? 58 : 42) * (1 - Math.pow(1 - progress, 2));
-      const burst = createLabel(`-${damageBurst.amount} ${t(language, "stat.hp")}`, rect.x + rect.width / 2, rect.y - 8 - lift, {
+      const burstX = seatNumber === localSeatNumber ? rect.x + rect.width - 65 : rect.x + rect.width / 2;
+      const burstY = seatNumber === localSeatNumber ? rect.y + 14 - 6 - lift : rect.y - 8 - lift;
+      const burst = createLabel(`-${damageBurst.amount} ${t(language, "stat.hp")}`, burstX, burstY, {
         fontSize: seatNumber === localSeatNumber ? 30 : 22,
         fontWeight: "700",
         fill: "#ff5c5c",
@@ -1428,7 +1430,9 @@ function renderTableScene(
       const progress = Math.max(0, Math.min(1, (now - healBurst.startedAt) / healBurst.durationMs));
       const lift = (seatNumber === localSeatNumber ? 46 : 34) * (1 - Math.pow(1 - progress, 2));
       const driftX = Math.sin(progress * Math.PI) * 8;
-      const burst = createLabel(`+${healBurst.amount} ${t(language, "stat.hp")}`, rect.x + rect.width / 2 + driftX, rect.y - 6 - lift, {
+      const burstX = seatNumber === localSeatNumber ? rect.x + rect.width - 65 + driftX : rect.x + rect.width / 2 + driftX;
+      const burstY = seatNumber === localSeatNumber ? rect.y + 14 - 6 - lift : rect.y - 6 - lift;
+      const burst = createLabel(`+${healBurst.amount} ${t(language, "stat.hp")}`, burstX, burstY, {
         fontSize: seatNumber === localSeatNumber ? 30 : 22,
         fontWeight: "700",
         fill: "#5df27d",
@@ -1660,6 +1664,15 @@ function renderTableScene(
     fontWeight: "700"
   }, 0.5, 0.5));
 
+  // Mask hand cards to the inner table area so they don't show outside the playing field.
+  const handContainer = new Container();
+  const handMask = new Graphics()
+    .roundRect(58, 58, STAGE_WIDTH - 116, STAGE_HEIGHT - 116, 34)
+    .fill({ color: 0xffffff });
+  handContainer.addChild(handMask);
+  handContainer.mask = handMask;
+  scene.addChild(handContainer);
+
   const orderedHandLayouts = [...handLayouts].sort((left, right) => left.zIndex - right.zIndex);
   for (const layout of orderedHandLayouts) {
     const isDragging = interactionState.draggingCardInstanceId === layout.card.instanceId;
@@ -1667,7 +1680,7 @@ function renderTableScene(
       continue;
     }
 
-    scene.addChild(createCardFace(layout, false, onTextureReady));
+    handContainer.addChild(createCardFace(layout, false, onTextureReady));
   }
 
   if (interactionState.draggingCardInstanceId !== "") {
