@@ -4905,7 +4905,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   };
 
   const handleCanvasPointerMove = (event: PointerEvent): void => {
-    if (!currentMetrics.isLandscape || leftMessage !== "" || eventPlaybackActive || hasBlockingModalOpen()) {
+    if (!currentMetrics.isLandscape || leftMessage !== "" || hasBlockingModalOpen()) {
       return;
     }
 
@@ -4914,6 +4914,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       if (!hasActiveLocalInteraction() && interactionState.hoveredCardInstanceId !== "") {
         setHoveredCardInstanceId("");
       }
+      return;
+    }
+
+    // Drag/arrow operations are still blocked during event playback — only hover is allowed.
+    if (eventPlaybackActive) {
+      const hoveredLayout = getHoveredHandCard(point);
+      setHoveredCardInstanceId(hoveredLayout != null ? hoveredLayout.card.instanceId : "");
       return;
     }
 
