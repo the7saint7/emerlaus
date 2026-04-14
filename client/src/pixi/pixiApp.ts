@@ -2059,6 +2059,8 @@ function buildOverlayMarkup(
           const title = isLocalChooser
             ? (pendingObjectChoice.prompt.toLowerCase().includes("steal")
                 ? t(language, "objectChoice.stealTitle")
+                : pendingObjectChoice.prompt.toLowerCase().includes("discard")
+                ? t(language, "objectChoice.discardRingTitle")
                 : t(language, "objectChoice.removeTitle"))
             : t(language, "objectChoice.chooserWaiting", { chooserName });
           const body = isLocalChooser

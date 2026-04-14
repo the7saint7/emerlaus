@@ -99,7 +99,7 @@ export interface StoredGameState {
     chooserSeatNumber: number;
     ownerSeatNumber: number;
     sourceCard: StoredCardInstance;
-    mode: "remove" | "steal";
+    mode: "remove" | "steal" | "discard_ring";
     finalizeActorSeatNumber?: number;
   };
   pendingHandInspection?: {

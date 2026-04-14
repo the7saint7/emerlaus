@@ -2852,15 +2852,77 @@ function normalizeSeatObjectSlots(match: StoredMatchState, seatNumber: number): 
   }
 }
 
-function addObjectToSeat(match: StoredMatchState, seatNumber: number, card: StoredCardInstance): void {
+function addObjectToSeat(match: StoredMatchState, seatNumber: number, card: StoredCardInstance, interactive: boolean = false): boolean {
   const game = match.internalGame;
   if (game == null) {
-    return;
+    return false;
   }
 
   const seat = getStoredSeat(game, seatNumber);
   seat.objects.push(card);
+
+  if (interactive) {
+    const slot = getObjectSlot(requireDefinition(card.cardId).name);
+    const limit = OBJECT_SLOT_LIMITS[slot] ?? 1;
+    const slotCount = seat.objects.filter(
+      (o) => getObjectSlot(requireDefinition(o.cardId).name) === slot
+    ).length;
+    if (slotCount > limit) {
+      return true; // overflow — skip normalization, let caller handle interactively
+    }
+  }
+
   normalizeSeatObjectSlots(match, seatNumber);
+  return false;
+}
+
+function queueRingDiscardChoice(
+  match: StoredMatchState,
+  seatNumber: number,
+  newRingCard: StoredCardInstance,
+  boxId: string | undefined,
+  finalizeActorSeatNumber: number
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const seat = getStoredSeat(game, seatNumber);
+  const rings = seat.objects.filter(
+    (o) => getObjectSlot(requireDefinition(o.cardId).name) === "anneau"
+  );
+  const limit = OBJECT_SLOT_LIMITS["anneau"] ?? 2;
+  if (rings.length <= limit) {
+    return false;
+  }
+
+  const publicSeat = getPublicSeat(match, seatNumber);
+  if (publicSeat.controllerType === "bot") {
+    const toDiscard = rings.find((r) => r.instanceId !== newRingCard.instanceId) ?? rings[0];
+    if (toDiscard != null) {
+      const removed = removeObjectFromSeat(match, seatNumber, toDiscard.instanceId);
+      discardInstances(game, removed);
+      appendServerDebugLog(
+        match,
+        "object",
+        `Bot seat ${seatNumber} auto-discarded ${requireDefinition(toDiscard.cardId).name} for ring overflow`
+      );
+    }
+    return false;
+  }
+
+  game.pendingObjectChoice = {
+    boxId,
+    chooserSeatNumber: seatNumber,
+    ownerSeatNumber: seatNumber,
+    sourceCard: newRingCard,
+    mode: "discard_ring",
+    finalizeActorSeatNumber
+  };
+  appendServerDebugLog(match, "object", `Seat ${seatNumber} must choose a ring to discard (overflow)`);
+  refreshSeatSummaries(match);
+  return true;
 }
 
 function movePersistentCard(
@@ -2870,16 +2932,19 @@ function movePersistentCard(
   card: StoredCardInstance,
   definition: BaseCardDefinition,
   sourceZone: "hand" | "object" = "hand"
-): void {
+): boolean {
   const game = match.internalGame;
   if (game == null) {
-    return;
+    return false;
   }
 
   if (definition.category.code === "O") {
-    addObjectToSeat(match, actorSeatNumber, card);
+    const isRing = getObjectSlot(definition.name) === "anneau";
+    const ringOverflow = isRing
+      ? addObjectToSeat(match, actorSeatNumber, card, true)
+      : (addObjectToSeat(match, actorSeatNumber, card), false);
     appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} equipped ${definition.name}`);
-    return;
+    return ringOverflow;
   }
 
   if (definition.category.code === "SO") {
@@ -2894,13 +2959,13 @@ function movePersistentCard(
       const targetName = getPublicSeat(match, targetSeatNumber).displayName;
       appendDealerMessage(match, `${actorName} placed ${definition.name} on ${targetName}.`);
     }
-    return;
+    return false;
   }
 
   if (definition.id === "sanctuaire-demmerlaus") {
     addObjectToSeat(match, actorSeatNumber, card);
     appendServerDebugLog(match, "object", `Seat ${actorSeatNumber} placed ${definition.name} in play`);
-    return;
+    return false;
   }
 
   if (definition.id === "hydromel") {
@@ -2911,7 +2976,7 @@ function movePersistentCard(
       sourceSeatNumber: actorSeatNumber
     });
     appendServerDebugLog(match, "status", `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves`);
-    return;
+    return false;
   }
 
   if (definition.id === "abondance") {
@@ -2930,7 +2995,7 @@ function movePersistentCard(
       "status",
       `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves for ${Math.max(1, actorSeat.powerLevel ?? 1)} turn(s), starting next turn`
     );
-    return;
+    return false;
   }
 
   if (definition.id === "pacte-tenebreux") {
@@ -2942,7 +3007,7 @@ function movePersistentCard(
       bodyBound: true
     });
     appendServerDebugLog(match, "status", `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves`);
-    return;
+    return false;
   }
 
   if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
@@ -2952,7 +3017,7 @@ function movePersistentCard(
     if (remainingTurnTriggers === 0) {
       discardInstances(game, [card]);
       appendServerDebugLog(match, "status", `Seat ${actorSeatNumber}'s ${definition.name} resolved immediately and was discarded`);
-      return;
+      return false;
     }
 
     seat.statuses.push({
@@ -2967,10 +3032,11 @@ function movePersistentCard(
       "status",
       `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves with ${remainingTurnTriggers} remaining turn trigger(s)`
     );
-    return;
+    return false;
   }
 
   game.discardPile.push(card);
+  return false;
 }
 
 function resolveAbundanceTurnStart(match: StoredMatchState, seatNumber: number): void {
@@ -3823,15 +3889,21 @@ function buildPendingObjectChoicePublicState(match: StoredMatchState): GameState
 
   const owner = getStoredSeat(game, pendingObjectChoice.ownerSeatNumber);
   const sourceDefinition = requireDefinition(pendingObjectChoice.sourceCard.cardId);
-  const allowedSlots = getAllowedObjectSlotsForDefinition(sourceDefinition);
+  const isRingDiscard = pendingObjectChoice.mode === "discard_ring";
+  const allowedSlots = isRingDiscard
+    ? ["anneau"]
+    : getAllowedObjectSlotsForDefinition(sourceDefinition);
+  const prompt = isRingDiscard
+    ? "You already hold 2 rings. Choose one to discard."
+    : pendingObjectChoice.mode === "steal"
+    ? `Choose an object to steal from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName}.`
+    : `Choose an object to remove from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName}.`;
   return {
     boxId: pendingObjectChoice.boxId,
     chooserSeatNumber: pendingObjectChoice.chooserSeatNumber,
     ownerSeatNumber: pendingObjectChoice.ownerSeatNumber,
     cardName: sourceDefinition.name,
-    prompt: pendingObjectChoice.mode === "steal"
-      ? `Choose an object to steal from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName}.`
-      : `Choose an object to remove from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName}.`,
+    prompt,
     objectOptions: owner.objects
       .filter((objectCard) => objectMatchesAllowedSlots(objectCard.cardId, allowedSlots))
       .map((objectCard) =>
@@ -5467,7 +5539,7 @@ function resolvePendingAction(match: StoredMatchState): void {
     appendServerDebugLog(match, "pending_action", `Skipped stored-card resolution for ${definition.name} after repeated use`);
   } else if (definition.rules.staysInPlay) {
     if (pendingAction.sourceZone !== "object") {
-      movePersistentCard(
+      const ringOverflow = movePersistentCard(
         match,
         pendingAction.actorSeatNumber,
         resolvedTargetSeatNumbers,
@@ -5475,6 +5547,15 @@ function resolvePendingAction(match: StoredMatchState): void {
         definition,
         pendingAction.sourceZone ?? "hand"
       );
+      if (ringOverflow) {
+        queueRingDiscardChoice(
+          match,
+          pendingAction.actorSeatNumber,
+          pendingAction.storedCard,
+          pendingAction.boxId,
+          pendingAction.actorSeatNumber
+        );
+      }
     }
   } else {
     discardInstances(game, [pendingAction.storedCard]);
@@ -5496,6 +5577,10 @@ function resolvePendingAction(match: StoredMatchState): void {
   };
   game.pendingAction = undefined;
   if (resolvePendingActionContinuation(match, pendingAction)) {
+    return;
+  }
+  if (game.pendingObjectChoice != null) {
+    refreshSeatSummaries(match);
     return;
   }
   finalizeResolvedAction(match, pendingAction.actorSeatNumber, pendingAction.boxId);
@@ -5631,10 +5716,12 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
   }
 
   const sourceDefinition = requireDefinition(pendingObjectChoice.sourceCard.cardId);
-  if (!objectMatchesAllowedSlots(
-    owner.objects.find((object) => object.instanceId === objectInstanceId)?.cardId ?? "",
-    getAllowedObjectSlotsForDefinition(sourceDefinition)
-  )) {
+  const chosenCardId = owner.objects.find((object) => object.instanceId === objectInstanceId)?.cardId ?? "";
+  if (pendingObjectChoice.mode === "discard_ring") {
+    if (getObjectSlot(requireDefinition(chosenCardId).name) !== "anneau") {
+      throw new Error("You must choose a ring to discard");
+    }
+  } else if (!objectMatchesAllowedSlots(chosenCardId, getAllowedObjectSlotsForDefinition(sourceDefinition))) {
     throw new Error("That object cannot be selected for this card");
   }
   const removed = removeObjectFromSeat(match, pendingObjectChoice.ownerSeatNumber, objectInstanceId);
@@ -5644,6 +5731,12 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
       appendDealerMessage(
         match,
         `${chooserSeat.displayName} stole ${requireDefinition(removed[0].cardId).name} with ${sourceDefinition.name}.`
+      );
+    } else if (pendingObjectChoice.mode === "discard_ring") {
+      discardInstances(game, removed);
+      appendDealerMessage(
+        match,
+        `${chooserSeat.displayName} discards ${requireDefinition(removed[0].cardId).name} to equip ${sourceDefinition.name}.`
       );
     } else {
       discardInstances(game, removed);

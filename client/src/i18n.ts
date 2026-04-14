@@ -101,6 +101,7 @@ type TranslationKey =
   | "card.readFace"
   | "objectChoice.removeTitle"
   | "objectChoice.stealTitle"
+  | "objectChoice.discardRingTitle"
   | "objectChoice.chooserWaiting"
   | "objectChoice.waitingBody"
   | "telepathy.inProgress"
@@ -307,6 +308,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "card.readFace": "Read the full card text on the card face.",
     "objectChoice.removeTitle": "Choose an object to remove",
     "objectChoice.stealTitle": "Choose an object to steal",
+    "objectChoice.discardRingTitle": "Choose a ring to discard",
     "objectChoice.chooserWaiting": "{chooserName} is choosing an object",
     "objectChoice.waitingBody": "Waiting for {chooserName} to choose one of {ownerName}'s objects.",
     "telepathy.inProgress": "Telepathy in progress",
@@ -503,6 +505,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "card.readFace": "Lisez le texte complet sur la face de la carte.",
     "objectChoice.removeTitle": "Choisissez un objet à retirer",
     "objectChoice.stealTitle": "Choisissez un objet à voler",
+    "objectChoice.discardRingTitle": "Choisissez un anneau à défausser",
     "objectChoice.chooserWaiting": "{chooserName} choisit un objet",
     "objectChoice.waitingBody": "En attente que {chooserName} choisisse un des objets de {ownerName}.",
     "telepathy.inProgress": "Télépathie en cours",
