@@ -36,7 +36,9 @@
       "Bash(grep:*)",
       "Bash(bash /tmp/check_abondance.sh)",
       "Bash(python -c \"import json,sys; d=json.load\\(open\\('C:/Users/Work/Desktop/Emerlaus/runtime-logs/artwn-local-dev-instance/match-state.json'\\)\\); g=d.get\\('internalGame',{}\\); print\\('forcedFollowUp:', json.dumps\\(g.get\\('forcedFollowUp'\\), indent=2\\)\\); print\\('pendingAction:', g.get\\('pendingAction',{}\\).get\\('card',{}\\).get\\('cardId'\\) if g.get\\('pendingAction'\\) else None\\)\")",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
