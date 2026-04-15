@@ -372,6 +372,16 @@ function fitText(text: string, maxPx: number, fontSize: number): string {
   return text.slice(0, Math.max(1, maxChars - 1)) + "…";
 }
 
+function cardInstanceListsMatch(left: CardView[] | undefined, right: CardView[] | undefined): boolean {
+  const leftIds = (left ?? []).map((card) => card.instanceId);
+  const rightIds = (right ?? []).map((card) => card.instanceId);
+  if (leftIds.length !== rightIds.length) {
+    return false;
+  }
+
+  return leftIds.every((id, index) => id === rightIds[index]);
+}
+
 function cardCanHalfResist(cardId: string | undefined): boolean {
   if (cardId == null) {
     return false;
@@ -4377,18 +4387,22 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
-    // Snapshot seats that gained new statuses in this batch so the status card
-    // doesn't appear before the animation sequence completes.
+    // Freeze any seat row whose objects/statuses changed in this batch so cards
+    // do not appear or disappear on the table before the owning action replay finishes.
     for (const [seatNumberStr, preSeat] of Object.entries(preUpdateLocalizedSeatsBySeat)) {
       const seatNumber = Number(seatNumberStr);
       const newSeat = match.seats.find((s) => s.seatNumber === seatNumber);
       if (newSeat == null) continue;
-      const oldCount = (preSeat.statuses ?? []).length;
-      const newCount = (newSeat.statuses ?? []).length;
-      if (newCount > oldCount) {
+      const objectsChanged = !cardInstanceListsMatch(preSeat.objects, newSeat.objects);
+      const statusesChanged = !cardInstanceListsMatch(preSeat.statuses, newSeat.statuses);
+      if (objectsChanged || statusesChanged) {
         const existing = displayedSeatsBySeat[seatNumber];
         displayedSeatsBySeat[seatNumber] = existing != null
-          ? { ...existing, statuses: preSeat.statuses }
+          ? {
+              ...existing,
+              objects: preSeat.objects,
+              statuses: preSeat.statuses
+            }
           : preSeat;
       }
     }
