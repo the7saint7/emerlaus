@@ -208,7 +208,8 @@ type TranslationKey =
   | "table.dropDefense"
   | "table.draw"
   | "table.hintPlaySlot"
-  | "table.hintTargetSeat";
+  | "table.hintTargetSeat"
+  | "stat.powerShort";
 
 type TranslationTable = Record<TranslationKey, string>;
 
@@ -284,6 +285,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.noPlayableDiscard": "You cannot play any card this turn. Choose one card to discard.",
     "table.discard": "Discard",
     "stat.power": "Power",
+    "stat.powerShort": "PWR",
     "stat.hp": "HP",
     "table.deck": "Deck",
     "table.discardPile": "Discard",
@@ -481,6 +483,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.noPlayableDiscard": "Vous ne pouvez jouer aucune carte ce tour-ci. Choisissez une carte à défausser.",
     "table.discard": "Défausser",
     "stat.power": "Puissance",
+    "stat.powerShort": "PUI",
     "stat.hp": "PV",
     "table.deck": "Deck",
     "table.discardPile": "Défausse",

@@ -1265,6 +1265,17 @@ function renderTableScene(
     scene.addChild(border);
   }
   if (localSeat != null) {
+    const powerBadgeWidth = 112;
+    const powerBadgeHeight = 38;
+    const powerBadgeX = handArea.x + 18;
+    const powerBadgeY = handArea.y + 14;
+    scene.addChild(createRect(powerBadgeX, powerBadgeY, powerBadgeWidth, powerBadgeHeight, "#121712", 0.94, 999));
+    scene.addChild(createLabel(`${localSeat.powerLevel ?? 1} ${t(language, "stat.powerShort")}`, powerBadgeX + powerBadgeWidth / 2, powerBadgeY + powerBadgeHeight / 2, {
+      fontSize: 19,
+      fontWeight: "700",
+      fill: "#f5efde"
+    }, 0.5, 0.5));
+
     const hpBadgeWidth = 112;
     const hpBadgeHeight = 38;
     const hpBadgeX = handArea.x + handArea.width - hpBadgeWidth - 18;
