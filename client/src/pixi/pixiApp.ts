@@ -1567,7 +1567,9 @@ function renderTableScene(
 
       const centerEdgeToTarget = rectEdgePoint(targetCenter.x, targetCenter.y, playSlot);
       const targetEdge = rectEdgePoint(playCenterX, playCenterY, targetRect);
-      const reflectToSeatNumber = displayedAction.mirroredTargets?.[targetSeatNumber];
+      const reflectToSeatNumber = "mirroredTargets" in displayedAction
+        ? displayedAction.mirroredTargets?.[targetSeatNumber]
+        : undefined;
       const isMirrored = reflectToSeatNumber != null;
 
       scene.addChild(createCurvedArrow(
@@ -2328,11 +2330,14 @@ function buildOverlayMarkup(
                         : t(language, "deathSearch.keepBody", { corpseName: selectedCorpse.displayName, count: pendingDeathSearch.keepCardCount })
                       : t(language, "deathSearch.waitingBody", { chooserName: chooserSeat?.displayName ?? "" }))}</p>
                   </div>
-                  ${isLocalChooser && selectedCorpse != null
-                    ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-death-search-keep" ${keepReady ? "" : "disabled"}>${escapeHtml(t(language, "deathSearch.keepAction"))}</button>`
-                    : isLocalChooser && selectedCorpse == null
-                    ? `<button type="button" class="action-button action-button--secondary" data-action="decline-death-search">${escapeHtml(t(language, "deathSearch.declineAction"))}</button>`
-                    : ""}
+                  ${!isLocalChooser
+                    ? ""
+                    : `<div class="telepathy-panel__actions">
+                        ${selectedCorpse != null
+                          ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-death-search-keep" ${keepReady ? "" : "disabled"}>${escapeHtml(t(language, "deathSearch.keepAction"))}</button>`
+                          : ""}
+                        <button type="button" class="action-button action-button--secondary" data-action="decline-death-search">${escapeHtml(t(language, "deathSearch.declineAction"))}</button>
+                      </div>`}
                 </div>
                 <div class="telepathy-grid">
                   ${!isLocalChooser
@@ -3021,6 +3026,25 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const getDraggedCard = (): CardView | undefined => {
     const activeId = interactionState.arrowDrag?.cardInstanceId ?? interactionState.draggingCardInstanceId;
     return getLocalHand().find((card) => card.instanceId === activeId);
+  };
+
+  const getLocalizedDisabledReason = (cardInstanceId: string): string | undefined =>
+    getLocalSeat(localizeMatchState(match, language), localSeatNumber)?.hand?.find((card) => card.instanceId === cardInstanceId)?.disabledReason;
+
+  const showBlockedCardMessage = (card: CardView): void => {
+    errorMessage = getLocalizedDisabledReason(card.instanceId) ?? card.disabledReason ?? t(language, "error.playCard");
+    clearInteractionState();
+    redraw();
+  };
+
+  const canAttemptResponseSlotDrop = (): boolean => {
+    const pendingAction = match.game?.pendingAction;
+    if (pendingAction == null) {
+      return false;
+    }
+
+    const localResponder = pendingAction.responders.find((responder) => responder.seatNumber === localSeatNumber);
+    return localResponder?.state === "pending";
   };
 
   const syncPendingAnnulationChoice = (): void => {
@@ -3844,14 +3868,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return false;
     }
 
-    if (match.game.pendingAction != null) {
-      return canDropIntoResponseSlot(match, localSeatNumber, card);
-    }
-
-    return (
-      match.game.currentTurnSeatNumber === localSeatNumber
-      && (card.canPlay || canDiscardCard(match, localSeatNumber))
-    );
+    return true;
   };
 
   const getHoveredHandCard = (point: StagePoint): HandCardLayout | null => {
@@ -4062,7 +4079,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
-    if (canDropIntoResponseSlot(match, localSeatNumber, card) && currentGeometry.responseSlot != null && pointInRect(point, currentGeometry.responseSlot)) {
+    if (canAttemptResponseSlotDrop() && currentGeometry.responseSlot != null && pointInRect(point, currentGeometry.responseSlot)) {
       return { kind: "response-slot" };
     }
 
@@ -4334,7 +4351,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, localizedMatch.game?.pendingObjectChoice ?? null, localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, localizedMatch.game?.pendingDeathSearch ?? null, deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -5055,8 +5072,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     if (interactionState.arrowDrag != null) {
       const { cardInstanceId, nearestSeatNumber } = interactionState.arrowDrag;
+      const draggedCard = getLocalHand().find((card) => card.instanceId === cardInstanceId);
       broadcastCursorTarget(null);
       if (nearestSeatNumber != null) {
+        if (draggedCard != null && !draggedCard.canPlay) {
+          showBlockedCardMessage(draggedCard);
+          return;
+        }
         targetHintDismissed = true;
         await performCardPlay({
           cardInstanceId,
@@ -5107,6 +5129,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     if (interactionState.dragHoverTarget.kind === "seat" && interactionState.dragHoverTarget.seatNumber != null) {
+      if (!draggedCard.canPlay) {
+        showBlockedCardMessage(draggedCard);
+        return;
+      }
       await performCardPlay({
         cardInstanceId: draggedCard.instanceId,
         mode: "active",
@@ -5116,6 +5142,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     if (interactionState.dragHoverTarget.kind === "object" && interactionState.dragHoverTarget.objectInstanceId != null) {
+      if (!draggedCard.canPlay) {
+        showBlockedCardMessage(draggedCard);
+        return;
+      }
       await performCardPlay({
         cardInstanceId: draggedCard.instanceId,
         mode: "active",
@@ -5126,9 +5156,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     if (interactionState.dragHoverTarget.kind === "response-slot") {
       const choice = getResponseChoiceForCard(draggedCard);
-      if (choice == null) {
-        clearInteractionState();
-        redraw();
+      if (choice == null || !draggedCard.canPlay) {
+        showBlockedCardMessage(draggedCard);
         return;
       }
 
@@ -5151,6 +5180,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     if (interactionState.dragHoverTarget.kind === "play-slot") {
+      if (!draggedCard.canPlay) {
+        showBlockedCardMessage(draggedCard);
+        return;
+      }
       await performCardPlay({
         cardInstanceId: draggedCard.instanceId,
         mode: "active",

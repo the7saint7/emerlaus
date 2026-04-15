@@ -2874,6 +2874,13 @@ h2 {
   color: var(--muted);
 }
 
+.telepathy-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .telepathy-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 360px);

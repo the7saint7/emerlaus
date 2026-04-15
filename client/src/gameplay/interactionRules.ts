@@ -5,11 +5,11 @@ function isAttackCard(card: CardView): boolean {
 }
 
 export function cardNeedsArrow(card: CardView): boolean {
-  return card.canPlay && card.targets === "single_opponent";
+  return card.targets === "single_opponent";
 }
 
 export function cardIsLiftPlayable(card: CardView): boolean {
-  return card.canPlay && card.categoryCode !== "CA" && (
+  return (
     card.categoryCode === "O"
     || card.targets === "self"
     || card.targets === "self_or_single_opponent"
@@ -126,7 +126,7 @@ export function isSeatTargetable(
   localSeatNumber: number,
   forcedTargetSeatNumber?: number
 ): boolean {
-  if (selectedCard == null || !selectedCard.canPlay || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
+  if (selectedCard == null || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
     return false;
   }
 
@@ -159,7 +159,7 @@ export function canLoadMassAttackStaff(
   ownerSeatNumber: number,
   localSeatNumber: number
 ): boolean {
-  return selectedCard?.canPlay === true
+  return selectedCard != null
     && selectedCard.categoryCode === "AM"
     && ownerSeatNumber === localSeatNumber
     && objectCard.cardId === "baton-dattaque-massive";
@@ -172,7 +172,7 @@ export function isObjectTargetable(
   localSeatNumber: number,
   ownerObjects?: CardView[]
 ): boolean {
-  if (selectedCard == null || !selectedCard.canPlay) {
+  if (selectedCard == null) {
     return false;
   }
 

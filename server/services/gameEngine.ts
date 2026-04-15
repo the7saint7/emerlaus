@@ -1127,6 +1127,39 @@ function autoSkipOptionalExtraPlayIfUnavailable(match: StoredMatchState, actorSe
   );
 }
 
+function isResistanceDiminueeCard(cardId: string): boolean {
+  return cardId.startsWith("resistance-diminuee-");
+}
+
+function allowsNormalResistance(definition: BaseCardDefinition): boolean {
+  return definition.rules.requiresResistanceCheck && definition.defenseBand?.resistance.color !== "red";
+}
+
+function hasPlayableResistanceReductionFollowUp(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceCardInstanceId: string
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const actorSeat = getStoredSeat(game, actorSeatNumber);
+  return actorSeat.hand.some((handCard) => {
+    if (handCard.instanceId === sourceCardInstanceId) {
+      return false;
+    }
+
+    const definition = requireDefinition(handCard.cardId);
+    if (!allowsNormalResistance(definition)) {
+      return false;
+    }
+
+    return canPlayCardActively(match, actorSeatNumber, handCard).canPlay;
+  });
+}
+
 function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, card: StoredCardInstance): { canPlay: boolean; reason?: string } {
   const game = match.internalGame;
   if (game == null) {
@@ -1231,6 +1264,13 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     && !actorSeat.hand.some((handCard) => handCard.instanceId !== card.instanceId)
   ) {
     return { canPlay: false, reason: "This card requires another card in hand" };
+  }
+
+  if (
+    isResistanceDiminueeCard(definition.id)
+    && !hasPlayableResistanceReductionFollowUp(match, actorSeatNumber, card.instanceId)
+  ) {
+    return { canPlay: false, reason: "This card requires a follow-up card that allows resistance" };
   }
 
   if (definition.category.code === "AM" && extraPlayMode == null && getSeatMassAttackStaff(actorSeat) != null) {
@@ -2204,14 +2244,14 @@ function handleSeatDeath(match: StoredMatchState, seatNumber: number, resurrecti
   appendServerDebugLog(match, "death", `Seat ${seatNumber} died and released ${corpseCards.length} cards`);
 }
 
-function checkForWinner(match: StoredMatchState): void {
+function checkForWinner(match: StoredMatchState): boolean {
   const game = match.internalGame;
   if (game == null) {
-    return;
+    return false;
   }
 
   if (game.pendingDeathSearch != null) {
-    return;
+    return false;
   }
 
   const alive = aliveSeatNumbers(game);
@@ -2221,7 +2261,10 @@ function checkForWinner(match: StoredMatchState): void {
     if (alive[0] != null) {
       appendDealerMessage(match, `${getPublicSeat(match, alive[0]).displayName} is the last wizard standing.`);
     }
+    return true;
   }
+
+  return false;
 }
 
 function applyDamage(
@@ -3588,8 +3631,7 @@ function resolvePersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, s
     appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} ends.`);
     appendServerDebugLog(match, "status", `Seat ${seatNumber}'s ${definition.name} expired after its final trigger`);
 
-    checkForWinner(match);
-    if (match.status === "finished") {
+    if (checkForWinner(match)) {
       return;
     }
   }
@@ -4152,8 +4194,7 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
     return;
   }
 
-  checkForWinner(match);
-  if (match.status === "finished") {
+  if (checkForWinner(match)) {
     refreshSeatSummaries(match);
     return;
   }
@@ -4518,6 +4559,40 @@ function beginPendingAction(
   autoRespondIfNeeded(match);
 }
 
+function resumeAfterDeathSearch(
+  match: StoredMatchState,
+  continuationActorSeatNumber: number,
+  continuationBoxId?: string
+): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const pendingAction = game.pendingAction;
+  if (pendingAction == null) {
+    finalizeResolvedAction(match, continuationActorSeatNumber, continuationBoxId);
+    return;
+  }
+
+  if (pendingAction.responseMode === "per_target") {
+    if (pendingAction.responders.every((candidate) => candidate.state !== "pending")) {
+      finalizePendingAction(match);
+    } else {
+      refreshSeatSummaries(match);
+      autoRespondIfNeeded(match);
+    }
+    return;
+  }
+
+  if (pendingAction.responders.every((candidate) => candidate.state !== "pending")) {
+    resolvePendingAction(match);
+  } else {
+    refreshSeatSummaries(match);
+    autoRespondIfNeeded(match);
+  }
+}
+
 function resolvePendingActionContinuation(
   match: StoredMatchState,
   pendingAction: StoredPendingActionState
@@ -4528,8 +4603,7 @@ function resolvePendingActionContinuation(
     return false;
   }
 
-  checkForWinner(match);
-  if (match.status === "finished") {
+  if (checkForWinner(match)) {
     refreshSeatSummaries(match);
     return true;
   }
@@ -5052,7 +5126,7 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
 
     resolvePerTargetResponder(match, currentResponder);
-    if (game.pendingObjectChoice != null || game.pendingPickpocket != null) {
+    if (game.pendingDeathSearch != null || game.pendingObjectChoice != null || game.pendingPickpocket != null) {
       refreshSeatSummaries(match);
       return;
     }
@@ -5673,7 +5747,7 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
 
   if (pendingAction.responseMode === "per_target") {
     resolvePerTargetResponder(match, responder);
-    if (game.pendingObjectChoice != null || game.pendingPickpocket != null) {
+    if (game.pendingDeathSearch != null || game.pendingObjectChoice != null || game.pendingPickpocket != null) {
       refreshSeatSummaries(match);
       return;
     }
@@ -5703,6 +5777,11 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
     } else {
       refreshSeatSummaries(match);
       autoRespondIfNeeded(match);
+    }
+
+    if (game.pendingDeathSearch != null) {
+      refreshSeatSummaries(match);
+      return;
     }
   }
 }
@@ -5930,7 +6009,7 @@ export function resolvePendingDeathSearch(
       `Seat ${chooserSeat.seatNumber} declined ${requireDefinition(pendingDeathSearch.sourceCard.cardId).name}; card kept in hand`
     );
     game.pendingDeathSearch = undefined;
-    finalizeResolvedAction(match, continuationActorSeatNumber, continuationBoxId);
+    resumeAfterDeathSearch(match, continuationActorSeatNumber, continuationBoxId);
     return;
   }
 
@@ -5998,7 +6077,7 @@ export function resolvePendingDeathSearch(
   const continuationActorSeatNumber = pendingDeathSearch.continuationActorSeatNumber ?? chooserSeat.seatNumber;
   const continuationBoxId = pendingDeathSearch.continuationBoxId;
   game.pendingDeathSearch = undefined;
-  finalizeResolvedAction(match, continuationActorSeatNumber, continuationBoxId);
+  resumeAfterDeathSearch(match, continuationActorSeatNumber, continuationBoxId);
 }
 
 export function resolvePendingPickpocket(
@@ -6663,14 +6742,8 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
     }
 
     // Don't play a résistance diminuée card unless the hand has an attack that benefits from it
-    if (handCard.cardId.startsWith("resistance-diminuee-")) {
-      const hasResistableFollowUp = seatState.hand.some((other) =>
-        other.instanceId !== handCard.instanceId
-        && requireDefinition(other.cardId).rules.requiresResistanceCheck
-      );
-      if (!hasResistableFollowUp) {
-        continue;
-      }
+    if (isResistanceDiminueeCard(handCard.cardId) && !hasPlayableResistanceReductionFollowUp(match, seatNumber, handCard.instanceId)) {
+      continue;
     }
 
     const request: PlayCardRequest = {

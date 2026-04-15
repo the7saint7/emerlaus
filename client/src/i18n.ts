@@ -725,6 +725,7 @@ function localizeCardDisabledReason(reason: string | undefined, language: AppLan
     "This forced follow-up must target the paralyzed opponent": "Cette riposte forcee doit viser l'adversaire paralyse.",
     "Counter cards are only used as reactions": "Les cartes de contre ne peuvent etre utilisees qu'en reaction.",
     "This card requires another card in hand": "Cette carte exige une autre carte en main.",
+    "This card requires a follow-up card that allows resistance": "Cette carte exige une carte de suivi qui permet une resistance.",
     "No valid opponent target": "Aucune cible adverse valide.",
     "The target opponent must have at least one object on the table": "L'adversaire cible doit avoir au moins un objet sur la table.",
     "No valid target": "Aucune cible valide.",
