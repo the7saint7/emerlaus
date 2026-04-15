@@ -493,26 +493,25 @@ function buildHandLayouts(
       return modifiers;
     }
 
+    const anglePerCard = total <= 1 ? 0 : (spread / (total - 1)) * (Math.PI / 180);
+    const naturalSpacing = Math.sin(anglePerCard) * radius;
+    const flatOffset = Math.max(0, (width / 2) * 1.75 + (width / 2) * 1.25 - naturalSpacing - 20);
+
     for (let index = 0; index < hand.length; index += 1) {
       const distance = index - focusIndex;
       const absDistance = Math.abs(distance);
       if (distance === 0) {
         modifiers.set(hand[index]!.instanceId, {
           offsetX: 0,
-          offsetY: -115,
+          offsetY: -210,
           scale: 1.75
         });
         continue;
       }
 
       const direction = Math.sign(distance);
-      const spreadOffset =
-        absDistance === 1 ? 76
-        : absDistance === 2 ? 46
-        : 22;
-
       modifiers.set(hand[index]!.instanceId, {
-        offsetX: direction * spreadOffset,
+        offsetX: direction * flatOffset,
         offsetY: absDistance === 1 ? 6 : 0,
         scale: 1.25
       });
