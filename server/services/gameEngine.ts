@@ -2770,6 +2770,8 @@ function resolvePersistentOwnerTurnMassDamageTick(
     });
     applyDamage(match, targetSeatNumber, roll.total, definition, false, actionBoxId, ownerSeatNumber);
   }
+
+  checkForWinner(match);
 }
 
 function consumeHandCardsById(source: StoredCardInstance[], cardId: string, count: number): StoredCardInstance[] {
@@ -3565,6 +3567,10 @@ function resolvePersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, s
   for (const status of persistentStatuses) {
     const definition = requireDefinition(status.cardId);
     resolvePersistentOwnerTurnMassDamageTick(match, seatNumber, definition, status);
+
+    if (match.status === "finished") {
+      return;
+    }
 
     const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
     if (nextRemainingTurnTriggers > 0) {
