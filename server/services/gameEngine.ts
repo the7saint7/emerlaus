@@ -3905,7 +3905,10 @@ function buildPendingObjectChoicePublicState(match: StoredMatchState): GameState
     cardName: sourceDefinition.name,
     prompt,
     objectOptions: owner.objects
-      .filter((objectCard) => objectMatchesAllowedSlots(objectCard.cardId, allowedSlots))
+      .filter((objectCard) =>
+        objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
+        && (!isRingDiscard || objectCard.instanceId !== pendingObjectChoice.sourceCard.instanceId)
+      )
       .map((objectCard) =>
       buildCardView(objectCard, requireDefinition(objectCard.cardId), "object", false)
     )
