@@ -274,6 +274,37 @@ export interface ForcedFollowUpState {
   consumeMode?: boolean;
 }
 
+export interface SeatSessionStats {
+  seatNumber: number;
+  damageDealt: number;
+  damageTaken: number;
+  healingDone: number;
+  healingReceived: number;
+  biggestHit: number;
+  biggestHeal: number;
+  kills: number;
+  cardsPlayed: number;
+  activeCardsPlayed: number;
+  inactiveCardsPlayed: number;
+  responseCardsPlayed: number;
+  objectsWorn: number;
+  longestObjectHoldTurns: number;
+  longestObjectHoldCardName: string | null;
+  resistAttempts: number;
+  resistSuccesses: number;
+  resistCriticalSuccesses: number;
+  resistFatalFailures: number;
+  luckyRolls: number;
+  unluckyRolls: number;
+  neutralRolls: number;
+  timesTargeted: number;
+  lowestHpSurvived: number | null;
+}
+
+export interface MatchSessionStats {
+  seatStats: SeatSessionStats[];
+}
+
 export interface GameState {
   turnNumber: number;
   currentTurnSeatNumber: number;
@@ -296,6 +327,7 @@ export interface GameState {
   pendingSacrificeChoice?: PendingSacrificeChoiceState;
   pendingCurseRelease?: PendingCurseReleaseState;
   forcedFollowUp?: ForcedFollowUpState;
+  sessionStats: MatchSessionStats;
   winnerSeatNumber?: number;
 }
 

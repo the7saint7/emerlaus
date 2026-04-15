@@ -21,7 +21,7 @@ import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
 import { buildEventLogEntries, type EventLogEntry } from "../render/eventLog";
 import { allCardDefinitions } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
-import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatState } from "../../../shared/types";
+import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatSessionStats, SeatState } from "../../../shared/types";
 
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
@@ -198,6 +198,14 @@ interface ActiveCombatFxState {
   seatNumber?: number;
 }
 
+type SeatResistancePillOutcome = "full" | "resist" | "half" | "fail" | "fail_double";
+
+interface SeatResistancePillState {
+  boxId: string;
+  outcome: SeatResistancePillOutcome;
+  updatedAt: number;
+}
+
 interface FloatingBurstState {
   amount: number;
   startedAt: number;
@@ -255,11 +263,27 @@ interface OpponentCursorState {
   ts: number;
 }
 
+interface TurnPastilleAnimationState {
+  displayedSeatNumber: number | null;
+  transitionFromSeatNumber: number | null;
+  transitionToSeatNumber: number | null;
+  transitionStartedAt: number;
+  transitionDurationMs: number;
+}
+
+interface TurnPastilleRenderState {
+  x: number;
+  y: number;
+  progress: number;
+  animating: boolean;
+}
+
 const loadedTextureByUrl = new Map<string, Texture>();
 const requestedTextureUrls = new Set<string>();
 const HAND_DRAG_START_DISTANCE = 16;
 const CURSOR_THROTTLE_MS = 50;
 const GHOST_TIMEOUT_MS = 500;
+const TURN_PASTILLE_MOVE_MS = 540;
 
 function createRect(x: number, y: number, width: number, height: number, color: string, alpha = 1, radius = 0): Graphics {
   const rect = new Graphics();
@@ -346,6 +370,96 @@ function fitText(text: string, maxPx: number, fontSize: number): string {
   const maxChars = Math.floor(maxPx / charPx);
   if (text.length <= maxChars) return text;
   return text.slice(0, Math.max(1, maxChars - 1)) + "…";
+}
+
+function cardCanHalfResist(cardId: string | undefined): boolean {
+  if (cardId == null) {
+    return false;
+  }
+
+  const definition = allCardDefinitions.find((candidate) => candidate.id === cardId);
+  if (definition == null) {
+    return false;
+  }
+
+  return definition.defenseBand?.resistance.color === "yellow"
+    || definition.rules.effects.some((effect) =>
+      effect.type === "damage" && effect.grantsHalfDamageOnResistance === true
+    );
+}
+
+function getSeatResistancePillLabel(outcome: SeatResistancePillOutcome, language: AppLanguage): string {
+  if (language === "fr") {
+    switch (outcome) {
+      case "full":
+        return "TOTAL";
+      case "resist":
+        return "RESISTE";
+      case "half":
+        return "RESISTE 1/2";
+      case "fail":
+        return "RATE";
+      case "fail_double":
+        return "RATE x2";
+    }
+  }
+
+  switch (outcome) {
+    case "full":
+      return "FULL";
+    case "resist":
+      return "RESIST";
+    case "half":
+      return "RESIST 1/2";
+    case "fail":
+      return "FAIL";
+    case "fail_double":
+      return "FAIL x2";
+  }
+}
+
+function getSeatResistancePillColors(outcome: SeatResistancePillOutcome): { fill: string; text: string; shadow: string } {
+  switch (outcome) {
+    case "full":
+      return { fill: "#1f8f8d", text: "#effffd", shadow: "#0d2f30" };
+    case "resist":
+      return { fill: "#2f6fbe", text: "#eef5ff", shadow: "#122846" };
+    case "half":
+      return { fill: "#b9862f", text: "#fff8e9", shadow: "#3f2910" };
+    case "fail":
+      return { fill: "#a43f45", text: "#fff2f2", shadow: "#391317" };
+    case "fail_double":
+      return { fill: "#701820", text: "#fff0f1", shadow: "#26070b" };
+  }
+}
+
+function renderSeatResistancePill(
+  scene: Container,
+  seatRect: RectGeometry,
+  isLocalSeat: boolean,
+  pill: SeatResistancePillState,
+  language: AppLanguage
+): void {
+  const label = getSeatResistancePillLabel(pill.outcome, language);
+  const colors = getSeatResistancePillColors(pill.outcome);
+  const pillHeight = isLocalSeat ? 34 : 28;
+  const pillWidth = Math.max(isLocalSeat ? 92 : 78, Math.min(isLocalSeat ? 156 : 140, 28 + label.length * (isLocalSeat ? 9 : 8)));
+  const pillX = isLocalSeat
+    ? seatRect.x + seatRect.width - pillWidth - 18
+    : seatRect.x + (seatRect.width - pillWidth) / 2;
+  const pillY = isLocalSeat
+    ? seatRect.y - pillHeight - 10
+    : seatRect.y - pillHeight - 12;
+  const radius = pillHeight / 2;
+
+  scene.addChild(createRect(pillX, pillY + 2, pillWidth, pillHeight, colors.shadow, 0.58, radius));
+  scene.addChild(createRect(pillX, pillY, pillWidth, pillHeight, colors.fill, 0.98, radius));
+  scene.addChild(createLabel(label, pillX + pillWidth / 2, pillY + pillHeight / 2, {
+    fontSize: isLocalSeat ? 15 : 13,
+    fontWeight: "700",
+    fill: colors.text,
+    letterSpacing: 0.5
+  }, 0.5, 0.5));
 }
 
 function computeStageMetrics(hostElement: HTMLElement): PixiStageMetrics {
@@ -867,6 +981,396 @@ function easeOutCubic(progress: number): number {
   return 1 - Math.pow(1 - progress, 3);
 }
 
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function easeInOutCubic(progress: number): number {
+  const clamped = clamp01(progress);
+  return clamped < 0.5
+    ? 4 * clamped * clamped * clamped
+    : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
+}
+
+function lerp(start: number, end: number, progress: number): number {
+  return start + (end - start) * progress;
+}
+
+function getTurnPastilleAnchor(
+  seatNumber: number,
+  localSeatNumber: number,
+  seatRects: Map<number, RectGeometry>
+): StagePoint | null {
+  const rect = seatRects.get(seatNumber);
+  if (rect == null) {
+    return null;
+  }
+
+  if (seatNumber === localSeatNumber) {
+    return {
+      x: rect.x + 72,
+      y: rect.y + rect.height / 2
+    };
+  }
+
+  return {
+    x: rect.x + 32,
+    y: rect.y + rect.height / 2
+  };
+}
+
+function getTurnPastilleRenderState(
+  now: number,
+  localSeatNumber: number,
+  seatRects: Map<number, RectGeometry>,
+  turnPastilleState: TurnPastilleAnimationState
+): TurnPastilleRenderState | null {
+  const activeSeatNumber = turnPastilleState.transitionToSeatNumber ?? turnPastilleState.displayedSeatNumber;
+  if (activeSeatNumber == null) {
+    return null;
+  }
+
+  const targetAnchor = getTurnPastilleAnchor(activeSeatNumber, localSeatNumber, seatRects);
+  if (targetAnchor == null) {
+    return null;
+  }
+
+  if (turnPastilleState.transitionToSeatNumber == null || turnPastilleState.transitionFromSeatNumber == null) {
+    return {
+      x: targetAnchor.x,
+      y: targetAnchor.y,
+      progress: 1,
+      animating: false
+    };
+  }
+
+  const originAnchor = getTurnPastilleAnchor(turnPastilleState.transitionFromSeatNumber, localSeatNumber, seatRects);
+  if (originAnchor == null) {
+    return {
+      x: targetAnchor.x,
+      y: targetAnchor.y,
+      progress: 1,
+      animating: false
+    };
+  }
+
+  const progress = clamp01((now - turnPastilleState.transitionStartedAt) / turnPastilleState.transitionDurationMs);
+  const eased = easeInOutCubic(progress);
+  return {
+    x: lerp(originAnchor.x, targetAnchor.x, eased),
+    y: lerp(originAnchor.y, targetAnchor.y, eased) - Math.sin(progress * Math.PI) * 20,
+    progress,
+    animating: progress < 1
+  };
+}
+
+function renderTurnPastille(
+  scene: Container,
+  state: TurnPastilleRenderState,
+  insertIndex: number
+): void {
+  scene.addChildAt(createCircle(state.x, state.y, 54, "#8b6914", 1), Math.min(insertIndex, scene.children.length));
+}
+
+interface VictoryStatsSeatEntry {
+  seat: SeatState;
+  stats: SeatSessionStats;
+}
+
+interface VictoryAwardEntry {
+  key: string;
+  icon?: string;
+  label: string;
+  winner: SeatState;
+  value: string;
+  detail?: string;
+  tone?: "default" | "good" | "bad";
+}
+
+function getVictoryStatsSeatEntries(match: MatchState): VictoryStatsSeatEntry[] {
+  const seatByNumber = new Map(match.seats.map((seat) => [seat.seatNumber, seat]));
+  return (match.game?.sessionStats.seatStats ?? [])
+    .flatMap((stats) => {
+      const seat = seatByNumber.get(stats.seatNumber);
+      return seat == null ? [] : [{ seat, stats }];
+    });
+}
+
+function pickMaxVictoryEntry(
+  entries: VictoryStatsSeatEntry[],
+  selector: (entry: VictoryStatsSeatEntry) => number,
+  minValue = 1
+): VictoryStatsSeatEntry | null {
+  let winner: VictoryStatsSeatEntry | null = null;
+  let winnerValue = minValue - 1;
+
+  for (const entry of entries) {
+    const value = selector(entry);
+    if (value < minValue) {
+      continue;
+    }
+
+    if (
+      winner == null
+      || value > winnerValue
+      || (value === winnerValue && entry.seat.seatNumber < winner.seat.seatNumber)
+    ) {
+      winner = entry;
+      winnerValue = value;
+    }
+  }
+
+  return winner;
+}
+
+function pickMinVictoryEntry(
+  entries: VictoryStatsSeatEntry[],
+  selector: (entry: VictoryStatsSeatEntry) => number,
+  maxValue = -1
+): VictoryStatsSeatEntry | null {
+  let winner: VictoryStatsSeatEntry | null = null;
+  let winnerValue = maxValue + 1;
+
+  for (const entry of entries) {
+    const value = selector(entry);
+    if (value > maxValue) {
+      continue;
+    }
+
+    if (
+      winner == null
+      || value < winnerValue
+      || (value === winnerValue && entry.seat.seatNumber < winner.seat.seatNumber)
+    ) {
+      winner = entry;
+      winnerValue = value;
+    }
+  }
+
+  return winner;
+}
+
+function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabled: boolean): string {
+  if (!enabled || match.game?.sessionStats == null) {
+    return "";
+  }
+
+  const entries = getVictoryStatsSeatEntries(match);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const numberFormat = new Intl.NumberFormat(language === "fr" ? "fr-CA" : "en-US");
+  const turnLabel = language === "fr" ? "tour" : "turn";
+  const turnsLabel = language === "fr" ? "tours" : "turns";
+  const hpLabel = "HP";
+  const awards: VictoryAwardEntry[] = [];
+  const pushAward = (award: VictoryAwardEntry | null): void => {
+    if (award != null) {
+      awards.push(award);
+    }
+  };
+  const buildCountValue = (value: number, suffix?: string): string =>
+    suffix == null ? numberFormat.format(value) : `${numberFormat.format(value)} ${suffix}`;
+  const buildLuckScore = (entry: VictoryStatsSeatEntry): number =>
+    (entry.stats.luckyRolls - entry.stats.unluckyRolls)
+    + (entry.stats.resistCriticalSuccesses - entry.stats.resistFatalFailures);
+
+  const mostDamage = pickMaxVictoryEntry(entries, (entry) => entry.stats.damageDealt);
+  pushAward(mostDamage == null ? null : {
+    key: "most-damage",
+    icon: language === "fr" ? "🔥" : undefined,
+    label: language === "fr" ? "Machine à dégâts" : "Most Damage",
+    winner: mostDamage.seat,
+    value: buildCountValue(mostDamage.stats.damageDealt)
+  });
+
+  const biggestHit = pickMaxVictoryEntry(entries, (entry) => entry.stats.biggestHit);
+  pushAward(biggestHit == null ? null : {
+    key: "biggest-hit",
+    icon: language === "fr" ? "💥" : undefined,
+    label: language === "fr" ? "Le coup qui fesse le plus" : "Biggest Hit",
+    winner: biggestHit.seat,
+    value: buildCountValue(biggestHit.stats.biggestHit)
+  });
+
+  const mostHealing = pickMaxVictoryEntry(entries, (entry) => entry.stats.healingDone);
+  pushAward(mostHealing == null ? null : {
+    key: "most-healing",
+    icon: language === "fr" ? "❤️" : undefined,
+    label: language === "fr" ? "Le doc de service" : "Most Healing",
+    winner: mostHealing.seat,
+    value: buildCountValue(mostHealing.stats.healingDone)
+  });
+
+  const biggestHeal = pickMaxVictoryEntry(entries, (entry) => entry.stats.biggestHeal);
+  pushAward(biggestHeal == null ? null : {
+    key: "biggest-heal",
+    icon: language === "fr" ? "💉" : undefined,
+    label: language === "fr" ? "Le gros boost de vie" : "Biggest Heal",
+    winner: biggestHeal.seat,
+    value: buildCountValue(biggestHeal.stats.biggestHeal)
+  });
+
+  const mostCards = pickMaxVictoryEntry(entries, (entry) => entry.stats.cardsPlayed);
+  pushAward(mostCards == null ? null : {
+    key: "most-cards",
+    icon: language === "fr" ? "🃏" : undefined,
+    label: language === "fr" ? "Le spammeur officiel" : "Most Cards Played",
+    winner: mostCards.seat,
+    value: buildCountValue(mostCards.stats.cardsPlayed),
+    detail: `${numberFormat.format(mostCards.stats.activeCardsPlayed)} active / ${numberFormat.format(mostCards.stats.inactiveCardsPlayed)} inactive`
+  });
+
+  const mostResponses = pickMaxVictoryEntry(entries, (entry) => entry.stats.responseCardsPlayed);
+  pushAward(mostResponses == null ? null : {
+    key: "most-responses",
+    icon: language === "fr" ? "⚡" : undefined,
+    label: language === "fr" ? "Le p'tit vite sur le trigger" : "Most Responses Used",
+    winner: mostResponses.seat,
+    value: buildCountValue(mostResponses.stats.responseCardsPlayed)
+  });
+
+  const mostKills = pickMaxVictoryEntry(entries, (entry) => entry.stats.kills);
+  pushAward(mostKills == null ? null : {
+    key: "most-kills",
+    icon: language === "fr" ? "☠️" : undefined,
+    label: language === "fr" ? "Celui qui fait le ménage" : "Most Kills",
+    winner: mostKills.seat,
+    value: buildCountValue(mostKills.stats.kills)
+  });
+
+  const mostTargeted = pickMaxVictoryEntry(entries, (entry) => entry.stats.timesTargeted);
+  pushAward(mostTargeted == null ? null : {
+    key: "most-targeted",
+    icon: language === "fr" ? "🎯" : undefined,
+    label: language === "fr" ? "Cible numéro un" : "Most Targeted",
+    winner: mostTargeted.seat,
+    value: buildCountValue(mostTargeted.stats.timesTargeted)
+  });
+
+  const mostDamageTaken = pickMaxVictoryEntry(entries, (entry) => entry.stats.damageTaken);
+  pushAward(mostDamageTaken == null ? null : {
+    key: "most-damage-taken",
+    icon: language === "fr" ? "🛡️" : undefined,
+    label: language === "fr" ? "A tout encaissé" : "Most Damage Taken",
+    winner: mostDamageTaken.seat,
+    value: buildCountValue(mostDamageTaken.stats.damageTaken)
+  });
+
+  const mostObjects = pickMaxVictoryEntry(entries, (entry) => entry.stats.objectsWorn);
+  pushAward(mostObjects == null ? null : {
+    key: "most-objects",
+    icon: language === "fr" ? "🎒" : undefined,
+    label: language === "fr" ? "Pris tout ce qui traînait" : "Most Objects Worn",
+    winner: mostObjects.seat,
+    value: buildCountValue(mostObjects.stats.objectsWorn)
+  });
+
+  const longestObjectHold = pickMaxVictoryEntry(entries, (entry) => entry.stats.longestObjectHoldTurns);
+  pushAward(longestObjectHold == null ? null : {
+    key: "longest-object-hold",
+    icon: language === "fr" ? "📦" : undefined,
+    label: language === "fr" ? "Fidèle à son objet" : "Longest Object Hold",
+    winner: longestObjectHold.seat,
+    value: buildCountValue(
+      longestObjectHold.stats.longestObjectHoldTurns,
+      longestObjectHold.stats.longestObjectHoldTurns === 1 ? turnLabel : turnsLabel
+    ),
+    detail: longestObjectHold.stats.longestObjectHoldCardName ?? undefined
+  });
+
+  const lowestHpSurvived = entries
+    .filter((entry) => entry.stats.lowestHpSurvived != null)
+    .sort((left, right) => {
+      const leftHp = left.stats.lowestHpSurvived ?? Number.POSITIVE_INFINITY;
+      const rightHp = right.stats.lowestHpSurvived ?? Number.POSITIVE_INFINITY;
+      return leftHp - rightHp || left.seat.seatNumber - right.seat.seatNumber;
+    })[0] ?? null;
+  pushAward(lowestHpSurvived == null ? null : {
+    key: "closest-call",
+    icon: language === "fr" ? "💀" : undefined,
+    label: language === "fr" ? "Sauvé par la peau des fesses" : "Closest Call",
+    winner: lowestHpSurvived.seat,
+    value: `${numberFormat.format(lowestHpSurvived.stats.lowestHpSurvived ?? 0)} ${hpLabel}`
+  });
+
+  const resistanceCandidates = entries.filter((entry) => entry.stats.resistAttempts > 0);
+  const bestResistance = resistanceCandidates.sort((left, right) => {
+    const leftRate = left.stats.resistSuccesses / left.stats.resistAttempts;
+    const rightRate = right.stats.resistSuccesses / right.stats.resistAttempts;
+    return rightRate - leftRate
+      || right.stats.resistAttempts - left.stats.resistAttempts
+      || right.stats.resistSuccesses - left.stats.resistSuccesses
+      || left.seat.seatNumber - right.seat.seatNumber;
+  })[0] ?? null;
+  pushAward(bestResistance == null ? null : {
+    key: "best-resistance",
+    icon: language === "fr" ? "🧱" : undefined,
+    label: language === "fr" ? "Tank en esti" : "Best Resistance",
+    winner: bestResistance.seat,
+    value: `${numberFormat.format(Math.round((bestResistance.stats.resistSuccesses / bestResistance.stats.resistAttempts) * 100))}%`,
+    detail: `${numberFormat.format(bestResistance.stats.resistSuccesses)} / ${numberFormat.format(bestResistance.stats.resistAttempts)}`
+  });
+
+  const luckCandidates = entries.filter((entry) =>
+    entry.stats.luckyRolls > 0
+    || entry.stats.unluckyRolls > 0
+    || entry.stats.resistCriticalSuccesses > 0
+    || entry.stats.resistFatalFailures > 0
+  );
+  const highRoller = pickMaxVictoryEntry(luckCandidates, (entry) => buildLuckScore(entry), 1);
+  pushAward(highRoller == null ? null : {
+    key: "high-roller",
+    icon: language === "fr" ? "🎲" : undefined,
+    label: language === "fr" ? "Béni des dieux du RNG" : "High Roller",
+    winner: highRoller.seat,
+    value: `${buildLuckScore(highRoller) > 0 ? "+" : ""}${numberFormat.format(buildLuckScore(highRoller))}`,
+    detail: `+${numberFormat.format(highRoller.stats.luckyRolls)} / -${numberFormat.format(highRoller.stats.unluckyRolls)}`,
+    tone: "good"
+  });
+
+  const unluckiest = pickMinVictoryEntry(luckCandidates, (entry) => buildLuckScore(entry), -1);
+  pushAward(unluckiest == null ? null : {
+    key: "unluckiest",
+    icon: language === "fr" ? "💀" : undefined,
+    label: language === "fr" ? "Le sort s'acharnait" : "Unluckiest",
+    winner: unluckiest.seat,
+    value: `${buildLuckScore(unluckiest) > 0 ? "+" : ""}${numberFormat.format(buildLuckScore(unluckiest))}`,
+    detail: `+${numberFormat.format(unluckiest.stats.luckyRolls)} / -${numberFormat.format(unluckiest.stats.unluckyRolls)}`,
+    tone: "bad"
+  });
+
+  if (awards.length === 0) {
+    return "";
+  }
+
+  return `
+    <section class="victory-stats" aria-label="${escapeHtml(language === "fr" ? "Statistiques de partie" : "Match statistics")}">
+      <div class="victory-stats__header">
+        <strong>${escapeHtml(language === "fr" ? "Statistiques de la partie" : "Match Highlights")}</strong>
+        <span>${escapeHtml(language === "fr" ? "Resume de la session" : "Session recap")}</span>
+      </div>
+      <div class="victory-stats__grid">
+        ${awards.map((award) => `
+          <article class="victory-stat victory-stat--${award.tone ?? "default"}" data-award-key="${award.key}">
+            <span class="victory-stat__label">
+              ${award.icon == null ? "" : `<span class="victory-stat__label-icon" aria-hidden="true">${escapeHtml(award.icon)}</span>`}
+              <span class="victory-stat__label-text">${escapeHtml(award.label)}</span>
+            </span>
+            <div class="victory-stat__winner-row">
+              <img class="victory-stat__avatar" src="${award.winner.avatarUrl}" alt="${escapeHtml(award.winner.displayName)}" />
+              <strong class="victory-stat__winner">${escapeHtml(award.winner.displayName)}</strong>
+            </div>
+            <span class="victory-stat__value">${escapeHtml(award.value)}</span>
+            ${award.detail == null ? "" : `<span class="victory-stat__detail">${escapeHtml(award.detail)}</span>`}
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function buildVictoryCelebrationMarkup(match: MatchState, language: AppLanguage, enabled: boolean): string {
   if (!enabled) {
     return "";
@@ -929,6 +1433,7 @@ function buildVictoryCelebrationMarkup(match: MatchState, language: AppLanguage,
           </div>
         `;
       }).join("")}
+      ${buildVictoryStatsMarkup(match, language, enabled)}
     </div>
   `;
 }
@@ -1185,6 +1690,8 @@ function renderTableScene(
   localSeatNumber: number,
   language: AppLanguage,
   presentationLockActive: boolean,
+  displayedTurnSeatNumber: number | null,
+  turnPastilleState: TurnPastilleAnimationState,
   activeActionVisual: ActiveActionVisualState | null,
   centerResponseCards: CardView[],
   interactionState: PixiInteractionState,
@@ -1194,6 +1701,7 @@ function renderTableScene(
   activeDamageBursts: Record<number, FloatingBurstState>,
   activeHealBursts: Record<number, FloatingBurstState>,
   activeImpactFlashes: Record<number, ImpactFlashState>,
+  seatResistancePills: Record<number, SeatResistancePillState>,
   activeCardFlights: CardFlightState[],
   activePlaybackArrows: PlaybackArrowState[],
   opponentCursors: Record<number, OpponentCursorState>,
@@ -1206,7 +1714,7 @@ function renderTableScene(
   const localSeat = getLocalSeat(match, localSeatNumber);
   const opponents = getOpponentSeats(match, localSeatNumber);
   const anchors = getOpponentAnchorsForPlayerCount(match.seats.length);
-  const currentTurnSeatNumber = presentationLockActive ? undefined : match.game?.currentTurnSeatNumber;
+  const currentTurnSeatNumber = displayedTurnSeatNumber ?? undefined;
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
   const lastPlayedCard = match.game?.lastPlayedCard?.card;
   const centerSlotTopY = pendingAction == null ? 292 : 302;
@@ -1250,6 +1758,7 @@ function renderTableScene(
   scene.addChild(createCircle(STAGE_WIDTH / 2, STAGE_HEIGHT / 2, 260, "#2d7a3d", 0.4));
   scene.addChild(createCircle(STAGE_WIDTH / 2, STAGE_HEIGHT / 2, 180, "#0e2314", 0.32));
   scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#101812", 0.56, 34));
+  const turnPastilleInsertIndex = scene.children.length;
   if (localSeat != null && localSeat.seatNumber === currentTurnSeatNumber) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 700);
     // Outer layer: warm gold across the full width
@@ -1401,6 +1910,11 @@ function renderTableScene(
     inspectTargets.push(...localObjectRow.inspectTargets);
   }
 
+  const turnPastilleRenderState = getTurnPastilleRenderState(now, localSeatNumber, seatRects, turnPastilleState);
+  if (turnPastilleRenderState != null) {
+    renderTurnPastille(scene, turnPastilleRenderState, turnPastilleInsertIndex);
+  }
+
   for (const [seatNumber, rect] of seatRects.entries()) {
     const impactFlash = activeImpactFlashes[seatNumber];
     if (impactFlash != null) {
@@ -1416,6 +1930,11 @@ function renderTableScene(
         0.08 + pulse * 0.12,
         28 + pulse * 8
       ));
+    }
+
+    const resistancePill = seatResistancePills[seatNumber];
+    if (resistancePill != null) {
+      renderSeatResistancePill(scene, rect, seatNumber === localSeatNumber, resistancePill, language);
     }
 
     const damageBurst = activeDamageBursts[seatNumber];
@@ -2745,6 +3264,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let displayedHpBySeat: Record<number, number> = {};
   let displayedSeatsBySeat: Record<number, SeatState> = {};
   let preUpdateLocalizedSeatsBySeat: Record<number, SeatState> = {};
+  let seatResistancePills: Record<number, SeatResistancePillState> = {};
   let batonLoadHoverTs: number | null = null;
   let activeImpactFlashes: Record<number, ImpactFlashState> = {};
   let activeCardFlights: CardFlightState[] = [];
@@ -2771,6 +3291,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let seenEventMessageIds = new Set(buildEventLogEntries(match, language).map((entry) => entry.id));
   let eventReplayChain: Promise<void> = Promise.resolve();
   const pendingActionPlaybackSnapshots = new Map<string, PendingActionPlaybackSnapshot>();
+  const actionCardIdByBox = new Map<string, string>();
   let syncInFlight = false;
   let syncQueued = false;
   let pollInterval: number | null = null;
@@ -2780,6 +3301,184 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let victoryRevealTimer: number | null = null;
   let victoryRevealWinnerSeatNumber: number | null = null;
   let opponentCursors: Record<number, OpponentCursorState> = {};
+  let turnPastilleState: TurnPastilleAnimationState = {
+    displayedSeatNumber: match.game?.currentTurnSeatNumber ?? null,
+    transitionFromSeatNumber: null,
+    transitionToSeatNumber: null,
+    transitionStartedAt: 0,
+    transitionDurationMs: TURN_PASTILLE_MOVE_MS
+  };
+
+  const syncLocalSeatNumberFromMatch = (nextMatch: MatchState): void => {
+    const resolvedSeatNumber = nextMatch.seats.find((seat) => seat.userId === session.currentUser.userId)?.seatNumber;
+    if (resolvedSeatNumber == null || resolvedSeatNumber === localSeatNumber) {
+      return;
+    }
+
+    localSeatNumber = resolvedSeatNumber;
+    targetHintDismissed = false;
+    opponentCursors = {};
+    clearInteractionState();
+  };
+
+  const rememberActionCardId = (boxId: string | undefined, cardId: string | undefined): void => {
+    if (boxId == null || cardId == null) {
+      return;
+    }
+
+    actionCardIdByBox.set(boxId, cardId);
+    while (actionCardIdByBox.size > 32) {
+      const oldestKey = actionCardIdByBox.keys().next().value;
+      if (oldestKey == null) {
+        break;
+      }
+      actionCardIdByBox.delete(oldestKey);
+    }
+  };
+
+  const setSeatResistancePill = (
+    seatNumber: number | undefined,
+    boxId: string | undefined,
+    outcome: SeatResistancePillOutcome
+  ): void => {
+    if (seatNumber == null || boxId == null) {
+      return;
+    }
+
+    seatResistancePills = {
+      ...seatResistancePills,
+      [seatNumber]: {
+        boxId,
+        outcome,
+        updatedAt: Date.now()
+      }
+    };
+  };
+
+  const clearSeatResistancePill = (seatNumber: number | undefined, boxId?: string): void => {
+    if (seatNumber == null) {
+      return;
+    }
+
+    const pill = seatResistancePills[seatNumber];
+    if (pill == null || (boxId != null && pill.boxId !== boxId)) {
+      return;
+    }
+
+    const nextPills = { ...seatResistancePills };
+    delete nextPills[seatNumber];
+    seatResistancePills = nextPills;
+  };
+
+  const clearSeatResistancePillsForBox = (boxId: string | null): void => {
+    if (boxId == null) {
+      return;
+    }
+
+    const nextPills: Record<number, SeatResistancePillState> = {};
+    let changed = false;
+    for (const [seatNumber, pill] of Object.entries(seatResistancePills)) {
+      if (pill.boxId === boxId) {
+        changed = true;
+        continue;
+      }
+      nextPills[Number(seatNumber)] = pill;
+    }
+
+    if (changed) {
+      seatResistancePills = nextPills;
+    }
+  };
+
+  const getSeatResistanceOutcome = (event: CombatPresentationEvent): SeatResistancePillOutcome | null => {
+    if (event.boxId == null) {
+      return null;
+    }
+
+    if (event.success === false) {
+      return event.fatalFailure ? "fail_double" : "fail";
+    }
+
+    if (event.criticalSuccess) {
+      return "full";
+    }
+
+    return cardCanHalfResist(actionCardIdByBox.get(event.boxId)) ? "half" : "resist";
+  };
+
+  const resetTurnPastilleState = (seatNumber: number | null): void => {
+    turnPastilleState = {
+      displayedSeatNumber: seatNumber,
+      transitionFromSeatNumber: null,
+      transitionToSeatNumber: null,
+      transitionStartedAt: 0,
+      transitionDurationMs: TURN_PASTILLE_MOVE_MS
+    };
+  };
+
+  const resolveDisplayedTurnSeatNumber = (presentationLockActive: boolean): number | null => {
+    if (match.status !== "in_progress") {
+      return null;
+    }
+
+    if (activeActionVisual != null) {
+      return activeActionVisual.actorSeatNumber;
+    }
+
+    if (presentationLockActive) {
+      return turnPastilleState.transitionToSeatNumber ?? turnPastilleState.displayedSeatNumber;
+    }
+
+    return match.game?.currentTurnSeatNumber ?? null;
+  };
+
+  const syncTurnPastilleTarget = (seatNumber: number | null): void => {
+    if (seatNumber == null) {
+      resetTurnPastilleState(null);
+      return;
+    }
+
+    const activeSeatNumber = turnPastilleState.transitionToSeatNumber ?? turnPastilleState.displayedSeatNumber;
+    if (activeSeatNumber == null) {
+      resetTurnPastilleState(seatNumber);
+      return;
+    }
+
+    if (activeSeatNumber === seatNumber) {
+      if (turnPastilleState.transitionToSeatNumber == null && turnPastilleState.displayedSeatNumber !== seatNumber) {
+        turnPastilleState.displayedSeatNumber = seatNumber;
+      }
+      return;
+    }
+
+    turnPastilleState = {
+      displayedSeatNumber: turnPastilleState.transitionToSeatNumber ?? turnPastilleState.displayedSeatNumber,
+      transitionFromSeatNumber: turnPastilleState.transitionToSeatNumber ?? turnPastilleState.displayedSeatNumber,
+      transitionToSeatNumber: seatNumber,
+      transitionStartedAt: Date.now(),
+      transitionDurationMs: TURN_PASTILLE_MOVE_MS
+    };
+  };
+
+  const advanceTurnPastilleAnimation = (): boolean => {
+    if (turnPastilleState.transitionToSeatNumber == null) {
+      return false;
+    }
+
+    const progress = (Date.now() - turnPastilleState.transitionStartedAt) / turnPastilleState.transitionDurationMs;
+    if (progress < 1) {
+      return true;
+    }
+
+    turnPastilleState = {
+      displayedSeatNumber: turnPastilleState.transitionToSeatNumber,
+      transitionFromSeatNumber: null,
+      transitionToSeatNumber: null,
+      transitionStartedAt: 0,
+      transitionDurationMs: TURN_PASTILLE_MOVE_MS
+    };
+    return false;
+  };
 
   const cleanupScene = (): void => {
     const children = scene.removeChildren();
@@ -3297,6 +3996,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return;
     }
 
+    rememberActionCardId(pendingAction.boxId, pendingAction.card.cardId);
+
     const responderCardsBySeat: Record<number, CardView[]> = {};
     for (const responder of pendingAction.responders) {
       const responseCards = responder.cards ?? (responder.card == null ? [] : [responder.card]);
@@ -3469,9 +4170,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           arcHeight: 54,
           rotationFrom: 0.04,
           rotationTo: -0.08
-        }));
-      }
+      }));
     }
+  }
 
     if (outgoingFlights.length > 0) {
       await Promise.all(outgoingFlights);
@@ -3706,7 +4407,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       .catch(() => undefined)
       .then(async () => {
         const lastDiceTotalBySeat = new Map<number, number>();
+        let activeReplayBoxId: string | null = null;
         for (const event of replayableEvents) {
+          const eventBoxId = "boxId" in event ? event.boxId ?? null : null;
+          if (activeReplayBoxId != null && eventBoxId != null && eventBoxId !== activeReplayBoxId) {
+            clearSeatResistancePillsForBox(activeReplayBoxId);
+            redraw();
+          }
+          if (eventBoxId != null) {
+            activeReplayBoxId = eventBoxId;
+          }
+
           if (event.type === "dice_roll") {
             if (event.seatNumber != null) {
               lastDiceTotalBySeat.set(event.seatNumber, event.total);
@@ -3716,6 +4427,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           }
 
           if (event.type === "action_start") {
+            rememberActionCardId(event.boxId, event.card.cardId);
             await replayActionStartPresentation(event);
             continue;
           }
@@ -3741,6 +4453,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           }
 
           if (event.type === "resistance_result") {
+            const resistanceOutcome = getSeatResistanceOutcome(event);
+            if (resistanceOutcome != null) {
+              setSeatResistancePill(event.seatNumber, event.boxId, resistanceOutcome);
+              redraw();
+            }
             const diceTotal = event.seatNumber != null ? lastDiceTotalBySeat.get(event.seatNumber) : undefined;
             const totalStr = diceTotal != null ? String(diceTotal) : "?";
             const message = event.success === false
@@ -3790,6 +4507,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
                   (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
                 - (event.amount ?? 0);
             }
+            clearSeatResistancePill(event.seatNumber, event.boxId);
+            redraw();
             await showCombatFx(
               t(language, "combat.tookDamage", {
                 playerName: getSeatDisplayName(event.seatNumber),
@@ -3827,6 +4546,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             );
           }
         }
+        clearSeatResistancePillsForBox(activeReplayBoxId);
         eventPlaybackActive = false;
         displayedHpBySeat = {};
         displayedSeatsBySeat = {};
@@ -3842,6 +4562,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         }
       })
       .catch(() => {
+        seatResistancePills = {};
         eventPlaybackActive = false;
         displayedHpBySeat = {};
         displayedSeatsBySeat = {};
@@ -4118,6 +4839,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const nextMatch = await playCard(session.instanceId, playerSessionToken, request);
       rememberPendingActionSnapshot(nextMatch);
       match = nextMatch;
+      syncLocalSeatNumberFromMatch(nextMatch);
       errorMessage = "";
       confirmingDiscardCardInstanceId = "";
       syncConsumePreview();
@@ -4138,6 +4860,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const nextMatch = await respondToPendingAction(session.instanceId, playerSessionToken, request);
       rememberPendingActionSnapshot(nextMatch);
       match = nextMatch;
+      syncLocalSeatNumberFromMatch(nextMatch);
       errorMessage = "";
       pendingAnnulationChoice = null;
       updateVictoryCelebrationState();
@@ -4153,6 +4876,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     if (destroyed) {
       return;
     }
+
+    syncLocalSeatNumberFromMatch(match);
 
     currentMetrics = computeStageMetrics(hostElement);
     app.renderer.resize(Math.max(1, hostElement.clientWidth), Math.max(1, hostElement.clientHeight));
@@ -4180,12 +4905,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     const handFocusBlend = getHandFocusBlendState();
     cleanupScene();
     const presentationLockActive = eventPlaybackActive || hasUnseenReplayableEvents();
+    const displayedTurnSeatNumber = resolveDisplayedTurnSeatNumber(presentationLockActive);
+    syncTurnPastilleTarget(displayedTurnSeatNumber);
+    const turnPastilleAnimating = advanceTurnPastilleAnimation();
     if (leftMessage !== "") {
+      resetTurnPastilleState(null);
       pendingAnnulationChoice = null;
       activeCombatFx = null;
       activeDamageBursts = {};
       activeHealBursts = {};
       activeImpactFlashes = {};
+      seatResistancePills = {};
       activeCardFlights = [];
       activePlaybackArrows = [];
       eventPlaybackActive = false;
@@ -4216,11 +4946,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }, 0.5, 0.5));
       currentGeometry = null;
     } else if (localizedMatch.status === "lobby") {
+      resetTurnPastilleState(null);
       pendingAnnulationChoice = null;
       activeCombatFx = null;
       activeDamageBursts = {};
       activeHealBursts = {};
       activeImpactFlashes = {};
+      seatResistancePills = {};
       activeCardFlights = [];
       activePlaybackArrows = [];
       eventPlaybackActive = false;
@@ -4269,6 +5001,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         localSeatNumber,
         language,
         presentationLockActive,
+        displayedTurnSeatNumber,
+        turnPastilleState,
         activeActionVisual,
         centerResponseCards,
         interactionState,
@@ -4278,6 +5012,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         activeDamageBursts,
         activeHealBursts,
         activeImpactFlashes,
+        seatResistancePills,
         activeCardFlights,
         activePlaybackArrows,
         opponentCursors,
@@ -4370,7 +5105,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       && !presentationLockActive
       && match.game?.currentTurnSeatNumber === localSeatNumber;
 
-    if (handFocusTransition != null || combatVisualsActive || isLocalTurn || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
+    if (handFocusTransition != null || combatVisualsActive || turnPastilleAnimating || isLocalTurn || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
       scheduleRedraw();
     }
   };
@@ -4399,6 +5134,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         localizeMatchState(match, language).seats.map((s) => [s.seatNumber, s])
       );
       match = nextMatch;
+      syncLocalSeatNumberFromMatch(nextMatch);
       errorMessage = "";
       syncEventLogSeenState();
       syncPendingAnnulationChoice();

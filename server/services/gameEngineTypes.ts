@@ -3,6 +3,7 @@ import type {
   DebugLogEntry,
   DiceRollEvent,
   GameEvent,
+  MatchSessionStats,
   MatchState,
   PendingActionState,
   PendingActionResponderState,
@@ -80,6 +81,17 @@ export interface StoredExtraPlayModeState {
   temporaryResistanceModifier: number;
 }
 
+export interface StoredObjectOwnershipStatState {
+  objectInstanceId: string;
+  cardId: string;
+  ownerSeatNumber: number;
+  startedTurnNumber: number;
+}
+
+export interface StoredSessionStatRuntimeState {
+  activeObjectOwnerships: StoredObjectOwnershipStatState[];
+}
+
 export interface StoredGameState {
   deck: StoredCardInstance[];
   discardPile: StoredCardInstance[];
@@ -87,6 +99,8 @@ export interface StoredGameState {
   currentTurnSeatNumber: number;
   turnNumber: number;
   minimumHandSize: number;
+  sessionStats: MatchSessionStats;
+  sessionStatRuntime: StoredSessionStatRuntimeState;
   winnerSeatNumber?: number;
   lastPlayedCard?: PlayedCardState;
   diceRolls: DiceRollEvent[];
