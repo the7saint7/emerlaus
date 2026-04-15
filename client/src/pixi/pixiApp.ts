@@ -2840,7 +2840,6 @@ function buildOverlayMarkup(
       ? ""
       : (() => {
           const isLocalChooser = pendingDeathSearch.chooserSeatNumber === localSeatNumber;
-          const chooserSeat = match.seats.find((s) => s.seatNumber === pendingDeathSearch.chooserSeatNumber);
           const selectedCorpse = pendingDeathSearch.corpseOptions.find((c) => c.seatNumber === pendingDeathSearch.selectedCorpseSeatNumber);
           const selectedIdSet = new Set(deathSearchSelectedCardInstanceIds);
           const keepReady = deathSearchSelectedCardInstanceIds.length === pendingDeathSearch.keepCardCount;
@@ -2857,7 +2856,7 @@ function buildOverlayMarkup(
                       ? selectedCorpse == null
                         ? t(language, "deathSearch.chooseCorpseBody")
                         : t(language, "deathSearch.keepBody", { corpseName: selectedCorpse.displayName, count: pendingDeathSearch.keepCardCount })
-                      : t(language, "deathSearch.waitingBody", { chooserName: chooserSeat?.displayName ?? "" }))}</p>
+                      : t(language, "deathSearch.waitingBody"))}</p>
                   </div>
                   ${!isLocalChooser
                     ? ""
@@ -4107,7 +4106,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         }),
         "info",
         1000,
-        { seatNumber: event.actorSeatNumber }
+        { seatNumber: event.actorSeatNumber, showBanner: false }
       );
       return;
     }
@@ -4121,7 +4120,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }),
       "info",
       1000,
-      { seatNumber: event.actorSeatNumber }
+      { seatNumber: event.actorSeatNumber, showBanner: false }
     );
 
     if (actorStart != null) {
@@ -4206,7 +4205,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       t(language, key, { playerName: getSeatDisplayName(event.seatNumber) }),
       "info",
       900,
-      { seatNumber: event.seatNumber }
+      { seatNumber: event.seatNumber, showBanner: false }
     );
 
     if (event.responseChoice !== "pass" && event.seatNumber != null) {
@@ -4246,10 +4245,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       damageAmount?: number;
       healAmount?: number;
       impactTargetSeatNumber?: number;
+      showBanner?: boolean;
     }
   ): Promise<void> => {
     const startedAt = Date.now();
-    activeCombatFx = { message, tone, seatNumber: options?.seatNumber };
+    const showBanner = options?.showBanner ?? true;
+    if (showBanner) {
+      activeCombatFx = { message, tone, seatNumber: options?.seatNumber };
+    }
     if (options?.damageAmount != null && options.seatNumber != null) {
       activeDamageBursts[options.seatNumber] = {
         amount: options.damageAmount,
@@ -4274,7 +4277,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
     redraw();
     await delay(durationMs);
-    if (activeCombatFx?.message === message) {
+    if (showBanner && activeCombatFx?.message === message) {
       activeCombatFx = null;
     }
     if (options?.seatNumber != null && options.damageAmount != null && activeDamageBursts[options.seatNumber]?.startedAt === startedAt) {
@@ -4440,6 +4443,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             continue;
           }
 
+          revealEventLogEntriesForEvent(event);
+          redraw();
+
           if (event.type === "action_start") {
             rememberActionCardId(event.boxId, event.card.cardId);
             await replayActionStartPresentation(event);
@@ -4461,7 +4467,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
               }),
               "info",
               850,
-              { seatNumber: event.seatNumber }
+              { seatNumber: event.seatNumber, showBanner: false }
             );
             continue;
           }
@@ -4496,7 +4502,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
               message,
               event.success === false ? "failure" : "success",
               1100,
-              { seatNumber: event.seatNumber }
+              { seatNumber: event.seatNumber, showBanner: false }
             );
             continue;
           }
@@ -4509,7 +4515,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
               }),
               "failure",
               500,
-              { seatNumber: event.targetSeatNumber, impactTargetSeatNumber: event.targetSeatNumber }
+              {
+                seatNumber: event.targetSeatNumber,
+                impactTargetSeatNumber: event.targetSeatNumber,
+                showBanner: false
+              }
             );
             continue;
           }
@@ -4533,7 +4543,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
               {
                 seatNumber: event.seatNumber,
                 damageAmount: event.amount,
-                impactTargetSeatNumber: event.seatNumber
+                impactTargetSeatNumber: event.seatNumber,
+                showBanner: false
               }
             );
             continue;
@@ -4555,7 +4566,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
               1100,
               {
                 seatNumber: event.seatNumber,
-                healAmount: event.amount
+                healAmount: event.amount,
+                showBanner: false
               }
             );
           }
@@ -4672,7 +4684,37 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const syncEventLogSeenState = (): void => {
     const entries = buildEventLogEntries(match, language);
     for (const entry of entries) {
-      seenEventMessageIds.add(entry.id);
+      if (entry.id.startsWith("dealer:")) {
+        seenEventMessageIds.add(entry.id);
+      }
+    }
+  };
+
+  const revealEventLogEntriesForEvent = (event: GameEvent): void => {
+    switch (event.type) {
+      case "action_start":
+        seenEventMessageIds.add(`action:${event.id}`);
+        return;
+      case "response_choice":
+        seenEventMessageIds.add(`response:${event.id}`);
+        return;
+      case "resistance_start":
+        seenEventMessageIds.add(`resistance-start:${event.id}`);
+        return;
+      case "resistance_result":
+        seenEventMessageIds.add(`resistance:${event.id}`);
+        return;
+      case "attack_impact":
+        seenEventMessageIds.add(`impact:${event.id}`);
+        return;
+      case "hp_loss":
+        seenEventMessageIds.add(`damage:${event.id}`);
+        return;
+      case "hp_gain":
+        seenEventMessageIds.add(`heal:${event.id}`);
+        return;
+      default:
+        return;
     }
   };
 
