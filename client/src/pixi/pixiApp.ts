@@ -14,7 +14,7 @@ import {
   isSeatTargetable,
   objectCardMatchesSelectedTargeting
 } from "../gameplay/interactionRules";
-import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage } from "../i18n";
+import { getCardImageVariantUrl, getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage, type CardImageVariant } from "../i18n";
 import { diceController, type DiceStagePlacement } from "../features/dice/diceController";
 import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
@@ -774,7 +774,12 @@ function buildHandLayouts(
   });
 }
 
-function createCardFace(layout: HandCardLayout, dimmed: boolean, onTextureReady?: () => void): Container {
+function createCardFace(
+  layout: HandCardLayout,
+  dimmed: boolean,
+  imageVariant: CardImageVariant = "full",
+  onTextureReady?: () => void
+): Container {
   const cardContainer = new Container();
   cardContainer.position.set(layout.x, layout.y);
   cardContainer.rotation = layout.rotation;
@@ -785,8 +790,9 @@ function createCardFace(layout: HandCardLayout, dimmed: boolean, onTextureReady?
   const inner = createRect(-layout.width / 2 + 5, -layout.height / 2 + 5, layout.width - 10, layout.height - 10, "#271914", 1, 12);
   const artFrame = createRect(-layout.width / 2 + 8, -layout.height / 2 + 8, layout.width - 16, layout.height - 16, "#120f0d", 1, 10);
   const artContent = new Container();
+  const textureUrl = getCardTextureUrl(layout.card, imageVariant);
 
-  const texture = getLoadedTexture(layout.card.imageUrl);
+  const texture = getLoadedTexture(textureUrl);
   if (texture != null) {
     const sprite = new Sprite(texture);
     const fitted = fitSpriteToBox(texture, layout.width - 18, layout.height - 18);
@@ -796,7 +802,7 @@ function createCardFace(layout: HandCardLayout, dimmed: boolean, onTextureReady?
     sprite.height = fitted.height;
     artContent.addChild(sprite);
   } else {
-    requestTextureLoad(layout.card.imageUrl, onTextureReady ?? (() => {}));
+    requestTextureLoad(textureUrl, onTextureReady ?? (() => {}));
     artContent.addChild(createLabel("Loading", 0, 0, {
       fontSize: 12,
       fill: "#d4c7ac",
@@ -815,6 +821,7 @@ function createCenterCardFace(
   width: number,
   height: number,
   rotation = 0,
+  imageVariant: CardImageVariant = "thumb",
   onTextureReady?: () => void
 ): Container {
   const layout: HandCardLayout = {
@@ -828,7 +835,7 @@ function createCenterCardFace(
     zIndex: 0
   };
 
-  return createCardFace(layout, false, onTextureReady);
+  return createCardFace(layout, false, imageVariant, onTextureReady);
 }
 
 function createFlightCardFace(
@@ -842,7 +849,7 @@ function createFlightCardFace(
   onTextureReady?: () => void
 ): Container {
   if (card != null) {
-    const flightCard = createCenterCardFace(card, x, y, width, height, rotation, onTextureReady);
+    const flightCard = createCenterCardFace(card, x, y, width, height, rotation, "thumb", onTextureReady);
     if (tintColor != null) {
       flightCard.alpha = 0.98;
     }
@@ -952,7 +959,8 @@ function renderObjectRow(
 
     scene.addChild(createRect(dX, dY, dW, dH, "#e7d8b4", 1, 14));
     scene.addChild(createRect(dX + 4, dY + 4, dW - 8, dH - 8, "#201610", 1, 10));
-    const texture = getLoadedTexture(card.imageUrl);
+    const textureUrl = getCardTextureUrl(card, "thumb");
+    const texture = getLoadedTexture(textureUrl);
     if (texture != null) {
       const sprite = new Sprite(texture);
       const fitted = fitSpriteToBox(texture, dW - 12, dH - 12);
@@ -961,7 +969,7 @@ function renderObjectRow(
       sprite.height = fitted.height;
       scene.addChild(sprite);
     } else {
-      requestTextureLoad(card.imageUrl, onTextureReady ?? (() => {}));
+      requestTextureLoad(textureUrl, onTextureReady ?? (() => {}));
       scene.addChild(createLabel("Loading", cardCenterX, cardCenterY, {
         fontSize: 8,
         fontWeight: "700",
@@ -1203,6 +1211,7 @@ interface VictoryAwardEntry {
   key: string;
   icon?: string;
   label: string;
+  tooltip: string;
   winner: SeatState;
   value: string;
   detail?: string;
@@ -1216,6 +1225,10 @@ function getVictoryStatsSeatEntries(match: MatchState): VictoryStatsSeatEntry[] 
       const seat = seatByNumber.get(stats.seatNumber);
       return seat == null ? [] : [{ seat, stats }];
     });
+}
+
+function getCardTextureUrl(card: Pick<CardView, "imageUrl">, variant: CardImageVariant): string {
+  return getCardImageVariantUrl(card.imageUrl, variant);
 }
 
 function pruneLoadedTextures(): void {
@@ -1344,6 +1357,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-damage",
     icon: language === "fr" ? "🔥" : undefined,
     label: language === "fr" ? "Machine à dégâts" : "Most Damage",
+    tooltip: language === "fr"
+      ? "Total des degats infliges pendant toute la partie."
+      : "Total damage dealt across the entire match.",
     winner: mostDamage.seat,
     value: buildCountValue(mostDamage.stats.damageDealt)
   });
@@ -1353,6 +1369,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "biggest-hit",
     icon: language === "fr" ? "💥" : undefined,
     label: language === "fr" ? "Le coup qui fesse le plus" : "Biggest Hit",
+    tooltip: language === "fr"
+      ? "Le plus gros coup de degats fait en une seule attaque."
+      : "The single biggest damage hit landed in one attack.",
     winner: biggestHit.seat,
     value: buildCountValue(biggestHit.stats.biggestHit)
   });
@@ -1362,6 +1381,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-healing",
     icon: language === "fr" ? "❤️" : undefined,
     label: language === "fr" ? "Le doc de service" : "Most Healing",
+    tooltip: language === "fr"
+      ? "Total des points de vie rendus pendant la partie."
+      : "Total HP restored over the course of the match.",
     winner: mostHealing.seat,
     value: buildCountValue(mostHealing.stats.healingDone)
   });
@@ -1371,6 +1393,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "biggest-heal",
     icon: language === "fr" ? "💉" : undefined,
     label: language === "fr" ? "Le gros boost de vie" : "Biggest Heal",
+    tooltip: language === "fr"
+      ? "Le plus gros soin applique en une seule fois."
+      : "The single largest heal applied at once.",
     winner: biggestHeal.seat,
     value: buildCountValue(biggestHeal.stats.biggestHeal)
   });
@@ -1380,6 +1405,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-cards",
     icon: language === "fr" ? "🃏" : undefined,
     label: language === "fr" ? "Le spammeur officiel" : "Most Cards Played",
+    tooltip: language === "fr"
+      ? "Nombre total de cartes jouees, actives et inactives incluses."
+      : "Total number of cards played, including active and inactive cards.",
     winner: mostCards.seat,
     value: buildCountValue(mostCards.stats.cardsPlayed),
     detail: `${numberFormat.format(mostCards.stats.activeCardsPlayed)} active / ${numberFormat.format(mostCards.stats.inactiveCardsPlayed)} inactive`
@@ -1390,6 +1418,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-responses",
     icon: language === "fr" ? "⚡" : undefined,
     label: language === "fr" ? "Le p'tit vite sur le trigger" : "Most Responses Used",
+    tooltip: language === "fr"
+      ? "Nombre total de cartes de reponse jouees en defense."
+      : "Total response cards played while defending.",
     winner: mostResponses.seat,
     value: buildCountValue(mostResponses.stats.responseCardsPlayed)
   });
@@ -1399,6 +1430,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-kills",
     icon: language === "fr" ? "☠️" : undefined,
     label: language === "fr" ? "Celui qui fait le ménage" : "Most Kills",
+    tooltip: language === "fr"
+      ? "Nombre d'adversaires elimines pendant la partie."
+      : "Number of opponents eliminated during the match.",
     winner: mostKills.seat,
     value: buildCountValue(mostKills.stats.kills)
   });
@@ -1408,6 +1442,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-targeted",
     icon: language === "fr" ? "🎯" : undefined,
     label: language === "fr" ? "Cible numéro un" : "Most Targeted",
+    tooltip: language === "fr"
+      ? "Nombre de fois ou ce joueur a ete vise par une action adverse."
+      : "How many times this player was targeted by opposing actions.",
     winner: mostTargeted.seat,
     value: buildCountValue(mostTargeted.stats.timesTargeted)
   });
@@ -1417,6 +1454,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-damage-taken",
     icon: language === "fr" ? "🛡️" : undefined,
     label: language === "fr" ? "A tout encaissé" : "Most Damage Taken",
+    tooltip: language === "fr"
+      ? "Total des degats recus pendant toute la partie."
+      : "Total damage received across the full match.",
     winner: mostDamageTaken.seat,
     value: buildCountValue(mostDamageTaken.stats.damageTaken)
   });
@@ -1426,6 +1466,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "most-objects",
     icon: language === "fr" ? "🎒" : undefined,
     label: language === "fr" ? "Pris tout ce qui traînait" : "Most Objects Worn",
+    tooltip: language === "fr"
+      ? "Nombre total d'objets equipes au fil de la partie."
+      : "Total number of objects equipped during the match.",
     winner: mostObjects.seat,
     value: buildCountValue(mostObjects.stats.objectsWorn)
   });
@@ -1435,6 +1478,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "longest-object-hold",
     icon: language === "fr" ? "📦" : undefined,
     label: language === "fr" ? "Fidèle à son objet" : "Longest Object Hold",
+    tooltip: language === "fr"
+      ? "Objet garde le plus longtemps sans le perdre."
+      : "The object that stayed equipped for the most turns without being lost.",
     winner: longestObjectHold.seat,
     value: buildCountValue(
       longestObjectHold.stats.longestObjectHoldTurns,
@@ -1454,6 +1500,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "closest-call",
     icon: language === "fr" ? "💀" : undefined,
     label: language === "fr" ? "Sauvé par la peau des fesses" : "Closest Call",
+    tooltip: language === "fr"
+      ? "Le plus bas total de PV atteint sans mourir."
+      : "The lowest HP total survived without being eliminated.",
     winner: lowestHpSurvived.seat,
     value: `${numberFormat.format(lowestHpSurvived.stats.lowestHpSurvived ?? 0)} ${hpLabel}`
   });
@@ -1471,6 +1520,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "best-resistance",
     icon: language === "fr" ? "🧱" : undefined,
     label: language === "fr" ? "Tank en esti" : "Best Resistance",
+    tooltip: language === "fr"
+      ? "Meilleur taux de reussite sur les jets de resistance, avec au moins une tentative."
+      : "Highest resistance success rate among players who attempted at least one resistance roll.",
     winner: bestResistance.seat,
     value: `${numberFormat.format(Math.round((bestResistance.stats.resistSuccesses / bestResistance.stats.resistAttempts) * 100))}%`,
     detail: `${numberFormat.format(bestResistance.stats.resistSuccesses)} / ${numberFormat.format(bestResistance.stats.resistAttempts)}`
@@ -1487,6 +1539,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "high-roller",
     icon: language === "fr" ? "🎲" : undefined,
     label: language === "fr" ? "Béni des dieux du RNG" : "High Roller",
+    tooltip: language === "fr"
+      ? "Meilleur score de chance net: bons jets moins mauvais jets, en incluant les resists critiques et les echecs fatals."
+      : "Best net luck score: good rolls minus bad rolls, including critical resists and fatal resistance failures.",
     winner: highRoller.seat,
     value: `${buildLuckScore(highRoller) > 0 ? "+" : ""}${numberFormat.format(buildLuckScore(highRoller))}`,
     detail: `+${numberFormat.format(highRoller.stats.luckyRolls)} / -${numberFormat.format(highRoller.stats.unluckyRolls)}`,
@@ -1498,6 +1553,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
     key: "unluckiest",
     icon: language === "fr" ? "💀" : undefined,
     label: language === "fr" ? "Le sort s'acharnait" : "Unluckiest",
+    tooltip: language === "fr"
+      ? "Pire score de chance net: mauvais jets et incidents critiques ont pese le plus lourd."
+      : "Worst net luck score, where bad rolls and critical mishaps hurt the most.",
     winner: unluckiest.seat,
     value: `${buildLuckScore(unluckiest) > 0 ? "+" : ""}${numberFormat.format(buildLuckScore(unluckiest))}`,
     detail: `+${numberFormat.format(unluckiest.stats.luckyRolls)} / -${numberFormat.format(unluckiest.stats.unluckyRolls)}`,
@@ -1516,7 +1574,13 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
       </div>
       <div class="victory-stats__grid">
         ${awards.map((award) => `
-          <article class="victory-stat victory-stat--${award.tone ?? "default"}" data-award-key="${award.key}">
+          <article
+            class="victory-stat victory-stat--${award.tone ?? "default"}"
+            data-award-key="${award.key}"
+            tabindex="0"
+            aria-label="${escapeHtml(`${award.label}. ${award.tooltip}`)}"
+            aria-describedby="victory-tooltip-${award.key}"
+          >
             <span class="victory-stat__label">
               ${award.icon == null ? "" : `<span class="victory-stat__label-icon" aria-hidden="true">${escapeHtml(award.icon)}</span>`}
               <span class="victory-stat__label-text">${escapeHtml(award.label)}</span>
@@ -1527,6 +1591,9 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
             </div>
             <span class="victory-stat__value">${escapeHtml(award.value)}</span>
             ${award.detail == null ? "" : `<span class="victory-stat__detail">${escapeHtml(award.detail)}</span>`}
+            <div class="victory-stat__tooltip" id="victory-tooltip-${award.key}" role="tooltip">
+              ${escapeHtml(award.tooltip)}
+            </div>
           </article>
         `).join("")}
       </div>
@@ -2181,6 +2248,7 @@ function renderTableScene(
         98,
         138,
         0,
+        "thumb",
         onTextureReady
       ));
       inspectTargets.push({
@@ -2218,6 +2286,7 @@ function renderTableScene(
         isTop ? 130 : 120,
         isTop ? 182 : 170,
         isTop ? 0 : -0.08,
+        "thumb",
         onTextureReady
       ));
       inspectTargets.push({
@@ -2387,7 +2456,7 @@ function renderTableScene(
       continue;
     }
 
-    handContainer.addChild(createCardFace(layout, false, onTextureReady));
+    handContainer.addChild(createCardFace(layout, false, "full", onTextureReady));
   }
 
   if (interactionState.draggingCardInstanceId !== "") {
@@ -2400,7 +2469,7 @@ function renderTableScene(
         rotation: 0,
         scale: 1.14
       };
-      scene.addChild(createCardFace(floatingLayout, false, onTextureReady));
+      scene.addChild(createCardFace(floatingLayout, false, "full", onTextureReady));
     }
 
   }
@@ -2412,7 +2481,7 @@ function renderTableScene(
         ...arrowCardLayout,
         y: arrowCardLayout.y - 28,
         scale: 1.14
-      }, false, onTextureReady));
+      }, false, "full", onTextureReady));
     }
 
     const nearestSeat = seatTargets.find((target) => target.seatNumber === interactionState.arrowDrag?.nearestSeatNumber);
@@ -2911,7 +2980,7 @@ function buildOverlayMarkup(
                       data-object-instance-id="${card.instanceId}"
                       ${isLocalChooser ? "" : "disabled"}
                     >
-                      <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                      <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                       <span>${escapeHtml(card.name)}</span>
                     </button>
                   `).join("")}
@@ -2971,7 +3040,7 @@ function buildOverlayMarkup(
                     : `
                       <div class="telepathy-preview">
                         ${previewCard == null ? "" : `
-                          <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                          <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
                           <div class="telepathy-preview__meta">
                             <strong>${escapeHtml(previewCard.name)}</strong>
                             <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
@@ -2988,7 +3057,7 @@ function buildOverlayMarkup(
                             data-action="preview-telepathy-card"
                             data-card-instance-id="${card.instanceId}"
                           >
-                            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                            <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                             <div class="telepathy-card__meta">
                               <strong>${escapeHtml(card.name)}</strong>
                               <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
@@ -3054,7 +3123,7 @@ function buildOverlayMarkup(
                                 data-seat-number="${seat.seatNumber}"
                                 data-card-instance-id="${card.instanceId}"
                               >
-                                <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                                <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                               </button>
                             `).join("")}
                           </div>
@@ -3092,7 +3161,7 @@ function buildOverlayMarkup(
                     : `
                       <div class="telepathy-preview">
                         ${previewCard == null ? "" : `
-                          <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                          <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
                           <div class="telepathy-preview__meta">
                             <strong>${escapeHtml(previewCard.name)}</strong>
                             <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
@@ -3108,7 +3177,7 @@ function buildOverlayMarkup(
                             data-action="preview-consume-card"
                             data-card-instance-id="${card.instanceId}"
                           >
-                            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                            <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                             <div class="telepathy-card__meta">
                               <strong>${escapeHtml(card.name)}</strong>
                               <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
@@ -3159,7 +3228,7 @@ function buildOverlayMarkup(
                     : `
                       <div class="telepathy-preview">
                         ${previewCard == null ? "" : `
-                          <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                          <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
                           <div class="telepathy-preview__meta">
                             <strong>${escapeHtml(previewCard.name)}</strong>
                             <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
@@ -3175,7 +3244,7 @@ function buildOverlayMarkup(
                             data-action="preview-board-reset-card"
                             data-card-instance-id="${card.instanceId}"
                           >
-                            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                            <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                             <div class="telepathy-card__meta">
                               <strong>${escapeHtml(card.name)}</strong>
                               <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
@@ -3246,7 +3315,7 @@ function buildOverlayMarkup(
                     : `
                       <div class="telepathy-preview">
                         ${previewCard == null ? "" : `
-                          <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                          <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
                           <div class="telepathy-preview__meta">
                             <strong>${escapeHtml(previewCard.name)}</strong>
                             <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
@@ -3263,7 +3332,7 @@ function buildOverlayMarkup(
                             data-action="toggle-death-search-card"
                             data-card-instance-id="${card.instanceId}"
                           >
-                            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                            <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                             <div class="telepathy-card__meta">
                               <strong>${escapeHtml(card.name)}</strong>
                               <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
@@ -3283,7 +3352,7 @@ function buildOverlayMarkup(
                           const card = selectedId != null ? pendingDeathSearch.cardOptions.find((c) => c.instanceId === selectedId) : undefined;
                           return card != null
                             ? `<button type="button" class="death-search-tray__slot death-search-tray__slot--filled" data-action="toggle-death-search-card" data-card-instance-id="${card.instanceId}">
-                                <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                                <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                                 <span>${escapeHtml(card.name)}</span>
                               </button>`
                             : `<div class="death-search-tray__slot death-search-tray__slot--empty"></div>`;
@@ -3328,7 +3397,7 @@ function buildOverlayMarkup(
                     : `
                       <div class="telepathy-preview">
                         ${previewCard == null ? "" : `
-                          <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                          <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
                           <div class="telepathy-preview__meta">
                             <strong>${escapeHtml(previewCard.name)}</strong>
                             <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
@@ -3345,7 +3414,7 @@ function buildOverlayMarkup(
                             data-action="toggle-pickpocket-card"
                             data-card-instance-id="${card.instanceId}"
                           >
-                            <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                            <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                             <div class="telepathy-card__meta">
                               <strong>${escapeHtml(card.name)}</strong>
                               <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
@@ -3501,7 +3570,7 @@ function buildOverlayMarkup(
                       data-action="preview-reference-card"
                       data-card-id="${card.cardId}"
                     >
-                      <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                      <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
                       <div class="telepathy-card__meta">
                         <strong>${escapeHtml(card.name)}</strong>
                         <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
@@ -3510,7 +3579,7 @@ function buildOverlayMarkup(
                   `).join("")}
                 </div>
                 <div class="telepathy-preview card-reference-preview">
-                  <img class="telepathy-preview__image" src="${previewCard.imageUrl}" alt="${escapeHtml(previewCard.name)}" />
+                  <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
                   <div class="telepathy-preview__meta">
                     <strong>${escapeHtml(previewCard.name)}</strong>
                     <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
@@ -5642,7 +5711,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       cardElement.style.height = `${originRect.height}px`;
     }
     if (imageElement != null) {
-      imageElement.src = cardInspectState.card.imageUrl;
+      imageElement.src = getCardTextureUrl(cardInspectState.card, "full");
       imageElement.alt = cardInspectState.card.name;
     }
   };

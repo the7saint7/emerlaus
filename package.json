@@ -11,6 +11,8 @@
     "dev:server:run": "node --watch dist/server/server/index.js",
     "start": "node dist/server/server/index.js",
     "import:base-cards": "py scripts/import_base_cards.py",
+    "process:english-card-alpha": "python scripts/apply_french_card_alpha.py",
+    "process:card-images": "python scripts/process_card_images.py",
     "build": "npm run build:server && npm run build:client",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",

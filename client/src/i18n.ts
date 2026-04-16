@@ -9,6 +9,7 @@ import type {
 } from "../../shared/types";
 
 export type AppLanguage = "fr" | "en";
+export type CardImageVariant = "full" | "thumb";
 
 const LANGUAGE_STORAGE_KEY = "emerlaus.language";
 
@@ -724,19 +725,40 @@ export function getLocalizedCategoryLabel(categoryCode: CardCategoryCode, langua
   return categoryLabels[language][categoryCode];
 }
 
-export function getLocalizedCardImageUrl(cardId: string, fallbackImageUrl: string, language: AppLanguage): string {
+export function getCardImageVariantUrl(imageUrl: string, variant: CardImageVariant): string {
+  const normalized = imageUrl.replace(/\\/g, "/");
+  const match = normalized.match(/^\/assets\/cards\/(base|base-en)(?:-webp|-thumb)?\/([^/?#]+?)(?:\.[^./?]+)$/);
+  if (match == null) {
+    return imageUrl;
+  }
+
+  const [, languageDir, basename] = match;
+  const suffix = variant === "thumb" ? "-thumb" : "-webp";
+  return `/assets/cards/${languageDir}${suffix}/${basename}.webp`;
+}
+
+export function getLocalizedCardImageUrl(
+  cardId: string,
+  fallbackImageUrl: string,
+  language: AppLanguage,
+  variant: CardImageVariant = "full"
+): string {
+  const baseImageUrl = (() => {
   if (language === "fr") {
-    return fallbackImageUrl;
+      return fallbackImageUrl;
   }
 
   const definition = baseCardDefinitionById[cardId];
   const sourcePath = definition?.image.localSourcePath ?? definition?.image.importedAssetPath ?? "";
   const filename = sourcePath.split(/[\\/]/).pop();
   if (filename == null || filename === "") {
-    return fallbackImageUrl;
+      return fallbackImageUrl;
   }
 
-  return `/assets/cards/base-en/${filename}`;
+    return `/assets/cards/base-en/${filename}`;
+  })();
+
+  return getCardImageVariantUrl(baseImageUrl, variant);
 }
 
 export function localizeCardView(card: CardView, language: AppLanguage): CardView {
