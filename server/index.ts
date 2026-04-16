@@ -17,6 +17,7 @@ import type {
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
+  PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
@@ -43,6 +44,7 @@ import {
   disconnectPlayer,
   getMatchState,
   acknowledgeMatchHandInspection,
+  acknowledgeMatchPublicHandReveal,
   joinMatch,
   kickPlayer,
   passMatchForcedFollowUp,
@@ -93,7 +95,7 @@ app.get("/api/dev/base-defense-band-mappings", (_request, response) => {
 app.get("/api/dev/base-cards", (_request, response) => {
   try {
     const catalogId = (_request.query.deck as DevCardCatalogId | undefined) ?? "base";
-    if (catalogId !== "base" && catalogId !== "abondance") {
+    if (catalogId !== "base" && catalogId !== "abondance" && catalogId !== "puissance") {
       throw new Error(`Unknown card catalog: ${catalogId}`);
     }
     response.json(readBaseCardCatalog(catalogId));
@@ -108,7 +110,7 @@ app.post("/api/dev/base-cards/:cardId", (request, response) => {
   try {
     const body = request.body as SaveBaseCardDefinitionRequest;
     const catalogId = (request.query.deck as DevCardCatalogId | undefined) ?? "base";
-    if (catalogId !== "base" && catalogId !== "abondance") {
+    if (catalogId !== "base" && catalogId !== "abondance" && catalogId !== "puissance") {
       throw new Error(`Unknown card catalog: ${catalogId}`);
     }
     response.json(writeBaseCardDefinition(catalogId, request.params.cardId, body.card));
@@ -373,6 +375,18 @@ app.post("/api/matches/:instanceId/hand-inspection/ack", (request, response) => 
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to close hand inspection"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/public-hand-reveal/ack", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingPublicHandRevealReadyRequest;
+    response.json(acknowledgeMatchPublicHandReveal(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to acknowledge public hand reveal"
     });
   }
 });

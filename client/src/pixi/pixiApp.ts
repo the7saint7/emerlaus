@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { acknowledgePendingHandInspection, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
+import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
 import { createDiscordSession } from "../discord/session";
 import {
   canDiscardCard,
@@ -19,13 +19,27 @@ import { diceController, type DiceStagePlacement } from "../features/dice/diceCo
 import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
 import { buildEventLogEntries, type EventLogEntry } from "../render/eventLog";
-import { allCardDefinitions } from "../../../shared/cards";
+import {
+  allCardDefinitions,
+  baseCardDefinitions,
+  abondanceCardDefinitions,
+  puissanceCardDefinitions
+} from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
-import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingSacrificeChoiceState, SeatSessionStats, SeatState } from "../../../shared/types";
+import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingPublicHandRevealState, PendingSacrificeChoiceState, SeatSessionStats, SeatState } from "../../../shared/types";
 
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
 const POLL_INTERVAL_MS = 2500;
+const FROZEN_SEAT_FX_URL = "/assets/effects/frozen-seat-fx.png";
+const FROZEN_STATUS_CARD_IDS = new Set<string>([
+  "engelure",
+  "flechette-glacee",
+  "rayon-glacial",
+  "refroidissement",
+  "sculpture-de-glace",
+  "zero-absolu"
+]);
 
 function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
   const defenseBand = card.defenseBand;
@@ -55,12 +69,19 @@ const EXPANSION_DECKS: Array<{ key: ExpansionKey; label: string; available: bool
   { key: "sorcellerie", label: "Sorcellerie", available: false },
   { key: "invocation", label: "Invocation", available: false },
   { key: "abondance", label: "Abondance", available: true },
-  { key: "puissance", label: "Puissance", available: false },
+  { key: "puissance", label: "Puissance", available: true },
   { key: "communion", label: "Communion", available: false },
   { key: "destin", label: "Destin", available: false },
   { key: "compagnons", label: "Compagnons", available: false },
   { key: "allies", label: "Allies", available: false }
 ];
+
+const DEV_DRAW_SEPARATOR_PREFIX = "__separator__:";
+const DEV_DRAW_GROUPS = [
+  { key: "base", label: "Base", cards: baseCardDefinitions },
+  { key: "abondance", label: "Abondance", cards: abondanceCardDefinitions },
+  { key: "puissance", label: "Puissance", cards: puissanceCardDefinitions }
+] as const;
 
 interface PixiStageMetrics {
   left: number;
@@ -160,7 +181,7 @@ interface TableInteractionGeometry {
 interface CardInspectState {
   card: CardView;
   originRect: RectGeometry;
-  originGroup: InspectTargetGeometry["group"];
+  originGroup: InspectTargetGeometry["group"] | "modal";
 }
 
 interface HandFocusTransition {
@@ -191,6 +212,8 @@ interface PixiSeatKickActionTarget extends PixiKickTarget {
   leftPx: number;
   topPx: number;
 }
+
+type SeatVisualEffectId = "frozen";
 
 interface ActiveCombatFxState {
   message: string;
@@ -284,6 +307,7 @@ const HAND_DRAG_START_DISTANCE = 16;
 const CURSOR_THROTTLE_MS = 50;
 const GHOST_TIMEOUT_MS = 500;
 const TURN_PASTILLE_MOVE_MS = 540;
+const DEV_SEAT_VISUAL_EFFECT_IDS: SeatVisualEffectId[] = ["frozen"];
 
 function createRect(x: number, y: number, width: number, height: number, color: string, alpha = 1, radius = 0): Graphics {
   const rect = new Graphics();
@@ -346,6 +370,14 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function isDevDrawSeparatorValue(value: string): boolean {
+  return value.startsWith(DEV_DRAW_SEPARATOR_PREFIX);
+}
+
+function getEnabledDevDrawGroups(match: MatchState) {
+  return DEV_DRAW_GROUPS.filter((group) => group.key === "base" || match.enabledExpansions[group.key]);
 }
 
 function delay(ms: number): Promise<void> {
@@ -578,6 +610,54 @@ function createAvatarDisplay(
     }, 0.5, 0.5));
   }
   return container;
+}
+
+function seatHasFrozenStatus(seat: SeatState | undefined): boolean {
+  return (seat?.statuses ?? []).some((statusCard) => FROZEN_STATUS_CARD_IDS.has(statusCard.cardId));
+}
+
+function renderFrozenSeatOverlay(
+  scene: Container,
+  rect: RectGeometry,
+  isLocalSeat: boolean,
+  _now: number,
+  onTextureReady: () => void
+): void {
+  const pad = isLocalSeat ? 12 : 6;
+  const texture = getLoadedTexture(FROZEN_SEAT_FX_URL);
+  if (texture == null) {
+    requestTextureLoad(FROZEN_SEAT_FX_URL, onTextureReady);
+    return;
+  }
+
+  const sprite = new Sprite(texture);
+  sprite.x = rect.x - pad;
+  sprite.y = rect.y - pad;
+  sprite.width = rect.width + pad * 2;
+  sprite.height = rect.height + pad * 2;
+  scene.addChild(sprite);
+}
+
+function getSeatVisualEffectLabel(effectId: SeatVisualEffectId, language: AppLanguage): string {
+  switch (effectId) {
+    case "frozen":
+      return t(language, "seatFx.effect.frozen");
+  }
+}
+
+function renderSeatVisualOverlay(
+  scene: Container,
+  rect: RectGeometry,
+  isLocalSeat: boolean,
+  effectId: SeatVisualEffectId,
+  now: number,
+  onTextureReady: () => void
+): void {
+  switch (effectId) {
+    case "frozen":
+      renderFrozenSeatOverlay(scene, rect, isLocalSeat, now, onTextureReady);
+      return;
+  }
 }
 
 function fitSpriteToBox(texture: Texture, maxWidth: number, maxHeight: number): { width: number; height: number } {
@@ -872,6 +952,15 @@ function renderObjectRow(
         fontSize: 9,
         fontWeight: "700",
         fill: "#fff1c8"
+      }, 0.5, 0.5));
+    }
+
+    if (isStatus && (card.remainingTurnTriggers ?? 0) > 0) {
+      scene.addChild(createRect(dX + dW - 28, dY + 6, 20, 20, "#7a1f1f", 0.96, 999));
+      scene.addChild(createLabel(`${card.remainingTurnTriggers}`, dX + dW - 18, dY + 16, {
+        fontSize: 10,
+        fontWeight: "800",
+        fill: "#fff4e2"
       }, 0.5, 0.5));
     }
 
@@ -1712,6 +1801,7 @@ function renderTableScene(
   activeHealBursts: Record<number, FloatingBurstState>,
   activeImpactFlashes: Record<number, ImpactFlashState>,
   seatResistancePills: Record<number, SeatResistancePillState>,
+  devSeatVisualEffectsBySeat: Record<number, SeatVisualEffectId[]>,
   activeCardFlights: CardFlightState[],
   activePlaybackArrows: PlaybackArrowState[],
   opponentCursors: Record<number, OpponentCursorState>,
@@ -1929,6 +2019,18 @@ function renderTableScene(
   }
 
   for (const [seatNumber, rect] of seatRects.entries()) {
+    const seat = match.seats.find((candidate) => candidate.seatNumber === seatNumber);
+    const previewEffects = new Set(devSeatVisualEffectsBySeat[seatNumber] ?? []);
+    if (seatHasFrozenStatus(seat)) {
+      previewEffects.add("frozen");
+    }
+    for (const effectId of DEV_SEAT_VISUAL_EFFECT_IDS) {
+      if (!previewEffects.has(effectId)) {
+        continue;
+      }
+      renderSeatVisualOverlay(scene, rect, seatNumber === localSeatNumber, effectId, replayNow, onTextureReady);
+    }
+
     const impactFlash = activeImpactFlashes[seatNumber];
     if (impactFlash != null) {
       const progress = Math.max(0, Math.min(1, (replayNow - impactFlash.startedAt) / impactFlash.durationMs));
@@ -2424,9 +2526,12 @@ function buildOverlayMarkup(
   confirmingDiscardCardInstanceId: string,
   kickTarget: PixiKickTarget | null,
   kickActionTarget: PixiSeatKickActionTarget | null,
+  seatFxEditorOpen: boolean,
+  devSeatVisualEffectsBySeat: Record<number, SeatVisualEffectId[]>,
   pendingAnnulationChoice: PendingAnnulationChoiceState | null,
   pendingObjectChoice: PendingObjectChoiceState | null,
   pendingHandInspection: PendingHandInspectionState | null,
+  pendingPublicHandReveal: PendingPublicHandRevealState | null,
   telepathyPreviewCardInstanceId: string,
   pendingBoardResetKeep: PendingBoardResetKeepState | null,
   boardResetKeepPreviewCardInstanceId: string,
@@ -2450,6 +2555,7 @@ function buildOverlayMarkup(
   cardReferenceSearchQuery: string,
   cardReferenceShowBase: boolean,
   cardReferenceShowAbondance: boolean,
+  cardReferenceShowPuissance: boolean,
   activeCombatFx: ActiveCombatFxState | null,
   playbackLocked: boolean,
   showVictoryCelebration: boolean,
@@ -2464,20 +2570,68 @@ function buildOverlayMarkup(
   const amHost = localSeat?.isHost === true;
   const showPassButton = match.status === "in_progress" && canPassPendingResponse(match);
   const annulationChoice = pendingAnnulationChoice;
-  const devDrawOptionsMarkup = [...allCardDefinitions]
-    .sort((left, right) => {
-      const leftName = left.localization?.[language]?.name ?? left.name;
-      const rightName = right.localization?.[language]?.name ?? right.name;
-      return leftName.localeCompare(rightName);
-    })
-    .map((card) => {
-      const localizedName = card.localization?.[language]?.name ?? card.name;
-      const devLabel = card.id === "annulation"
-        ? `${localizedName} / ${language === "fr" ? "Cancel" : "Cancel"}`
-        : localizedName;
-      return `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(devLabel)}</option>`;
+  const devDrawOptionsMarkup = getEnabledDevDrawGroups(match)
+    .flatMap(({ label, cards }) => {
+      const separatorMarkup = `<option value="${DEV_DRAW_SEPARATOR_PREFIX}${label}">--------------- ${escapeHtml(label)} ---------------</option>`;
+      const cardOptionsMarkup = [...cards]
+        .sort((left, right) => {
+          const leftName = left.localization?.[language]?.name ?? left.name;
+          const rightName = right.localization?.[language]?.name ?? right.name;
+          return leftName.localeCompare(rightName);
+        })
+        .map((card) => {
+          const localizedName = card.localization?.[language]?.name ?? card.name;
+          const devLabel = card.id === "annulation"
+            ? `${localizedName} / ${language === "fr" ? "Cancel" : "Cancel"}`
+            : localizedName;
+          return `<option value="${escapeHtml(card.id)}">[${card.category.code}] ${escapeHtml(devLabel)}</option>`;
+        });
+
+      return [separatorMarkup, ...cardOptionsMarkup];
     })
     .join("");
+  const seatFxRowsMarkup = !amHost
+    ? ""
+    : match.seats.map((seat) => {
+      const activeEffects = new Set(devSeatVisualEffectsBySeat[seat.seatNumber] ?? []);
+      const seatMeta = [
+        t(language, "seat.label", { seatNumber: seat.seatNumber }),
+        seat.seatNumber === localSeatNumber ? t(language, "seat.you") : null,
+        seat.isHost ? t(language, "seat.host") : null
+      ]
+        .filter((value): value is string => value != null && value !== "")
+        .join(" • ");
+      return `
+        <div class="pixi-seat-fx__row">
+          <div>
+            <strong class="pixi-seat-fx__seat-name">${escapeHtml(seat.displayName)}</strong>
+            <span class="pixi-seat-fx__seat-meta">${escapeHtml(seatMeta)}</span>
+          </div>
+          <div class="pixi-seat-fx__buttons">
+            ${DEV_SEAT_VISUAL_EFFECT_IDS.map((effectId) => `
+              <button
+                type="button"
+                class="pixi-chip-button ${activeEffects.has(effectId) ? "pixi-chip-button--active" : ""}"
+                data-action="toggle-seat-fx"
+                data-seat-number="${seat.seatNumber}"
+                data-effect-id="${effectId}"
+              >
+                ${escapeHtml(getSeatVisualEffectLabel(effectId, language))}
+              </button>
+            `).join("")}
+            <button
+              type="button"
+              class="pixi-overlay-button"
+              data-action="clear-seat-fx"
+              data-seat-number="${seat.seatNumber}"
+              ${activeEffects.size === 0 ? "disabled" : ""}
+            >
+              ${escapeHtml(t(language, "seatFx.clearSeat"))}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
 
   return `
     ${match.shortId ? `<div class="pixi-session-id">${escapeHtml(match.shortId)}</div>` : ""}
@@ -2485,6 +2639,9 @@ function buildOverlayMarkup(
       <div class="pixi-frame-actions">
         ${match.status === "in_progress"
           ? `<button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>`
+          : ""}
+        ${match.status === "in_progress" && amHost
+          ? `<button type="button" class="pixi-overlay-button ${seatFxEditorOpen ? "pixi-overlay-button--accent" : ""}" data-action="open-seat-fx">${t(language, "table.seatFx")}</button>`
           : ""}
         ${match.status === "in_progress" || match.status === "lobby" ? "" : ""}
         ${match.status === "in_progress"
@@ -2636,6 +2793,30 @@ function buildOverlayMarkup(
           </section>
         </div>
       `}
+    ${!amHost || !seatFxEditorOpen
+      ? ""
+      : `
+        <div class="pixi-modal-backdrop" data-action="close-seat-fx">
+          <section class="modal-card pixi-seat-fx__card" data-pixi-modal-card="true">
+            <h2>${escapeHtml(t(language, "seatFx.title"))}</h2>
+            <p class="pixi-seat-fx__body">${escapeHtml(t(language, "seatFx.body"))}</p>
+            <div class="pixi-seat-fx__rows">
+              ${seatFxRowsMarkup}
+            </div>
+            <div class="modal-actions pixi-annulation-choice__actions pixi-seat-fx__actions">
+              <button type="button" class="pixi-overlay-button" data-action="close-seat-fx">${t(language, "common.cancel")}</button>
+              <button
+                type="button"
+                class="pixi-overlay-button"
+                data-action="clear-all-seat-fx"
+                ${Object.keys(devSeatVisualEffectsBySeat).length === 0 ? "disabled" : ""}
+              >
+                ${escapeHtml(t(language, "seatFx.clearAll"))}
+              </button>
+            </div>
+          </section>
+        </div>
+      `}
     ${pendingObjectChoice == null
       ? ""
       : (() => {
@@ -2755,6 +2936,70 @@ function buildOverlayMarkup(
                         `).join("")}
                       </div>
                     `}
+                </div>
+              </article>
+            </div>
+          `;
+        })()}
+    ${pendingPublicHandReveal == null
+      ? ""
+      : (() => {
+          const revealedSeats = pendingPublicHandReveal.targetSeatNumbers
+            .map((seatNumber) => match.seats.find((seat) => seat.seatNumber === seatNumber))
+            .filter((seat): seat is SeatState => seat != null);
+          const remainingSeconds = Math.max(0, Math.ceil((new Date(pendingPublicHandReveal.expiresAt).getTime() - Date.now()) / 1000));
+          const readyCount = pendingPublicHandReveal.readySeatNumbers.length;
+          const totalSeatCount = match.seats.length;
+          const localSeatReady = pendingPublicHandReveal.readySeatNumbers.includes(localSeatNumber);
+          return `
+            <div class="pixi-modal-backdrop">
+              <article class="telepathy-panel sous-grades-panel" data-pixi-modal-card="true">
+                <div class="telepathy-panel__header">
+                  <div>
+                    <p class="eyebrow">${escapeHtml(pendingPublicHandReveal.cardName)}</p>
+                    <h2>${escapeHtml(t(language, "sousGrades.title"))}</h2>
+                    <p>${escapeHtml(t(language, "sousGrades.body"))}</p>
+                  </div>
+                  <div class="sous-grades-panel__status">
+                    <div class="card-defense-pill card-defense-pill--allowed">${escapeHtml(t(language, "sousGrades.remaining", { seconds: remainingSeconds }))}</div>
+                    <button
+                      type="button"
+                      class="action-button ${localSeatReady ? "action-button--secondary" : ""}"
+                      data-action="ack-public-hand-reveal"
+                      ${localSeatReady ? "disabled" : ""}
+                    >${escapeHtml(`${t(language, localSeatReady ? "sousGrades.ready" : "sousGrades.done")} ${readyCount}/${totalSeatCount}`)}</button>
+                  </div>
+                </div>
+                <div class="sous-grades-grid">
+                  ${revealedSeats.map((seat) => `
+                    <section class="sous-grades-seat">
+                      <div class="sous-grades-seat__header">
+                        <div>
+                          <p class="eyebrow">${escapeHtml(seat.displayName)}</p>
+                          <h2>${escapeHtml(t(language, "seat.label", { seatNumber: seat.seatNumber }))}</h2>
+                        </div>
+                        <span>${escapeHtml(`${seat.hand?.length ?? 0} ${language === "fr" ? "cartes" : "cards"}`)}</span>
+                      </div>
+                      ${(seat.hand ?? []).length === 0
+                        ? `<p class="telepathy-empty">${escapeHtml(t(language, "sousGrades.empty"))}</p>`
+                        : `
+                          <div class="sous-grades-hand">
+                            ${(seat.hand ?? []).map((card) => `
+                              <button
+                                type="button"
+                                class="sous-grades-card"
+                                title="${escapeHtml(card.name)}"
+                                data-action="inspect-public-hand-card"
+                                data-seat-number="${seat.seatNumber}"
+                                data-card-instance-id="${card.instanceId}"
+                              >
+                                <img src="${card.imageUrl}" alt="${escapeHtml(card.name)}" />
+                              </button>
+                            `).join("")}
+                          </div>
+                        `}
+                    </section>
+                  `).join("")}
                 </div>
               </article>
             </div>
@@ -3123,7 +3368,8 @@ function buildOverlayMarkup(
         }).filter((card) => {
           const inBase = card.includedDecks.includes("Jeu de base");
           const inAbondance = card.includedDecks.includes("Abondance");
-          if ((!cardReferenceShowBase || !inBase) && (!cardReferenceShowAbondance || !inAbondance)) return false;
+          const inPuissance = card.includedDecks.includes("Puissance");
+          if ((!cardReferenceShowBase || !inBase) && (!cardReferenceShowAbondance || !inAbondance) && (!cardReferenceShowPuissance || !inPuissance)) return false;
           if (normalizedSearch === "") return true;
           return card.name.toLocaleLowerCase(language).includes(normalizedSearch);
         }).sort((a, b) => {
@@ -3149,6 +3395,7 @@ function buildOverlayMarkup(
             <div class="card-reference-filters__row">
               <button type="button" class="card-reference-filter ${cardReferenceShowBase ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="base">${escapeHtml(t(language, "reference.deckBase"))}</button>
               <button type="button" class="card-reference-filter ${cardReferenceShowAbondance ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="abondance">${escapeHtml(t(language, "reference.deckAbondance"))}</button>
+              <button type="button" class="card-reference-filter ${cardReferenceShowPuissance ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="puissance">${escapeHtml(t(language, "reference.deckPuissance"))}</button>
             </div>
           </div>
         `;
@@ -3296,7 +3543,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let confirmingDiscardCardInstanceId = "";
   let selectedKickSeatNumber = 0;
   let confirmingKickSeatNumber = 0;
+  let seatFxEditorOpen = false;
+  let devSeatVisualEffectsBySeat: Record<number, SeatVisualEffectId[]> = {};
   let telepathyPreviewCardInstanceId = "";
+  let publicHandRevealRefreshTimer: number | null = null;
+  let publicHandRevealRefreshKey = "";
   let boardResetKeepPreviewCardInstanceId = "";
   let consumePreviewCardInstanceId = "";
   let deathSearchPreviewCardInstanceId = "";
@@ -3312,6 +3563,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let cardReferenceSearchQuery = "";
   let cardReferenceShowBase = true;
   let cardReferenceShowAbondance = true;
+  let cardReferenceShowPuissance = true;
   let pendingAnnulationChoice: PendingAnnulationChoiceState | null = null;
   let activeCombatFx: ActiveCombatFxState | null = null;
   let activeDamageBursts: Record<number, FloatingBurstState> = {};
@@ -3933,6 +4185,42 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     });
   };
 
+  const syncPublicHandRevealRefreshTimer = (force = false): void => {
+    const pendingReveal = match.game?.pendingPublicHandReveal ?? null;
+    const nextKey = pendingReveal == null ? "" : pendingReveal.expiresAt;
+    if (!force && nextKey === publicHandRevealRefreshKey) {
+      return;
+    }
+
+    publicHandRevealRefreshKey = nextKey;
+    if (publicHandRevealRefreshTimer != null) {
+      window.clearTimeout(publicHandRevealRefreshTimer);
+      publicHandRevealRefreshTimer = null;
+    }
+
+    if (pendingReveal == null) {
+      if (cardInspectState?.originGroup === "modal") {
+        cardInspectState = null;
+        inspectLayerActive = false;
+        renderInspectOverlay();
+      }
+      return;
+    }
+
+    const msRemaining = new Date(pendingReveal.expiresAt).getTime() - Date.now();
+    const nextTickMs = msRemaining <= 0
+      ? 120
+      : Math.max(100, Math.min(msRemaining, (msRemaining % 1000) || 1000));
+    publicHandRevealRefreshTimer = window.setTimeout(() => {
+      publicHandRevealRefreshTimer = null;
+      redraw();
+      if (match.game?.pendingPublicHandReveal != null && new Date(match.game.pendingPublicHandReveal.expiresAt).getTime() <= Date.now()) {
+        void requestSync();
+      }
+      syncPublicHandRevealRefreshTimer(true);
+    }, nextTickMs);
+  };
+
   const viewportToStage = (clientX: number, clientY: number): StagePoint | null => {
     currentMetrics = computeStageMetrics(hostElement);
     if (
@@ -3955,6 +4243,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     y: currentMetrics.top + rect.y * currentMetrics.scale,
     width: rect.width * currentMetrics.scale,
     height: rect.height * currentMetrics.scale
+  });
+
+  const viewportRectToStageRect = (rect: DOMRect): RectGeometry => ({
+    x: (rect.left - currentMetrics.left) / currentMetrics.scale,
+    y: (rect.top - currentMetrics.top) / currentMetrics.scale,
+    width: rect.width / currentMetrics.scale,
+    height: rect.height / currentMetrics.scale
   });
 
   const getLocalHand = (): CardView[] =>
@@ -3999,13 +4294,33 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     };
   };
 
+  const normalizeSeatVisualEffects = (effects: Iterable<SeatVisualEffectId>): SeatVisualEffectId[] => {
+    const unique = new Set(effects);
+    return DEV_SEAT_VISUAL_EFFECT_IDS.filter((effectId) => unique.has(effectId));
+  };
+
+  const pruneSeatVisualEffects = (): void => {
+    const validSeats = new Set(match.seats.map((seat) => seat.seatNumber));
+    const nextSeatEffects: Record<number, SeatVisualEffectId[]> = {};
+    for (const [seatNumberRaw, effects] of Object.entries(devSeatVisualEffectsBySeat)) {
+      const seatNumber = Number(seatNumberRaw);
+      if (!validSeats.has(seatNumber) || effects.length === 0) {
+        continue;
+      }
+      nextSeatEffects[seatNumber] = normalizeSeatVisualEffects(effects);
+    }
+    devSeatVisualEffectsBySeat = nextSeatEffects;
+  };
+
   const hasBlockingModalOpen = (): boolean =>
     pendingAnnulationChoice != null
     || confirmingLeave
     || confirmingDiscardCardInstanceId !== ""
     || confirmingKickSeatNumber !== 0
+    || seatFxEditorOpen
     || match.game?.pendingObjectChoice != null
     || match.game?.pendingHandInspection != null
+    || match.game?.pendingPublicHandReveal != null
     || match.game?.pendingBoardResetKeep != null
     || match.game?.pendingDeathSearch != null
     || match.game?.pendingPickpocket != null
@@ -4665,14 +4980,25 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     const seatNumbersWithTimelineSnapshots = new Set<number>();
     const replayBoxOrder = buildReplayBoxOrder(replayableEvents);
     const dyingSeatNumbers = new Set<number>();
+    const hpSeededFromPreUpdate = new Set<number>();
 
-    // Seed displayedHpBySeat with pre-damage HP values by reverse-applying
-    // the upcoming hp events from the final (already-updated) match state.
+    // Seed displayedHpBySeat from the last fully rendered seat snapshot when
+    // available. Reverse-applying from the already-updated match state breaks
+    // on lethal hits because dead seats are clamped to 0 in public state.
     for (const event of replayableEvents) {
       if ((event.type === "hp_loss" || event.type === "hp_gain") && event.seatNumber != null) {
         if (displayedHpBySeat[event.seatNumber] == null) {
-          displayedHpBySeat[event.seatNumber] =
-            match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0;
+          const preUpdateHp = preUpdateSeats[event.seatNumber]?.hp;
+          if (preUpdateHp != null) {
+            displayedHpBySeat[event.seatNumber] = preUpdateHp;
+            hpSeededFromPreUpdate.add(event.seatNumber);
+          } else {
+            displayedHpBySeat[event.seatNumber] =
+              match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0;
+          }
+        }
+        if (hpSeededFromPreUpdate.has(event.seatNumber)) {
+          continue;
         }
         if (event.type === "hp_loss") {
           displayedHpBySeat[event.seatNumber] += event.amount ?? 0;
@@ -5235,16 +5561,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
       inspectLayerElement.querySelectorAll<HTMLElement>("[data-action='close-inspect']").forEach((element) => {
         element.onclick = () => {
-          if (inspectCloseTimer != null) {
-            window.clearTimeout(inspectCloseTimer);
-          }
-          inspectLayerActive = false;
-          renderInspectOverlay();
-          inspectCloseTimer = window.setTimeout(() => {
-            cardInspectState = null;
-            inspectCloseTimer = null;
-            renderInspectOverlay();
-          }, 220);
+          closeCardInspect();
         };
       });
     }
@@ -5264,20 +5581,28 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
   };
 
-  const openCardInspect = (target: InspectTargetGeometry): void => {
+  const closeCardInspect = (): void => {
+    if (inspectCloseTimer != null) {
+      window.clearTimeout(inspectCloseTimer);
+    }
+    inspectLayerActive = false;
+    renderInspectOverlay();
+    inspectCloseTimer = window.setTimeout(() => {
+      cardInspectState = null;
+      inspectCloseTimer = null;
+      renderInspectOverlay();
+    }, 220);
+  };
+
+  const showCardInspect = (card: CardView, originRect: RectGeometry, originGroup: CardInspectState["originGroup"]): void => {
     if (inspectCloseTimer != null) {
       window.clearTimeout(inspectCloseTimer);
       inspectCloseTimer = null;
     }
     cardInspectState = {
-      card: target.card,
-      originRect: {
-        x: target.x,
-        y: target.y,
-        width: target.width,
-        height: target.height
-      },
-      originGroup: target.group
+      card,
+      originRect,
+      originGroup
     };
     inspectLayerActive = false;
     renderInspectOverlay();
@@ -5285,6 +5610,29 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       inspectLayerActive = true;
       renderInspectOverlay();
     });
+  };
+
+  const openCardInspect = (target: InspectTargetGeometry): void => {
+    showCardInspect(target.card, {
+      x: target.x,
+      y: target.y,
+      width: target.width,
+      height: target.height
+    }, target.group);
+  };
+
+  const openCardInspectFromElement = (card: CardView, element: HTMLElement): void => {
+    const isSameCard =
+      cardInspectState != null
+      && cardInspectState.card.instanceId === card.instanceId
+      && cardInspectState.originGroup === "modal";
+    if (isSameCard && inspectLayerActive) {
+      closeCardInspect();
+      return;
+    }
+
+    currentMetrics = computeStageMetrics(hostElement);
+    showCardInspect(card, viewportRectToStageRect(element.getBoundingClientRect()), "modal");
   };
 
   const beginHandCardInteraction = (layout: HandCardLayout, point: StagePoint): void => {
@@ -5423,6 +5771,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     warningElement.classList.toggle("pixi-landscape-warning--visible", !currentMetrics.isLandscape);
     const combatVisualsActive = pruneExpiredCombatVisuals();
     const localizedMatch = localizeMatchState(match, language);
+    const localizedLocalSeat = getLocalSeat(localizedMatch, localSeatNumber);
+    if (localizedLocalSeat?.isHost !== true) {
+      seatFxEditorOpen = false;
+      devSeatVisualEffectsBySeat = {};
+    } else {
+      pruneSeatVisualEffects();
+    }
     const displayMatch = Object.keys(displayedSeatsBySeat).length > 0
       ? {
           ...localizedMatch,
@@ -5553,6 +5908,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         activeHealBursts,
         activeImpactFlashes,
         seatResistancePills,
+        devSeatVisualEffectsBySeat,
         activeCardFlights,
         activePlaybackArrows,
         opponentCursors,
@@ -5627,7 +5983,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -5641,6 +5997,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           : savedEventLogScroll.top;
       }
     }
+    syncPublicHandRevealRefreshTimer();
     renderInspectOverlay();
     const isLocalTurn = match.status === "in_progress"
       && !presentationLockActive
@@ -5701,6 +6058,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
       if (!match.seats.some((seat) => seat.seatNumber === selectedKickSeatNumber && seat.controllerType === "human")) {
         selectedKickSeatNumber = 0;
+      }
+      pruneSeatVisualEffects();
+      if (getLocalSeat(match, localSeatNumber)?.isHost !== true) {
+        seatFxEditorOpen = false;
+        devSeatVisualEffectsBySeat = {};
       }
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : "Unable to refresh";
@@ -5770,6 +6132,66 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       redraw();
     });
 
+    frameElement.querySelector<HTMLButtonElement>("[data-action='open-seat-fx']")?.addEventListener("click", () => {
+      seatFxEditorOpen = true;
+      redraw();
+    });
+
+    frameElement.querySelectorAll<HTMLElement>("[data-action='close-seat-fx']").forEach((element) => {
+      element.addEventListener("click", () => {
+        seatFxEditorOpen = false;
+        redraw();
+      });
+    });
+
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='toggle-seat-fx']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const seatNumber = Number(button.dataset.seatNumber ?? "0");
+        const effectId = button.dataset.effectId as SeatVisualEffectId | undefined;
+        if (seatNumber <= 0 || effectId == null || !DEV_SEAT_VISUAL_EFFECT_IDS.includes(effectId)) {
+          return;
+        }
+
+        const currentEffects = new Set(devSeatVisualEffectsBySeat[seatNumber] ?? []);
+        if (currentEffects.has(effectId)) {
+          currentEffects.delete(effectId);
+        } else {
+          currentEffects.add(effectId);
+        }
+
+        if (currentEffects.size === 0) {
+          const nextSeatEffects = { ...devSeatVisualEffectsBySeat };
+          delete nextSeatEffects[seatNumber];
+          devSeatVisualEffectsBySeat = nextSeatEffects;
+        } else {
+          devSeatVisualEffectsBySeat = {
+            ...devSeatVisualEffectsBySeat,
+            [seatNumber]: normalizeSeatVisualEffects(currentEffects)
+          };
+        }
+        redraw();
+      });
+    });
+
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='clear-seat-fx']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const seatNumber = Number(button.dataset.seatNumber ?? "0");
+        if (seatNumber <= 0 || devSeatVisualEffectsBySeat[seatNumber] == null) {
+          return;
+        }
+
+        const nextSeatEffects = { ...devSeatVisualEffectsBySeat };
+        delete nextSeatEffects[seatNumber];
+        devSeatVisualEffectsBySeat = nextSeatEffects;
+        redraw();
+      });
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='clear-all-seat-fx']")?.addEventListener("click", () => {
+      devSeatVisualEffectsBySeat = {};
+      redraw();
+    });
+
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-reference-card']").forEach((button) => {
       button.addEventListener("click", () => {
         const id = button.dataset.cardId ?? "";
@@ -5800,6 +6222,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         const deck = button.dataset.referenceDeck;
         if (deck === "base") cardReferenceShowBase = !cardReferenceShowBase;
         else if (deck === "abondance") cardReferenceShowAbondance = !cardReferenceShowAbondance;
+        else if (deck === "puissance") cardReferenceShowPuissance = !cardReferenceShowPuissance;
         redraw();
       });
     });
@@ -5818,7 +6241,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     devDrawSelect?.addEventListener("change", async (event) => {
       const select = event.currentTarget as HTMLSelectElement;
       const cardId = select.value;
-      if (cardId === "") {
+      if (cardId === "" || isDevDrawSeparatorValue(cardId)) {
+        select.value = "";
         return;
       }
 
@@ -5913,6 +6337,33 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         errorMessage = error instanceof Error ? error.message : t(language, "error.closeInspection");
       }
       redraw();
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='ack-public-hand-reveal']")?.addEventListener("click", async () => {
+      try {
+        match = await acknowledgePendingPublicHandReveal(session.instanceId, playerSessionToken, {});
+        errorMessage = "";
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : t(language, "error.closePublicHandReveal");
+      }
+      redraw();
+    });
+
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='inspect-public-hand-card']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const seatNumber = Number(button.dataset.seatNumber ?? "");
+        const cardInstanceId = button.dataset.cardInstanceId ?? "";
+        if (!Number.isFinite(seatNumber) || cardInstanceId === "") {
+          return;
+        }
+
+        const card = match.seats.find((seat) => seat.seatNumber === seatNumber)?.hand?.find((candidate) => candidate.instanceId === cardInstanceId);
+        if (card == null) {
+          return;
+        }
+
+        openCardInspectFromElement(card, button);
+      });
     });
 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-telepathy-card']").forEach((button) => {
@@ -6539,6 +6990,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     destroyed = true;
     if (inspectCloseTimer != null) {
       window.clearTimeout(inspectCloseTimer);
+    }
+    if (publicHandRevealRefreshTimer != null) {
+      window.clearTimeout(publicHandRevealRefreshTimer);
     }
     clearVictoryRevealTimer();
     resizeObserver.disconnect();

@@ -12,6 +12,7 @@ import type {
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
+  PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest
@@ -230,6 +231,20 @@ export async function acknowledgePendingHandInspection(
   request: PendingHandInspectionRequest
 ): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/hand-inspection/ack`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function acknowledgePendingPublicHandReveal(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingPublicHandRevealReadyRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/public-hand-reveal/ack`, {
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify(request)

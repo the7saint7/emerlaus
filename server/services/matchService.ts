@@ -19,6 +19,7 @@ import type {
   PendingBoardResetKeepRequest,
   PendingDeathSearchRequest,
   PendingPickpocketRequest,
+  PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
@@ -27,6 +28,7 @@ import type {
 } from "../../shared/types.js";
 import {
   acknowledgePendingHandInspection,
+  acknowledgePendingPublicHandReveal,
   appendServerDebugLog,
   buildBotPendingResponse,
   buildBotPlayRequest,
@@ -40,6 +42,7 @@ import {
   resolvePendingDeathSearch,
   resolvePendingDeathSearchForBot,
   resolvePendingPickpocket,
+  resolvePendingPublicHandReveal,
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
   respondToPendingAction,
@@ -244,6 +247,27 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
   }
 
   const pendingObjectChoice = match.internalGame?.pendingObjectChoice;
+  const pendingPublicHandReveal = match.internalGame?.pendingPublicHandReveal;
+  if (pendingPublicHandReveal != null) {
+    const timerKey = `${instanceId}:public-hand-reveal`;
+    if (!botTurnTimers.has(timerKey)) {
+      const delayMs = Math.max(0, new Date(pendingPublicHandReveal.expiresAt).getTime() - Date.now());
+      const timer = setTimeout(() => {
+        botTurnTimers.delete(timerKey);
+        const latestMatch = getMatch(instanceId);
+        const latestReveal = latestMatch?.internalGame?.pendingPublicHandReveal;
+        if (latestMatch != null && latestReveal != null) {
+          resolvePendingPublicHandReveal(latestMatch);
+          saveMatch(latestMatch);
+          notifyMatchUpdated(instanceId);
+        }
+        scheduleBotTurnIfNeeded(instanceId);
+      }, delayMs);
+      botTurnTimers.set(timerKey, timer);
+    }
+    return;
+  }
+
   if (pendingObjectChoice != null) {
     const chooserSeat = match.seats.find((seat) => seat.seatNumber === pendingObjectChoice.chooserSeatNumber);
     const ownerState = match.internalGame?.seatStates.find((seat) => seat.seatNumber === pendingObjectChoice.ownerSeatNumber);
@@ -735,6 +759,19 @@ export function acknowledgeMatchHandInspection(instanceId: string, userId: strin
 
   clearBotTurnTimer(instanceId);
   acknowledgePendingHandInspection(match, userId);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function acknowledgeMatchPublicHandReveal(instanceId: string, userId: string, _request: PendingPublicHandRevealReadyRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+
+  clearBotTurnTimer(instanceId);
+  acknowledgePendingPublicHandReveal(match, userId);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);

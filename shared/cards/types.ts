@@ -19,7 +19,7 @@ export interface SaveBaseDefenseBandMappingRequest {
   mapping: DefenseBandRules;
 }
 
-export type DevCardCatalogId = "base" | "abondance";
+export type DevCardCatalogId = "base" | "abondance" | "puissance";
 
 export type RollScaleMode = "power" | "target_power" | "multiply_power" | "multiply_target_power";
 

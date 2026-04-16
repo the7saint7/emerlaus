@@ -36,7 +36,14 @@ export const defaultMatchExpansionSettings: MatchExpansionSettings = {
 };
 
 export type CardSelectionMode = "none" | "confirm" | "target";
-export type ResponseChoiceType = "pending" | "pass" | "resist" | "annulation" | "resistance_accrue" | "mirror";
+export type ResponseChoiceType =
+  | "pending"
+  | "pass"
+  | "resist"
+  | "annulation"
+  | "ordre-demmerlaus"
+  | "resistance_accrue"
+  | "mirror";
 
 export type CardTargetMode =
   | "self"
@@ -80,6 +87,7 @@ export interface CardView {
   targets: CardTargetMode;
   defenseBand: DefenseBandRules | null;
   attachedCardCount?: number;
+  remainingTurnTriggers?: number;
   canPlay: boolean;
   disabledReason?: string;
   zone: "hand" | "object" | "status" | "discard";
@@ -218,6 +226,14 @@ export interface PendingHandInspectionState {
   cardName: string;
 }
 
+export interface PendingPublicHandRevealState {
+  actorSeatNumber: number;
+  targetSeatNumbers: number[];
+  cardName: string;
+  expiresAt: string;
+  readySeatNumbers: number[];
+}
+
 export interface PendingBoardResetKeepState {
   chooserSeatNumber: number;
   cardName: string;
@@ -329,6 +345,7 @@ export interface GameState {
   pendingResponseOptions?: PendingActionOption[];
   pendingObjectChoice?: PendingObjectChoiceState;
   pendingHandInspection?: PendingHandInspectionState;
+  pendingPublicHandReveal?: PendingPublicHandRevealState;
   pendingBoardResetKeep?: PendingBoardResetKeepState;
   pendingDeathSearch?: PendingDeathSearchState;
   pendingPickpocket?: PendingPickpocketState;
@@ -410,6 +427,9 @@ export interface PendingObjectChoiceRequest {
 }
 
 export interface PendingHandInspectionRequest {
+}
+
+export interface PendingPublicHandRevealReadyRequest {
 }
 
 export interface PendingBoardResetKeepRequest {

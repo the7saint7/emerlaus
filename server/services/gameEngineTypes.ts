@@ -79,6 +79,7 @@ export interface StoredExtraPlayModeState {
   remainingRestrictedPlays: number;
   temporaryPowerBonus: number;
   temporaryResistanceModifier: number;
+  useTotalAlivePower?: boolean;
 }
 
 export interface StoredObjectOwnershipStatState {
@@ -95,6 +96,10 @@ export interface StoredSessionStatRuntimeState {
 export interface StoredGameState {
   deck: StoredCardInstance[];
   discardPile: StoredCardInstance[];
+  lastViergeReplay?: {
+    cardId: string;
+    request: PlayCardRequest;
+  };
   seatStates: StoredSeatState[];
   currentTurnSeatNumber: number;
   turnNumber: number;
@@ -113,7 +118,7 @@ export interface StoredGameState {
     chooserSeatNumber: number;
     ownerSeatNumber: number;
     sourceCard: StoredCardInstance;
-    mode: "remove" | "steal" | "discard_ring";
+    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring";
     finalizeActorSeatNumber?: number;
   };
   pendingHandInspection?: {
@@ -122,6 +127,15 @@ export interface StoredGameState {
     targetSeatNumber: number;
     sourceCard: StoredCardInstance;
     finalizeActorSeatNumber?: number;
+  };
+  pendingPublicHandReveal?: {
+    boxId?: string;
+    actorSeatNumber: number;
+    targetSeatNumbers: number[];
+    sourceCard: StoredCardInstance;
+    finalizeActorSeatNumber?: number;
+    expiresAt: string;
+    readySeatNumbers: number[];
   };
   pendingBoardResetKeep?: {
     boxId?: string;
@@ -170,6 +184,8 @@ export interface StoredGameState {
   extraPlayMode?: StoredExtraPlayModeState;
   forcedPlayCategories?: CardCategoryCode[] | "any";
   forcedFollowUp?: StoredForcedFollowUpState;
+  temporalStopQueuedSeatNumber?: number;
+  temporalStopActiveSeatNumber?: number;
 }
 
 export type StoredMatchState = MatchState & {

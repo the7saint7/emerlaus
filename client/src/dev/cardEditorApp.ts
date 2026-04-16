@@ -13,7 +13,8 @@ import { renderCardEditorView } from "./renderCardEditorView";
 
 const EDITOR_DECK_OPTIONS = [
   { id: "base", label: "Jeu de base" },
-  { id: "abondance", label: "Abondance" }
+  { id: "abondance", label: "Abondance" },
+  { id: "puissance", label: "Puissance" }
 ] satisfies Array<{ id: DevCardCatalogId; label: string }>;
 
 interface EditorState {
@@ -46,7 +47,7 @@ function rememberSelectedDeck(deck: DevCardCatalogId): void {
 
 function rememberedDeck(): DevCardCatalogId {
   const value = window.sessionStorage.getItem(SELECTED_DECK_STORAGE_KEY);
-  return value === "abondance" ? "abondance" : "base";
+  return value === "abondance" || value === "puissance" ? value : "base";
 }
 
 function selectedCardStorageKey(deck: DevCardCatalogId): string {
@@ -381,7 +382,8 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
     },
     currentIndexByDeck: {
       base: initialDeck === "base" ? rememberedCardIndex("base", initialCards) : 0,
-      abondance: initialDeck === "abondance" ? rememberedCardIndex("abondance", initialCards) : 0
+      abondance: initialDeck === "abondance" ? rememberedCardIndex("abondance", initialCards) : 0,
+      puissance: initialDeck === "puissance" ? rememberedCardIndex("puissance", initialCards) : 0
     },
     selectedDeck: initialDeck,
     statusMessage: `Edit a card and save it into the ${EDITOR_DECK_OPTIONS.find((option) => option.id === initialDeck)?.label ?? initialDeck} catalog.`,
@@ -428,7 +430,7 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
 
     rootElement.querySelector<HTMLSelectElement>("[data-card-editor-action='pick-deck']")?.addEventListener("change", async (event) => {
       const nextDeck = (event.currentTarget as HTMLSelectElement).value as DevCardCatalogId;
-      if (nextDeck !== "base" && nextDeck !== "abondance") {
+      if (nextDeck !== "base" && nextDeck !== "abondance" && nextDeck !== "puissance") {
         return;
       }
 

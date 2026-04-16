@@ -40,6 +40,8 @@ export function getResponseChoiceForCard(
   switch (card.cardId) {
     case "annulation":
       return "annulation";
+    case "ordre-demmerlaus":
+      return "ordre-demmerlaus";
     case "resistance-accrue":
       return "resistance_accrue";
     case "miroir":

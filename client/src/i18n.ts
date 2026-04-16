@@ -71,16 +71,27 @@ type TranslationKey =
   | "seat.connected"
   | "seat.disconnected"
   | "seat.host"
+  | "seat.you"
   | "table.serverLog"
   | "table.clientLog"
   | "table.leaveMatch"
   | "table.cardReference"
+  | "table.seatFx"
   | "table.currentTurn"
   | "table.thinking"
   | "table.player"
   | "table.kickPlayer"
   | "table.noPlayableDiscard"
   | "table.discard"
+  | "seatFx.title"
+  | "seatFx.body"
+  | "seatFx.clearSeat"
+  | "seatFx.clearAll"
+  | "seatFx.effect.frozen"
+  | "seatFx.effect.burning"
+  | "seatFx.effect.poisoned"
+  | "seatFx.effect.radiant"
+  | "seatFx.effect.cursed"
   | "stat.power"
   | "stat.hp"
   | "response.resist"
@@ -109,6 +120,12 @@ type TranslationKey =
   | "telepathy.blocked"
   | "telepathy.empty"
   | "telepathy.close"
+  | "sousGrades.title"
+  | "sousGrades.body"
+  | "sousGrades.empty"
+  | "sousGrades.remaining"
+  | "sousGrades.done"
+  | "sousGrades.ready"
   | "reference.title"
   | "reference.body"
   | "reference.close"
@@ -117,6 +134,7 @@ type TranslationKey =
   | "reference.decksLabel"
   | "reference.deckBase"
   | "reference.deckAbondance"
+  | "reference.deckPuissance"
   | "reference.empty"
   | "boardReset.title"
   | "boardReset.inProgress"
@@ -185,6 +203,7 @@ type TranslationKey =
   | "error.sendMessage"
   | "error.addBot"
   | "error.closeInspection"
+  | "error.closePublicHandReveal"
   | "error.keepCard"
   | "error.resolveDeathSearch"
   | "error.resolvePickpocket"
@@ -271,16 +290,27 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "seat.connected": "Connected",
     "seat.disconnected": "Disconnected",
     "seat.host": "Host",
+    "seat.you": "You",
     "table.serverLog": "Server Log",
     "table.clientLog": "Client Log",
     "table.leaveMatch": "Leave Match",
     "table.cardReference": "Card Guide",
+    "table.seatFx": "Seat FX",
     "table.currentTurn": "Current turn",
     "table.thinking": "Thinking",
     "table.player": "Player",
     "table.kickPlayer": "Kick Player",
     "table.noPlayableDiscard": "You cannot play any card this turn. Choose one card to discard.",
     "table.discard": "Discard",
+    "seatFx.title": "Seat FX Preview",
+    "seatFx.body": "Host-only visual previews. These overlays stay local to your client and do not change game or server logic.",
+    "seatFx.clearSeat": "Clear seat",
+    "seatFx.clearAll": "Clear all",
+    "seatFx.effect.frozen": "Frozen",
+    "seatFx.effect.burning": "Burning",
+    "seatFx.effect.poisoned": "Poisoned",
+    "seatFx.effect.radiant": "Radiant",
+    "seatFx.effect.cursed": "Cursed",
     "stat.power": "Power",
     "stat.powerShort": "PWR",
     "stat.hp": "HP",
@@ -317,6 +347,12 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "telepathy.blocked": "No other actions can continue until the viewer closes this window.",
     "telepathy.empty": "This player has no cards in hand.",
     "telepathy.close": "Close",
+    "sousGrades.title": "Sous-grades",
+    "sousGrades.body": "All opponent hands are revealed to everyone for 30 seconds. Click Done when you are ready to continue.",
+    "sousGrades.empty": "This opponent has no cards in hand.",
+    "sousGrades.remaining": "{seconds}s remaining",
+    "sousGrades.done": "Done",
+    "sousGrades.ready": "Ready",
     "reference.title": "Card Reference",
     "reference.body": "Browse the full card catalog. Select a card on the left to read it clearly.",
     "reference.close": "Close",
@@ -325,6 +361,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.decksLabel": "Decks",
     "reference.deckBase": "Base",
     "reference.deckAbondance": "Abondance",
+    "reference.deckPuissance": "Puissance",
     "reference.empty": "No cards match this search.",
     "boardReset.title": "Choose {count} card{plural} to keep",
     "boardReset.inProgress": "Intervention divine in progress",
@@ -393,6 +430,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.sendMessage": "Unable to send message",
     "error.addBot": "Unable to add bot",
     "error.closeInspection": "Unable to close hand inspection",
+    "error.closePublicHandReveal": "Unable to close public hand reveal",
     "error.keepCard": "Unable to keep the selected card",
     "error.resolveDeathSearch": "Unable to resolve death search",
     "error.resolvePickpocket": "Unable to resolve pickpocket",
@@ -469,15 +507,26 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "seat.disconnected": "Déconnecté",
     "seat.host": "Hôte",
     "table.serverLog": "Journal serveur",
+    "seat.you": "Vous",
     "table.clientLog": "Journal client",
     "table.leaveMatch": "Quitter la partie",
     "table.cardReference": "Guide des cartes",
+    "table.seatFx": "Effets siege",
     "table.currentTurn": "Tour actuel",
     "table.thinking": "Réfléchit",
     "table.player": "Joueur",
     "table.kickPlayer": "Expulser le joueur",
     "table.noPlayableDiscard": "Vous ne pouvez jouer aucune carte ce tour-ci. Choisissez une carte à défausser.",
     "table.discard": "Défausser",
+    "seatFx.title": "Previsualisation des effets de siege",
+    "seatFx.body": "Previsualisations visuelles reservees a l'hote. Ces effets restent locaux a votre client et ne changent ni la logique de jeu ni celle du serveur.",
+    "seatFx.clearSeat": "Effacer le siege",
+    "seatFx.clearAll": "Tout effacer",
+    "seatFx.effect.frozen": "Gele",
+    "seatFx.effect.burning": "En feu",
+    "seatFx.effect.poisoned": "Empoisonne",
+    "seatFx.effect.radiant": "Radieux",
+    "seatFx.effect.cursed": "Maudit",
     "stat.power": "Puissance",
     "stat.powerShort": "PUI",
     "stat.hp": "PV",
@@ -514,6 +563,12 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "telepathy.blocked": "Aucune autre action ne peut continuer tant que cette fenêtre n'est pas fermée.",
     "telepathy.empty": "Ce joueur n'a aucune carte en main.",
     "telepathy.close": "Fermer",
+    "sousGrades.title": "Sous-grades",
+    "sousGrades.body": "Toutes les mains adverses sont revelees a tout le monde pendant 30 secondes. Cliquez sur Termine quand vous etes pret a continuer.",
+    "sousGrades.empty": "Cet adversaire n'a aucune carte en main.",
+    "sousGrades.remaining": "{seconds}s restantes",
+    "sousGrades.done": "Termine",
+    "sousGrades.ready": "Pret",
     "reference.title": "Reference des cartes",
     "reference.body": "Parcourez tout le catalogue. Selectionnez une carte a gauche pour la lire clairement.",
     "reference.close": "Fermer",
@@ -522,6 +577,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.decksLabel": "Paquets",
     "reference.deckBase": "Base",
     "reference.deckAbondance": "Abondance",
+    "reference.deckPuissance": "Puissance",
     "reference.empty": "Aucune carte ne correspond a cette recherche.",
     "boardReset.title": "Choisissez {count} carte{plural} à garder",
     "boardReset.inProgress": "Intervention divine en cours",
@@ -590,6 +646,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.sendMessage": "Impossible d'envoyer le message",
     "error.addBot": "Impossible d'ajouter un bot",
     "error.closeInspection": "Impossible de fermer l'inspection de la main",
+    "error.closePublicHandReveal": "Impossible de fermer la revelation publique des mains",
     "error.keepCard": "Impossible de garder la carte sélectionnée",
     "error.resolveDeathSearch": "Impossible de résoudre Fouille de mort",
     "error.resolvePickpocket": "Impossible de résoudre Pickpocket",
@@ -945,12 +1002,33 @@ export function localizeDealerMessageForUi(content: string, language: AppLanguag
     { regex: /^(.+) triggers and kills (.+)!$/, format: (match) => language === "fr"
       ? `${localizeCardName(match[1])} se declenche et tue ${match[2]} !`
       : `${localizeCardName(match[1])} triggers and kills ${match[2]}!` },
+    { regex: /^(.+)'s (.+) failed to freeze (.+)\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[2])} de ${match[1]} echoue a geler ${match[3]}.`
+      : `${match[1]}'s ${localizeCardName(match[2])} failed to freeze ${match[3]}.` },
+    { regex: /^(.+) freezes (.+): they lose their next turn and cannot riposte for one full turn\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[1])} gele ${match[2]} : cette personne perd son prochain tour et ne peut pas riposter pendant un tour complet.`
+      : `${localizeCardName(match[1])} freezes ${match[2]}: they lose their next turn and cannot riposte for one full turn.` },
+    { regex: /^(.+)'s (.+) randomly chooses (.+)\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[2])} de ${match[1]} choisit ${match[3]} au hasard.`
+      : `${match[1]}'s ${localizeCardName(match[2])} randomly chooses ${match[3]}.` },
+    { regex: /^(.+) loses (\d+) HP from (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} perd ${match[2]} PV a cause de ${localizeCardName(match[3])}.`
+      : `${match[1]} loses ${match[2]} HP from ${localizeCardName(match[3])}.` },
+    { regex: /^(.+) is reduced to (\d+) HP by (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} est reduit a ${match[2]} PV par ${localizeCardName(match[3])}.`
+      : `${match[1]} is reduced to ${match[2]} HP by ${localizeCardName(match[3])}.` },
+    { regex: /^(.+) uses (.+): (\d+) HP is redistributed among (\d+) living players?\.$/, format: (match) => language === "fr"
+      ? `${match[1]} utilise ${localizeCardName(match[2])} : ${match[3]} PV sont redistribues entre ${match[4]} joueurs vivants.`
+      : `${match[1]} uses ${localizeCardName(match[2])}: ${match[3]} HP is redistributed among ${match[4]} living players.` },
     { regex: /^(.+)'s (.+) deals (\d+) to all affected opponents\.$/, format: (match) => language === "fr"
       ? `${localizeCardName(match[2])} de ${match[1]} inflige ${match[3]} a tous les adversaires affectes.`
       : `${match[1]}'s ${localizeCardName(match[2])} deals ${match[3]} to all affected opponents.` },
     { regex: /^(.+)'s Abondance ends\.$/, format: (match) => language === "fr"
       ? `L'Abondance de ${match[1]} prend fin.`
       : `${match[1]}'s Abondance ends.` },
+    { regex: /^(.+)'s (.+) ends\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[2])} de ${match[1]} prend fin.`
+      : `${match[1]}'s ${localizeCardName(match[2])} ends.` },
     { regex: /^(.+) paralyzed (.+) with (.+) and may immediately play an AD card\.$/, format: (match) => language === "fr"
       ? `${match[1]} paralyse ${match[2]} avec ${localizeCardName(match[3])} et peut jouer immediatement une carte AD.`
       : `${match[1]} paralyzed ${match[2]} with ${localizeCardName(match[3])} and may immediately play an AD card.` },
@@ -966,9 +1044,27 @@ export function localizeDealerMessageForUi(content: string, language: AppLanguag
     { regex: /^(.+) loaded (.+) onto (.+)\.$/, format: (match) => language === "fr"
       ? `${match[1]} charge ${localizeCardName(match[2])} sur ${localizeCardName(match[3])}.`
       : `${match[1]} loaded ${localizeCardName(match[2])} onto ${localizeCardName(match[3])}.` },
+    { regex: /^(.+) stops time and will immediately take a second turn\.$/, format: (match) => language === "fr"
+      ? `${match[1]} arrete le temps et jouera immediatement un second tour.`
+      : `${match[1]} stops time and will immediately take a second turn.` },
+    { regex: /^(.+) takes an extra turn with (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} joue un tour supplementaire avec ${localizeCardName(match[2])}.`
+      : `${match[1]} takes an extra turn with ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) reveals every opponent hand for 30 seconds with (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} revele la main de chaque adversaire pendant 30 secondes avec ${localizeCardName(match[2])}.`
+      : `${match[1]} reveals every opponent hand for 30 seconds with ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) has no eligible card to reproduce with (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} n'a aucune carte eligible a reproduire avec ${localizeCardName(match[2])}.`
+      : `${match[1]} has no eligible card to reproduce with ${localizeCardName(match[2])}.` },
+    { regex: /^(.+) has no power ring left to sacrifice for (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} n'a plus d'anneau de puissance a sacrifier pour ${localizeCardName(match[2])}.`
+      : `${match[1]} has no power ring left to sacrifice for ${localizeCardName(match[2])}.` },
     { regex: /^(.+) was canceled before resolving\.$/, format: (match) => language === "fr"
       ? `${localizeCardName(match[1])} est annulee avant sa resolution.`
       : `${localizeCardName(match[1])} was canceled before resolving.` },
+    { regex: /^(.+) ends\.$/, format: (match) => language === "fr"
+      ? `${localizeCardName(match[1])} prend fin.`
+      : `${localizeCardName(match[1])} ends.` },
     { regex: /^Dealer reshuffled the discard pile into the deck\.$/, format: () => language === "fr"
       ? "La defausse a ete remelangee dans le paquet."
       : "The discard pile was reshuffled into the deck." }
@@ -1026,6 +1122,12 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
             : {
                 ...match.game.pendingHandInspection,
                 cardName: localizeCardName(match.game.pendingHandInspection.cardName)
+              },
+          pendingPublicHandReveal: match.game.pendingPublicHandReveal == null
+            ? undefined
+            : {
+                ...match.game.pendingPublicHandReveal,
+                cardName: localizeCardName(match.game.pendingPublicHandReveal.cardName)
               },
           pendingBoardResetKeep: match.game.pendingBoardResetKeep == null
             ? undefined

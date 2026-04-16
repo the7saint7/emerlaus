@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   abondanceCardDefinitions,
   defaultDefenseBandByCategory,
+  puissanceCardDefinitions,
   type BaseCardDefinition,
   type CardCategoryCode,
   type CardRules,
@@ -19,6 +20,11 @@ const CATALOG_CONFIG = {
   abondance: {
     path: path.resolve(process.cwd(), "shared/cards/catalog/abondance-cards.ts"),
     exportStart: "export const abondanceCardDefinitions = ",
+    format: "makecard_array"
+  },
+  puissance: {
+    path: path.resolve(process.cwd(), "shared/cards/catalog/puissance-cards.ts"),
+    exportStart: "export const puissanceCardDefinitions = ",
     format: "makecard_array"
   }
 } as const satisfies Record<DevCardCatalogId, {
@@ -294,7 +300,7 @@ export function readBaseCardCatalog(catalogId: DevCardCatalogId = "base"): BaseC
   const config = getCatalogConfig(catalogId);
   return config.format === "json_array"
     ? readJsonArrayCatalog(readCatalogSource(catalogId), config.exportStart)
-    : cloneCards(abondanceCardDefinitions);
+    : cloneCards(catalogId === "puissance" ? puissanceCardDefinitions : abondanceCardDefinitions);
 }
 
 export function writeBaseCardDefinition(catalogId: DevCardCatalogId, cardId: string, card: BaseCardDefinition): BaseCardDefinition[] {
