@@ -301,13 +301,22 @@ interface TurnPastilleRenderState {
   animating: boolean;
 }
 
-const loadedTextureByUrl = new Map<string, Texture>();
+interface CachedTextureEntry {
+  texture: Texture;
+  lastUsedAt: number;
+}
+
+const loadedTextureByUrl = new Map<string, CachedTextureEntry>();
 const requestedTextureUrls = new Set<string>();
 const HAND_DRAG_START_DISTANCE = 16;
 const CURSOR_THROTTLE_MS = 50;
 const GHOST_TIMEOUT_MS = 500;
 const TURN_PASTILLE_MOVE_MS = 540;
 const DEV_SEAT_VISUAL_EFFECT_IDS: SeatVisualEffectId[] = ["frozen"];
+const MAX_RENDER_RESOLUTION = 1.25;
+const MAX_TEXTURE_CACHE_SIZE = 72;
+const TEXTURE_CACHE_IDLE_MS = 30_000;
+let currentFrameTextureUsage = new Set<string>();
 
 function createRect(x: number, y: number, width: number, height: number, color: string, alpha = 1, radius = 0): Graphics {
   const rect = new Graphics();
@@ -560,7 +569,18 @@ function rectEdgePoint(fromX: number, fromY: number, rect: RectGeometry): StageP
 }
 
 function getLoadedTexture(imageUrl: string): Texture | null {
-  return imageUrl !== "" ? (loadedTextureByUrl.get(imageUrl) ?? null) : null;
+  if (imageUrl === "") {
+    return null;
+  }
+
+  const cached = loadedTextureByUrl.get(imageUrl);
+  if (cached == null) {
+    return null;
+  }
+
+  cached.lastUsedAt = Date.now();
+  currentFrameTextureUsage.add(imageUrl);
+  return cached.texture;
 }
 
 function requestTextureLoad(imageUrl: string, onReady: () => void): void {
@@ -571,7 +591,10 @@ function requestTextureLoad(imageUrl: string, onReady: () => void): void {
   requestedTextureUrls.add(imageUrl);
   void Assets.load<Texture>(imageUrl)
     .then((texture) => {
-      loadedTextureByUrl.set(imageUrl, texture);
+      loadedTextureByUrl.set(imageUrl, {
+        texture,
+        lastUsedAt: Date.now()
+      });
       onReady();
     })
     .catch(() => {
@@ -1193,6 +1216,47 @@ function getVictoryStatsSeatEntries(match: MatchState): VictoryStatsSeatEntry[] 
       const seat = seatByNumber.get(stats.seatNumber);
       return seat == null ? [] : [{ seat, stats }];
     });
+}
+
+function pruneLoadedTextures(): void {
+  const now = Date.now();
+  const unloadUrls = new Set<string>();
+  const removableEntries = Array.from(loadedTextureByUrl.entries())
+    .filter(([url]) => !currentFrameTextureUsage.has(url) && !requestedTextureUrls.has(url));
+
+  for (const [url, entry] of removableEntries) {
+    if (now - entry.lastUsedAt >= TEXTURE_CACHE_IDLE_MS) {
+      unloadUrls.add(url);
+    }
+  }
+
+  if (loadedTextureByUrl.size - unloadUrls.size > MAX_TEXTURE_CACHE_SIZE) {
+    const overflow = loadedTextureByUrl.size - unloadUrls.size - MAX_TEXTURE_CACHE_SIZE;
+    const overflowCandidates = removableEntries
+      .filter(([url]) => !unloadUrls.has(url))
+      .sort((left, right) => left[1].lastUsedAt - right[1].lastUsedAt)
+      .slice(0, overflow);
+
+    for (const [url] of overflowCandidates) {
+      unloadUrls.add(url);
+    }
+  }
+
+  if (unloadUrls.size === 0) {
+    return;
+  }
+
+  for (const url of unloadUrls) {
+    loadedTextureByUrl.delete(url);
+  }
+
+  void Promise.all(Array.from(unloadUrls, async (url) => {
+    try {
+      await Assets.unload(url);
+    } catch {
+      // Ignore cache eviction failures and keep rendering.
+    }
+  }));
 }
 
 function pickMaxVictoryEntry(
@@ -1863,17 +1927,14 @@ function renderTableScene(
   scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#101812", 0.56, 34));
   const turnPastilleInsertIndex = scene.children.length;
   if (localSeat != null && localSeat.seatNumber === currentTurnSeatNumber) {
-    const pulse = 0.5 + 0.5 * Math.sin(now / 700);
-    // Outer layer: warm gold across the full width
-    scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8900a", 0.10 + 0.28 * pulse, 34));
+    scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8900a", 0.24, 34));
     // Inner layer: bright yellow-gold centered, narrower — creates gradient impression
     const cw = handArea.width * 0.62;
     const cx = handArea.x + (handArea.width - cw) / 2;
-    scene.addChild(createRect(cx, handArea.y, cw, handArea.height, "#f5d040", 0.06 + 0.18 * pulse, 34));
-    // Pulsing border
+    scene.addChild(createRect(cx, handArea.y, cw, handArea.height, "#f5d040", 0.14, 34));
     const border = new Graphics();
     border.roundRect(handArea.x, handArea.y, handArea.width, handArea.height, 34);
-    border.stroke({ color: "#f5c820", alpha: 0.28 + 0.62 * pulse, width: 2.5 });
+    border.stroke({ color: "#f5c820", alpha: 0.72, width: 2.5 });
     scene.addChild(border);
   }
   if (localSeat != null) {
@@ -3516,10 +3577,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
   const app = new Application();
   await app.init({
-    antialias: true,
+    antialias: false,
     autoDensity: true,
-    resolution: Math.min(window.devicePixelRatio || 1, 2),
-    backgroundAlpha: 0
+    resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION),
+    backgroundAlpha: 0,
+    renderableGCActive: true,
+    renderableGCMaxUnusedTime: 15_000,
+    renderableGCFrequency: 5_000
   });
   hostElement.appendChild(app.canvas);
 
@@ -3533,6 +3597,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let lastOverlayMarkup = "";
   let currentMetrics = computeStageMetrics(hostElement);
   let currentGeometry: TableInteractionGeometry | null = null;
+  let rendererWidth = 0;
+  let rendererHeight = 0;
   let redrawQueued = false;
   let handFocusTransition: HandFocusTransition | null = null;
   let cardInspectState: CardInspectState | null = null;
@@ -3801,7 +3867,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const cleanupScene = (): void => {
     const children = scene.removeChildren();
     for (const child of children) {
-      child.destroy({ children: true });
+      child.destroy({ children: true, context: true, style: true });
     }
   };
 
@@ -5759,9 +5825,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     syncLocalSeatNumberFromMatch(match);
 
     currentMetrics = computeStageMetrics(hostElement);
-    app.renderer.resize(Math.max(1, hostElement.clientWidth), Math.max(1, hostElement.clientHeight));
+    const nextRendererWidth = Math.max(1, hostElement.clientWidth);
+    const nextRendererHeight = Math.max(1, hostElement.clientHeight);
+    if (nextRendererWidth !== rendererWidth || nextRendererHeight !== rendererHeight) {
+      rendererWidth = nextRendererWidth;
+      rendererHeight = nextRendererHeight;
+      app.renderer.resize(nextRendererWidth, nextRendererHeight);
+    }
     scene.position.set(currentMetrics.left, currentMetrics.top);
     scene.scale.set(currentMetrics.scale);
+    currentFrameTextureUsage = new Set<string>();
     frameElement.style.left = `${currentMetrics.left}px`;
     frameElement.style.top = `${currentMetrics.top}px`;
     frameElement.style.width = `${STAGE_WIDTH}px`;
@@ -5999,11 +6072,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
     syncPublicHandRevealRefreshTimer();
     renderInspectOverlay();
-    const isLocalTurn = match.status === "in_progress"
-      && !presentationLockActive
-      && match.game?.currentTurnSeatNumber === localSeatNumber;
+    pruneLoadedTextures();
 
-    if (handFocusTransition != null || combatVisualsActive || turnPastilleAnimating || isLocalTurn || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
+    if (handFocusTransition != null || combatVisualsActive || turnPastilleAnimating || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
       scheduleRedraw();
     }
   };
@@ -7007,6 +7078,6 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     if (session.mode === "discord" && leftMessage === "") {
       void disconnectFromMatch(session.instanceId, playerSessionToken);
     }
-    app.destroy();
+    app.destroy(undefined, { children: true, context: true, style: true });
   }, { once: true });
 }
