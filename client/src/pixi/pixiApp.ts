@@ -3674,6 +3674,18 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       ])
     );
 
+  const mergeReplaySeatSnapshot = (snapshotSeat: SeatState, fallbackSeat?: SeatState): SeatState => {
+    const localizedSnapshot = localizeSeatState(snapshotSeat, language);
+    if (snapshotSeat.seatNumber !== localSeatNumber) {
+      return localizedSnapshot;
+    }
+
+    return {
+      ...localizedSnapshot,
+      hand: [...(fallbackSeat?.hand ?? localizedSnapshot.hand ?? [])]
+    };
+  };
+
   const getReplayEventSeatNumbers = (event: GameEvent): number[] => {
     const seatNumbers = new Set<number>();
     if ("seatNumber" in event && event.seatNumber != null) {
@@ -4704,14 +4716,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
       seatNumbersWithTimelineSnapshots.add(event.seatNumber);
       if (displayedSeatsBySeat[event.seatNumber] == null) {
-        displayedSeatsBySeat[event.seatNumber] = preUpdateSeats[event.seatNumber] ?? localizeSeatState(event.seat, language);
+        displayedSeatsBySeat[event.seatNumber] = preUpdateSeats[event.seatNumber]
+          ?? mergeReplaySeatSnapshot(event.seat);
       }
 
+      const fallbackSeat = displayedSeatsBySeat[event.seatNumber] ?? preUpdateSeats[event.seatNumber];
       displayedSeatSnapshotTimelineBySeat[event.seatNumber] = [
         ...(displayedSeatSnapshotTimelineBySeat[event.seatNumber] ?? []),
         {
           boxIndex,
-          seat: localizeSeatState(event.seat, language)
+          seat: mergeReplaySeatSnapshot(event.seat, fallbackSeat)
         }
       ];
     }

@@ -930,6 +930,15 @@ export function localizeDealerMessageForUi(content: string, language: AppLanguag
     { regex: /^(.+) uses (.+) to steal (\d+) cards? from (.+)\.$/, format: (match) => language === "fr"
       ? `${match[1]} utilise ${localizeCardName(match[2])} pour voler ${match[3]} carte(s) a ${match[4]}.`
       : `${match[1]} uses ${localizeCardName(match[2])} to steal ${match[3]} card(s) from ${match[4]}.` },
+    { regex: /^(.+) stole (.+) from (.+) with (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} vole ${localizeCardName(match[2])} a ${match[3]} avec ${localizeCardName(match[4])}.`
+      : `${match[1]} stole ${localizeCardName(match[2])} from ${match[3]} with ${localizeCardName(match[4])}.` },
+    { regex: /^(.+) removed (.+) from (.+) with (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} retire ${localizeCardName(match[2])} a ${match[3]} avec ${localizeCardName(match[4])}.`
+      : `${match[1]} removed ${localizeCardName(match[2])} from ${match[3]} with ${localizeCardName(match[4])}.` },
+    { regex: /^(.+) discards (.+) to equip (.+)\.$/, format: (match) => language === "fr"
+      ? `${match[1]} defausse ${localizeCardName(match[2])} pour equiper ${localizeCardName(match[3])}.`
+      : `${match[1]} discards ${localizeCardName(match[2])} to equip ${localizeCardName(match[3])}.` },
     { regex: /^(.+) discards their hand and redraws\.$/, format: (match) => language === "fr"
       ? `${match[1]} defausse sa main et repige.`
       : `${match[1]} discards their hand and redraws.` },

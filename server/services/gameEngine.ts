@@ -2081,8 +2081,20 @@ function queueObjectChoice(
     const removed = removeObjectFromSeat(match, ownerSeatNumber, eligibleObjects[0]?.instanceId);
     if (mode === "steal") {
       removed.forEach((card) => addObjectToSeat(match, chooserSeatNumber, card));
+      if (removed[0] != null) {
+        appendDealerMessage(
+          match,
+          `${getPublicSeat(match, chooserSeatNumber).displayName} stole ${requireDefinition(removed[0].cardId).name} from ${getPublicSeat(match, ownerSeatNumber).displayName} with ${sourceDefinition.name}.`
+        );
+      }
     } else {
       discardInstances(game, removed);
+      if (removed[0] != null) {
+        appendDealerMessage(
+          match,
+          `${getPublicSeat(match, chooserSeatNumber).displayName} removed ${requireDefinition(removed[0].cardId).name} from ${getPublicSeat(match, ownerSeatNumber).displayName} with ${sourceDefinition.name}.`
+        );
+      }
     }
     return false;
   }
@@ -2096,8 +2108,20 @@ function queueObjectChoice(
     const removed = removeObjectFromSeat(match, ownerSeatNumber, chosenObject.instanceId);
     if (mode === "steal") {
       removed.forEach((card) => addObjectToSeat(match, chooserSeatNumber, card));
+      if (removed[0] != null) {
+        appendDealerMessage(
+          match,
+          `${chooser.displayName} stole ${requireDefinition(removed[0].cardId).name} from ${getPublicSeat(match, ownerSeatNumber).displayName} with ${sourceDefinition.name}.`
+        );
+      }
     } else {
       discardInstances(game, removed);
+      if (removed[0] != null) {
+        appendDealerMessage(
+          match,
+          `${chooser.displayName} removed ${requireDefinition(removed[0].cardId).name} from ${getPublicSeat(match, ownerSeatNumber).displayName} with ${sourceDefinition.name}.`
+        );
+      }
     }
     return false;
   }
@@ -6207,7 +6231,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
       removed.forEach((card) => addObjectToSeat(match, pendingObjectChoice.chooserSeatNumber, card));
       appendDealerMessage(
         match,
-        `${chooserSeat.displayName} stole ${requireDefinition(removed[0].cardId).name} with ${sourceDefinition.name}.`
+        `${chooserSeat.displayName} stole ${requireDefinition(removed[0].cardId).name} from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName} with ${sourceDefinition.name}.`
       );
     } else if (pendingObjectChoice.mode === "discard_ring") {
       discardInstances(game, removed);
@@ -6219,7 +6243,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
       discardInstances(game, removed);
       appendDealerMessage(
         match,
-        `${chooserSeat.displayName} removed ${requireDefinition(removed[0].cardId).name} with ${sourceDefinition.name}.`
+        `${chooserSeat.displayName} removed ${requireDefinition(removed[0].cardId).name} from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName} with ${sourceDefinition.name}.`
       );
     }
   }
