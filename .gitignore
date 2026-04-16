@@ -1,8 +1,10 @@
 node_modules/
 dist/
 .env
+.venv/
 .DS_Store
 *.log
 ui_sketches/
 runtime-logs/
 /.tmp-*
+client/public/assets/cards/Downloads/
