@@ -442,6 +442,54 @@ select {
   gap: 8px;
 }
 
+.pixi-replay-debug {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 239, 196, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pixi-replay-debug__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pixi-replay-debug__header strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(248, 240, 222, 0.92);
+}
+
+.pixi-replay-debug__header span,
+.pixi-replay-debug__slider span {
+  font-size: 0.75rem;
+  color: rgba(248, 240, 222, 0.6);
+}
+
+.pixi-replay-debug__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pixi-replay-debug__controls .pixi-event-log-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pixi-replay-debug__slider {
+  display: grid;
+  gap: 8px;
+}
+
+.pixi-replay-debug__slider input {
+  width: 100%;
+}
+
 .pixi-event-log-entry p {
   margin: 0;
   font-size: 0.85rem;
@@ -2691,7 +2739,7 @@ h2 {
   inset: 0;
   pointer-events: none;
   z-index: 14;
-  transition: opacity 0.3s ease;
+  transition: opacity var(--dice-fade-ms, 0.3s) ease;
 }
 
 .dice-roll-overlay--hidden {
@@ -2749,7 +2797,7 @@ h2 {
   position: relative;
   transform-style: preserve-3d;
   transform-origin: center;
-  transition: transform 900ms ease-out;
+  transition: transform var(--dice-spin-ms, 900ms) ease-out;
 }
 .die-solid--d4  { width: 150px; height: 150px; }
 .die-solid--d6  { width: 100px; height: 100px; }

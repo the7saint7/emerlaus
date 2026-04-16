@@ -642,18 +642,15 @@ function recordLuckOutcome(
 }
 
 function appendDealerMessage(match: StoredMatchState, content: string): void {
-  match.chatMessages.push({
-    id: randomUUID(),
-    userId: "dealer",
-    displayName: "Dealer",
-    avatarUrl: "",
-    content,
-    createdAt: new Date().toISOString()
-  });
+  const createdAt = new Date().toISOString();
+  const messageId = randomUUID();
 
-  if (match.chatMessages.length > 100) {
-    match.chatMessages = match.chatMessages.slice(-100);
-  }
+  pushGameEvent(match, {
+    id: messageId,
+    type: "dealer_message",
+    createdAt,
+    content
+  });
 }
 
 function pushDiceRoll(match: StoredMatchState, diceRoll: DiceRollEvent): void {
@@ -692,9 +689,28 @@ function pushGameEvent(match: StoredMatchState, event: GameEvent): void {
   }
 
   match.internalGame.eventLog.push(event);
-  if (match.internalGame.eventLog.length > 100) {
-    match.internalGame.eventLog = match.internalGame.eventLog.slice(-100);
+  if (match.internalGame.eventLog.length > 250) {
+    match.internalGame.eventLog = match.internalGame.eventLog.slice(-250);
   }
+}
+
+function getGameEventSeatNumbers(event: GameEvent): number[] {
+  const seatNumbers = new Set<number>();
+  if ("seatNumber" in event && typeof event.seatNumber === "number") {
+    seatNumbers.add(event.seatNumber);
+  }
+  if ("actorSeatNumber" in event && typeof event.actorSeatNumber === "number") {
+    seatNumbers.add(event.actorSeatNumber);
+  }
+  if ("targetSeatNumber" in event && typeof event.targetSeatNumber === "number") {
+    seatNumbers.add(event.targetSeatNumber);
+  }
+  if (event.type === "action_start") {
+    for (const targetSeatNumber of event.targetSeatNumbers) {
+      seatNumbers.add(targetSeatNumber);
+    }
+  }
+  return [...seatNumbers];
 }
 
 function pushPresentationEvent(
@@ -3626,7 +3642,7 @@ function applyEffect(
         ) * damageMultiplier;
         const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, boxId, actorSeatNumber);
         if (dealt > 0 && getStoredSeat(game, actorSeatNumber).alive) {
-          const lifestealResult = setSeatHp(match, actorSeatNumber, actorSeat.hp + dealt);
+          const lifestealResult = setSeatHp(match, actorSeatNumber, getPublicSeat(match, actorSeatNumber).hp + dealt);
           if (lifestealResult.delta > 0) {
             recordHealing(match, actorSeatNumber, actorSeatNumber, lifestealResult.delta);
             pushPresentationEvent(match, {
@@ -4196,6 +4212,35 @@ function buildPublicSeat(match: StoredMatchState, seat: SeatState, viewerSeatNum
   return publicSeat;
 }
 
+function pushSeatSnapshotEventsForBox(match: StoredMatchState, boxId: string): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatNumbers = new Set<number>();
+  for (const event of game.eventLog) {
+    if (("boxId" in event ? event.boxId : undefined) !== boxId) {
+      continue;
+    }
+    for (const seatNumber of getGameEventSeatNumbers(event)) {
+      seatNumbers.add(seatNumber);
+    }
+  }
+
+  for (const seatNumber of seatNumbers) {
+    const publicSeat = getPublicSeat(match, seatNumber);
+    pushGameEvent(match, {
+      id: randomUUID(),
+      boxId,
+      type: "seat_snapshot",
+      createdAt: new Date().toISOString(),
+      seatNumber,
+      seat: buildPublicSeat(match, publicSeat)
+    });
+  }
+}
+
 function buildPublicGameState(match: StoredMatchState, viewerSeatNumber?: number): GameState | undefined {
   const game = match.internalGame;
   if (game == null) {
@@ -4258,7 +4303,6 @@ export function buildPublicMatchState(match: StoredMatchState, viewerUserId?: st
     maxSeats: match.maxSeats,
     enabledExpansions: { ...match.enabledExpansions },
     seats: sortBySeatNumber(match.seats).map((seat) => buildPublicSeat(match, seat, viewerSeatNumber)),
-    chatMessages: [...match.chatMessages],
     game: buildPublicGameState(match, viewerSeatNumber),
     createdAt: match.createdAt,
     startedAt: match.startedAt
@@ -4423,6 +4467,30 @@ function buildPendingDeathSearchPool(
   };
 }
 
+function buildBotPendingDeathSearchRequest(
+  match: StoredMatchState,
+  pendingDeathSearch: NonNullable<StoredGameState["pendingDeathSearch"]>
+): { corpseSeatNumber?: number; keepCardInstanceIds?: string[]; decline?: boolean } {
+  const selectedCorpseSeatNumber = pendingDeathSearch.selectedCorpseSeatNumber
+    ?? (pendingDeathSearch.corpses.length === 1
+      ? pendingDeathSearch.corpses[0]?.seatNumber
+      : [...pendingDeathSearch.corpses].sort((left, right) => right.cards.length - left.cards.length)[0]?.seatNumber);
+
+  if (selectedCorpseSeatNumber == null) {
+    return { decline: true };
+  }
+
+  const pool = buildPendingDeathSearchPool(match, {
+    ...pendingDeathSearch,
+    selectedCorpseSeatNumber
+  });
+
+  return {
+    corpseSeatNumber: selectedCorpseSeatNumber,
+    keepCardInstanceIds: pool.cardOptions.slice(0, pool.keepCardCount).map((card) => card.instanceId)
+  };
+}
+
 function buildPendingDeathSearchPublicState(
   match: StoredMatchState,
   viewerSeatNumber?: number
@@ -4444,7 +4512,7 @@ function buildPendingDeathSearchPublicState(
     : { keepCardCount: 0, cardOptions: [] };
 
   return {
-    chooserSeatNumber: pendingDeathSearch.chooserSeatNumber,
+    chooserSeatNumber: isLocalChooser ? pendingDeathSearch.chooserSeatNumber : undefined,
     cardName: requireDefinition(pendingDeathSearch.sourceCard.cardId).name,
     keepCardCount: pool.keepCardCount,
     corpseOptions,
@@ -4555,8 +4623,28 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
   }
 
   if (game.pendingDeathSearch != null) {
+    const deathSearchChooser = match.seats.find((seat) => seat.seatNumber === game.pendingDeathSearch?.chooserSeatNumber);
     game.pendingDeathSearch.continuationActorSeatNumber = actorSeatNumber;
     game.pendingDeathSearch.continuationBoxId = boxId;
+    if (deathSearchChooser?.controllerType === "bot") {
+      appendServerDebugLog(
+        match,
+        "death_search",
+        `Auto-resolving ${requireDefinition(game.pendingDeathSearch.sourceCard.cardId).name} for bot seat ${deathSearchChooser.seatNumber}`
+      );
+      try {
+        const botRequest = buildBotPendingDeathSearchRequest(match, game.pendingDeathSearch);
+        resolvePendingDeathSearch(match, deathSearchChooser.userId, botRequest);
+      } catch (error) {
+        appendServerDebugLog(
+          match,
+          "death_search",
+          `Bot auto-resolution failed for ${requireDefinition(game.pendingDeathSearch.sourceCard.cardId).name}: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+        refreshSeatSummaries(match);
+      }
+      return;
+    }
     appendServerDebugLog(
       match,
       "death_search",
@@ -4667,6 +4755,9 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
   }
 
   refreshSeatSummaries(match);
+  if (boxId != null) {
+    pushSeatSnapshotEventsForBox(match, boxId);
+  }
 }
 
 function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActionState, mirrorPlayerSeatNumber: number): void {
@@ -5310,7 +5401,11 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
       const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, pendingAction.actorSeatNumber);
       if (effect.type === "lifesteal" && dealt > 0) {
         if (dealt > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
-          const lifestealResult = setSeatHp(match, pendingAction.actorSeatNumber, actorSeat.hp + dealt);
+          const lifestealResult = setSeatHp(
+            match,
+            pendingAction.actorSeatNumber,
+            getPublicSeat(match, pendingAction.actorSeatNumber).hp + dealt
+          );
           if (lifestealResult.delta > 0) {
             recordHealing(match, pendingAction.actorSeatNumber, pendingAction.actorSeatNumber, lifestealResult.delta);
             pushPresentationEvent(match, {
@@ -6372,6 +6467,18 @@ export function resolvePendingDeathSearch(
   const continuationBoxId = pendingDeathSearch.continuationBoxId;
   game.pendingDeathSearch = undefined;
   resumeAfterDeathSearch(match, continuationActorSeatNumber, continuationBoxId);
+}
+
+export function resolvePendingDeathSearchForBot(match: StoredMatchState, chooserSeatNumber: number): void {
+  const game = match.internalGame;
+  const pendingDeathSearch = game?.pendingDeathSearch;
+  if (game == null || pendingDeathSearch == null || pendingDeathSearch.chooserSeatNumber !== chooserSeatNumber) {
+    throw new Error("No pending death search for this bot");
+  }
+
+  const chooserSeat = getPublicSeat(match, chooserSeatNumber);
+  const botRequest = buildBotPendingDeathSearchRequest(match, pendingDeathSearch);
+  resolvePendingDeathSearch(match, chooserSeat.userId, botRequest);
 }
 
 export function resolvePendingPickpocket(

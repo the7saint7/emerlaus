@@ -2,7 +2,6 @@ import { baseCardDefinitionById } from "../../shared/cards";
 import type { CardCategoryCode } from "../../shared/cards";
 import type {
   CardView,
-  ChatMessage,
   MatchState,
   PendingActionResponderState,
   PlayedCardState,
@@ -31,21 +30,20 @@ type TranslationKey =
   | "kick.confirm.body"
   | "discard.confirm.title"
   | "discard.confirm.body"
-  | "chat.empty"
-  | "chat.title"
-  | "chat.history.expanded"
-  | "chat.history.recent"
-  | "chat.open"
-  | "chat.close"
-  | "chat.hide"
-  | "chat.placeholder"
-  | "chat.send"
-  | "chat.dock"
   | "eventLog.title"
   | "eventLog.history"
   | "eventLog.empty"
   | "eventLog.expand"
   | "eventLog.minimize"
+  | "replayDebug.title"
+  | "replayDebug.speed"
+  | "replayDebug.playing"
+  | "replayDebug.paused"
+  | "replayDebug.pause"
+  | "replayDebug.resume"
+  | "replayDebug.rewind"
+  | "replayDebug.slow"
+  | "replayDebug.normal"
   | "lobby.activity"
   | "lobby.title"
   | "lobby.copy"
@@ -232,21 +230,20 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "kick.confirm.body": "{playerName} will be replaced by a bot.",
     "discard.confirm.title": "Discard this card?",
     "discard.confirm.body": "This will discard the card without using its effect.",
-    "chat.empty": "No events yet.",
-    "chat.title": "Event Log",
-    "chat.history.expanded": "Full history",
-    "chat.history.recent": "Recent events",
-    "chat.open": "Expand",
-    "chat.close": "Close",
-    "chat.hide": "Hide",
-    "chat.placeholder": "Type here. Unicode emoji works too.",
-    "chat.send": "Send",
-    "chat.dock": "Chat",
     "eventLog.title": "Event Log",
     "eventLog.history": "Full history",
     "eventLog.empty": "No events yet.",
     "eventLog.expand": "Expand",
     "eventLog.minimize": "Minimize",
+    "replayDebug.title": "Replay Debug",
+    "replayDebug.speed": "Speed",
+    "replayDebug.playing": "Playing",
+    "replayDebug.paused": "Paused",
+    "replayDebug.pause": "Pause",
+    "replayDebug.resume": "Resume",
+    "replayDebug.rewind": "Rewind",
+    "replayDebug.slow": "Slow",
+    "replayDebug.normal": "Normal",
     "lobby.activity": "Emerlaus Activity",
     "lobby.title": "Card Table Lobby",
     "lobby.copy": "Seats are fixed in match order. Your screen will always rotate the table so your own hand stays at the bottom.",
@@ -340,7 +337,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "deathSearch.inProgress": "Death search in progress",
     "deathSearch.chooseCorpseBody": "Choose which corpse to search.",
     "deathSearch.keepBody": "Choose the {count} cards you will keep from your hand and {corpseName}'s cards.",
-    "deathSearch.waitingBody": "Waiting for {chooserName} to resolve Death Search.",
+    "deathSearch.waitingBody": "Waiting for Death Search to be resolved.",
     "deathSearch.keepAction": "Keep Selected Cards",
     "deathSearch.blocked": "No other actions can continue until the death search is resolved.",
     "deathSearch.empty": "No cards are available to keep.",
@@ -430,17 +427,16 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "kick.confirm.body": "{playerName} sera remplacé par un bot.",
     "discard.confirm.title": "Défausser cette carte?",
     "discard.confirm.body": "Cette action défaussera la carte sans utiliser son effet.",
-    "chat.empty": "Aucun événement pour le moment.",
-    "chat.title": "Journal des événements",
-    "chat.history.expanded": "Historique complet",
-    "chat.history.recent": "Événements récents",
-    "chat.open": "Agrandir",
-    "chat.close": "Fermer",
-    "chat.hide": "Masquer",
-    "chat.placeholder": "Écrivez ici. Les émojis Unicode fonctionnent aussi.",
-    "chat.send": "Envoyer",
-    "chat.dock": "Chat",
     "eventLog.title": "Journal",
+    "replayDebug.title": "Replay debug",
+    "replayDebug.speed": "Vitesse",
+    "replayDebug.playing": "Lecture",
+    "replayDebug.paused": "Pause",
+    "replayDebug.pause": "Pause",
+    "replayDebug.resume": "Reprendre",
+    "replayDebug.rewind": "Revenir",
+    "replayDebug.slow": "Ralenti",
+    "replayDebug.normal": "Normal",
     "eventLog.history": "Historique complet",
     "eventLog.empty": "Aucun événement.",
     "eventLog.expand": "Agrandir",
@@ -538,7 +534,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "deathSearch.inProgress": "Fouille de mort en cours",
     "deathSearch.chooseCorpseBody": "Choisissez quel cadavre fouiller.",
     "deathSearch.keepBody": "Choisissez les {count} cartes à garder parmi votre main et les cartes de {corpseName}.",
-    "deathSearch.waitingBody": "En attente que {chooserName} résolve Fouille de mort.",
+    "deathSearch.waitingBody": "En attente que Fouille de mort soit résolue.",
     "deathSearch.keepAction": "Garder les cartes sélectionnées",
     "deathSearch.blocked": "Aucune autre action ne peut continuer tant que la fouille n'est pas résolue.",
     "deathSearch.empty": "Aucune carte n'est disponible à garder.",
@@ -699,7 +695,7 @@ export function localizeCardView(card: CardView, language: AppLanguage): CardVie
   };
 }
 
-function localizeSeatState(seat: SeatState, language: AppLanguage): SeatState {
+export function localizeSeatState(seat: SeatState, language: AppLanguage): SeatState {
   return {
     ...seat,
     hand: seat.hand?.map((card) => localizeCardView(card, language)),
@@ -992,10 +988,6 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
   return {
     ...match,
     seats: match.seats.map((seat) => localizeSeatState(seat, language)),
-    chatMessages: match.chatMessages.map((message: ChatMessage) => ({
-      ...message,
-      content: message.userId === "dealer" ? localizeDealerMessageForUi(message.content, language) : message.content
-    })),
     game: match.game == null
       ? undefined
       : {

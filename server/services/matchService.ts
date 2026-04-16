@@ -38,6 +38,7 @@ import {
   playCardFromHand,
   resolvePendingBoardResetKeep,
   resolvePendingDeathSearch,
+  resolvePendingDeathSearchForBot,
   resolvePendingPickpocket,
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
@@ -49,7 +50,6 @@ import { getMatch, getOrCreateMatch, saveMatch } from "../store/matchStore.js";
 import { issuePlayerSession, revokePlayerSession } from "../store/playerSessionStore.js";
 import { notifyMatchUpdated } from "../store/sseStore.js";
 
-const MAX_CHAT_MESSAGES = 100;
 const botTurnTimers = new Map<string, NodeJS.Timeout>();
 
 function getBotTurnTimerKey(instanceId: string): string {
@@ -363,22 +363,17 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
           const latestPending = latestMatch?.internalGame?.pendingDeathSearch;
           const latestSeat = latestMatch?.seats.find((candidate) => candidate.seatNumber === latestPending?.chooserSeatNumber);
           if (latestMatch != null && latestPending != null && latestSeat?.controllerType === "bot") {
-            const selectedCorpseSeatNumber = latestPending.selectedCorpseSeatNumber
-              ?? (latestPending.corpses.length === 1
-                ? latestPending.corpses[0]?.seatNumber
-                : [...latestPending.corpses].sort((left, right) => right.cards.length - left.cards.length)[0]?.seatNumber);
-            const chooserState = latestMatch.internalGame?.seatStates.find((candidate) => candidate.seatNumber === latestPending.chooserSeatNumber);
-            const selectedCorpse = latestPending.corpses.find((corpse) => corpse.seatNumber === selectedCorpseSeatNumber);
-            const combinedCards = [
-              ...(chooserState?.hand.filter((card) => card.instanceId !== latestPending.sourceCard.instanceId) ?? []),
-              ...(selectedCorpse?.cards ?? [])
-            ];
-            resolvePendingDeathSearch(latestMatch, latestSeat.userId, {
-              corpseSeatNumber: selectedCorpseSeatNumber,
-              keepCardInstanceIds: combinedCards.slice(0, Math.min(5, combinedCards.length)).map((card) => card.instanceId)
-            });
-            saveMatch(latestMatch);
-            notifyMatchUpdated(instanceId);
+            try {
+              resolvePendingDeathSearchForBot(latestMatch, latestSeat.seatNumber);
+              saveMatch(latestMatch);
+              notifyMatchUpdated(instanceId);
+            } catch (error) {
+              appendServerDebugLog(
+                latestMatch,
+                "bot_ai",
+                `Seat ${latestSeat.seatNumber} death search failed: ${error instanceof Error ? error.message : "Unknown error"}`
+              );
+            }
           }
           scheduleBotTurnIfNeeded(instanceId);
         }, 450 + Math.floor(Math.random() * 400));
@@ -543,16 +538,6 @@ export function announceDiceRoll(instanceId: string, userId: string, request: An
   }
 
   const values = request.values.filter((value) => Number.isFinite(value)).slice(0, 20);
-  const valuesSummary = values.length > 0 ? ` [${values.join(", ")}]` : "";
-
-  match.chatMessages.push({
-    id: randomUUID(),
-    userId: "dealer",
-    displayName: "Dealer",
-    avatarUrl: "",
-    content: `Dealer rolled ${notation}: ${request.total}${valuesSummary}`,
-    createdAt: new Date().toISOString()
-  });
 
   if (match.internalGame != null) {
     match.internalGame.diceRolls.push({
@@ -566,10 +551,6 @@ export function announceDiceRoll(instanceId: string, userId: string, request: An
     if (match.internalGame.diceRolls.length > 20) {
       match.internalGame.diceRolls = match.internalGame.diceRolls.slice(-20);
     }
-  }
-
-  if (match.chatMessages.length > MAX_CHAT_MESSAGES) {
-    match.chatMessages = match.chatMessages.slice(-MAX_CHAT_MESSAGES);
   }
 
   saveMatch(match);
@@ -594,14 +575,6 @@ export function devRandomDiceRoll(instanceId: string, userId: string, targetSeat
   const values = [Math.floor(Math.random() * sides) + 1];
   const total = values.reduce((a, b) => a + b, 0);
 
-  match.chatMessages.push({
-    id: randomUUID(),
-    userId: "dealer",
-    displayName: "Dealer",
-    avatarUrl: "",
-    content: `[DEV] Seat ${targetSeatNumber} rolls ${notation} → expected ${total} (${values.join(" + ")})`,
-    createdAt: new Date().toISOString()
-  });
 
   if (match.internalGame != null) {
     match.internalGame.diceRolls.push({
@@ -617,9 +590,6 @@ export function devRandomDiceRoll(instanceId: string, userId: string, targetSeat
     }
   }
 
-  if (match.chatMessages.length > MAX_CHAT_MESSAGES) {
-    match.chatMessages = match.chatMessages.slice(-MAX_CHAT_MESSAGES);
-  }
 
   saveMatch(match);
   notifyMatchUpdated(instanceId);

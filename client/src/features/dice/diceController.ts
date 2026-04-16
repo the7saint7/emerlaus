@@ -19,6 +19,7 @@ interface RollOptions {
   resolvedResult?: Partial<DiceRollResult>;
   themeColor?: string;
   placement?: DiceStagePlacement | null;
+  timeScale?: number;
 }
 
 interface ActiveRollOverlay {
@@ -110,6 +111,11 @@ const diceFaceRotations: Record<number, FaceRotation[]> = {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function scaleDuration(ms: number, timeScale: number): number {
+  const clampedScale = Math.max(0.1, timeScale);
+  return Math.max(1, Math.round(ms / clampedScale));
 }
 
 function randomInt(min: number, max: number): number {
@@ -240,6 +246,13 @@ class DiceController {
     const total = options?.resolvedResult?.total ?? 0;
     const values = options?.resolvedResult?.values ?? [];
     const color = options?.themeColor ?? "#4b2a6f";
+    const timeScale = options?.timeScale ?? 1;
+    const spinMs = scaleDuration(SPIN_MS, timeScale);
+    const resultDelayMs = scaleDuration(RESULT_DELAY_MS, timeScale);
+    const hideDelayMs = scaleDuration(HIDE_DELAY_MS, timeScale);
+    const hideFadeMs = scaleDuration(HIDE_FADE_MS, timeScale);
+    const minStaggerMs = scaleDuration(60, timeScale);
+    const maxStaggerMs = scaleDuration(MAX_STAGGER_MS, timeScale);
     const parsed = parseNotation(normalized);
 
     if (!parsed) {
@@ -259,6 +272,8 @@ class DiceController {
 
     const idSuffix = crypto.randomUUID();
     const overlay = buildOverlay(idSuffix);
+    overlay.style.setProperty("--dice-spin-ms", `${spinMs}ms`);
+    overlay.style.setProperty("--dice-fade-ms", `${hideFadeMs}ms`);
     applyStagePlacement(overlay, options?.placement);
     overlay.classList.remove("dice-roll-overlay--hidden");
     setStatus(overlay, `Rolling ${normalized.toUpperCase()}\u2026`);
@@ -285,7 +300,7 @@ class DiceController {
       await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
 
       await Promise.all(shellEls.map(async (shellEl, i) => {
-        const stagger = i === 0 ? 0 : randomInt(60, MAX_STAGGER_MS);
+        const stagger = i === 0 ? 0 : randomInt(minStaggerMs, maxStaggerMs);
         await delay(stagger);
 
         const faceIndex = faceTargets[i] - 1;
@@ -302,17 +317,17 @@ class DiceController {
             `rotateX(${rot.x + extraX}deg) rotateY(${rot.y + extraY}deg) rotateZ(${rot.z}deg)`;
         }
 
-        await delay(SPIN_MS);
+        await delay(spinMs);
       }));
     }
 
-    await delay(RESULT_DELAY_MS);
+    await delay(resultDelayMs);
     setStatus(overlay, `Total ${total}`);
 
     active.hideTimer = window.setTimeout(() => {
       overlay.classList.add("dice-roll-overlay--hidden");
-      window.setTimeout(() => this.cleanupOverlay(active), HIDE_FADE_MS);
-    }, HIDE_DELAY_MS);
+      window.setTimeout(() => this.cleanupOverlay(active), hideFadeMs);
+    }, hideDelayMs);
 
     return {
       notation: normalized,

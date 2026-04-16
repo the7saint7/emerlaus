@@ -17,7 +17,6 @@ export function createEmptyMatch(instanceId: string, maxSeats = 10): MatchState 
     maxSeats,
     enabledExpansions: { ...defaultMatchExpansionSettings },
     seats: [],
-    chatMessages: [],
     createdAt: new Date().toISOString()
   };
 }

@@ -48,15 +48,6 @@ export type CardTargetMode =
   | "single_player_or_object"
   | "none";
 
-export interface ChatMessage {
-  id: string;
-  userId: string;
-  displayName: string;
-  avatarUrl: string;
-  content: string;
-  createdAt: string;
-}
-
 export interface SeatState {
   seatNumber: number;
   controllerType: ControllerType;
@@ -156,7 +147,24 @@ export interface CombatPresentationEvent {
   amount?: number;
 }
 
-export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent;
+export interface DealerMessageEvent {
+  id: string;
+  boxId?: string;
+  type: "dealer_message";
+  createdAt: string;
+  content: string;
+}
+
+export interface SeatSnapshotEvent {
+  id: string;
+  boxId: string;
+  type: "seat_snapshot";
+  createdAt: string;
+  seatNumber: number;
+  seat: SeatState;
+}
+
+export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent;
 
 export interface DebugLogEntry {
   id: string;
@@ -230,7 +238,7 @@ export interface PendingDeathSearchCardOption extends CardView {
 }
 
 export interface PendingDeathSearchState {
-  chooserSeatNumber: number;
+  chooserSeatNumber?: number;
   cardName: string;
   keepCardCount: number;
   corpseOptions: PendingDeathSearchCorpseOption[];
@@ -338,7 +346,6 @@ export interface MatchState {
   maxSeats: number;
   enabledExpansions: MatchExpansionSettings;
   seats: SeatState[];
-  chatMessages: ChatMessage[];
   game?: GameState;
   createdAt: string;
   startedAt?: string;
@@ -377,10 +384,6 @@ export interface UpdateExpansionRequest {
 
 export interface KickPlayerRequest {
   seatNumber: number;
-}
-
-export interface SendChatMessageRequest {
-  content: string;
 }
 
 export interface AnnounceDiceRollRequest {

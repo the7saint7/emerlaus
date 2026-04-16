@@ -14,7 +14,7 @@ import {
   isSeatTargetable,
   objectCardMatchesSelectedTargeting
 } from "../gameplay/interactionRules";
-import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, persistLanguage, t, type AppLanguage } from "../i18n";
+import { getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage } from "../i18n";
 import { diceController, type DiceStagePlacement } from "../features/dice/diceController";
 import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
@@ -1718,7 +1718,8 @@ function renderTableScene(
   onTextureReady: () => void,
   displayedHpBySeat: Record<number, number>,
   targetHintDismissed: boolean,
-  batonLoadScale: number
+  batonLoadScale: number,
+  replayNow: number
 ): TableInteractionGeometry {
   const now = Date.now();
   const localSeat = getLocalSeat(match, localSeatNumber);
@@ -1726,7 +1727,9 @@ function renderTableScene(
   const anchors = getOpponentAnchorsForPlayerCount(match.seats.length);
   const currentTurnSeatNumber = displayedTurnSeatNumber ?? undefined;
   const pendingAction = presentationLockActive ? undefined : match.game?.pendingAction;
-  const lastPlayedCard = match.game?.lastPlayedCard?.card;
+  // While replay is locked to earlier boxes, ignore the live lastPlayedCard from the
+  // freshly synced match state so the next action cannot leak into the center stack.
+  const lastPlayedCard = presentationLockActive ? null : (match.game?.lastPlayedCard?.card ?? null);
   const centerSlotTopY = pendingAction == null ? 292 : 302;
   const isLocalResponder = pendingAction != null
     && pendingAction.responderSeatNumbers.includes(localSeatNumber);
@@ -1818,7 +1821,7 @@ function renderTableScene(
       continue;
     }
 
-    const progress = Math.max(0, Math.min(1, (now - damageBurst.startedAt) / damageBurst.durationMs));
+    const progress = Math.max(0, Math.min(1, (replayNow - damageBurst.startedAt) / damageBurst.durationMs));
     const shake = Math.sin(progress * Math.PI * 9) * (1 - progress) * 14;
     seatShakeOffsets.set(seat.seatNumber, shake);
   }
@@ -1928,7 +1931,7 @@ function renderTableScene(
   for (const [seatNumber, rect] of seatRects.entries()) {
     const impactFlash = activeImpactFlashes[seatNumber];
     if (impactFlash != null) {
-      const progress = Math.max(0, Math.min(1, (now - impactFlash.startedAt) / impactFlash.durationMs));
+      const progress = Math.max(0, Math.min(1, (replayNow - impactFlash.startedAt) / impactFlash.durationMs));
       const pulse = Math.sin(progress * Math.PI);
       const spread = 6 + pulse * 22;
       scene.addChild(createRect(
@@ -1949,7 +1952,7 @@ function renderTableScene(
 
     const damageBurst = activeDamageBursts[seatNumber];
     if (damageBurst != null) {
-      const progress = Math.max(0, Math.min(1, (now - damageBurst.startedAt) / damageBurst.durationMs));
+      const progress = Math.max(0, Math.min(1, (replayNow - damageBurst.startedAt) / damageBurst.durationMs));
       const lift = (seatNumber === localSeatNumber ? 58 : 42) * (1 - Math.pow(1 - progress, 2));
       const burstX = seatNumber === localSeatNumber ? rect.x + rect.width - 65 : rect.x + rect.width / 2;
       const burstY = seatNumber === localSeatNumber ? rect.y + 14 - 6 - lift : rect.y - 8 - lift;
@@ -1966,7 +1969,7 @@ function renderTableScene(
 
     const healBurst = activeHealBursts[seatNumber];
     if (healBurst != null) {
-      const progress = Math.max(0, Math.min(1, (now - healBurst.startedAt) / healBurst.durationMs));
+      const progress = Math.max(0, Math.min(1, (replayNow - healBurst.startedAt) / healBurst.durationMs));
       const lift = (seatNumber === localSeatNumber ? 46 : 34) * (1 - Math.pow(1 - progress, 2));
       const driftX = Math.sin(progress * Math.PI) * 8;
       const burstX = seatNumber === localSeatNumber ? rect.x + rect.width - 65 + driftX : rect.x + rect.width / 2 + driftX;
@@ -2139,7 +2142,7 @@ function renderTableScene(
   }
 
   for (const playbackArrow of activePlaybackArrows) {
-    const progress = Math.max(0, Math.min(1, (now - playbackArrow.startedAt) / playbackArrow.durationMs));
+    const progress = Math.max(0, Math.min(1, (replayNow - playbackArrow.startedAt) / playbackArrow.durationMs));
     const arrow = createCurvedArrow(
       playbackArrow.origin.x,
       playbackArrow.origin.y,
@@ -2264,7 +2267,7 @@ function renderTableScene(
   }
 
   for (const flight of activeCardFlights) {
-    const progress = Math.max(0, Math.min(1, (now - flight.startedAt) / flight.durationMs));
+    const progress = Math.max(0, Math.min(1, (replayNow - flight.startedAt) / flight.durationMs));
     const eased = easeOutCubic(progress);
     const midX = (flight.from.x + flight.to.x) / 2;
     const midY = (flight.from.y + flight.to.y) / 2 - flight.arcHeight;
@@ -2313,13 +2316,20 @@ function renderEventLogEntry(entry: EventLogEntry): string {
   `;
 }
 
+interface ReplayDebugPanelState {
+  speedMultiplier: number;
+  paused: boolean;
+  canRewind: boolean;
+}
+
 function renderEventLog(
   match: MatchState,
   language: AppLanguage,
   seenEventMessageIds: Set<string>,
   eventLogExpanded: boolean,
   eventLogWidth: number,
-  eventLogHeight: number
+  eventLogHeight: number,
+  replayDebug: ReplayDebugPanelState
 ): string {
   const entries = buildEventLogEntries(match, language).filter(
     (entry) => seenEventMessageIds.has(entry.id)
@@ -2331,6 +2341,40 @@ function renderEventLog(
       : `<p class="pixi-event-log-empty">${t(language, "eventLog.empty")}</p>`;
 
   const panelStyle = `style="--event-log-width:${eventLogWidth}px; --event-log-height:${eventLogHeight}px;"`;
+  const speedLabel = Number(replayDebug.speedMultiplier.toFixed(2)).toString();
+  const controlsMarkup = `
+    <div class="pixi-replay-debug">
+      <div class="pixi-replay-debug__header">
+        <strong>${escapeHtml(t(language, "replayDebug.title"))}</strong>
+        <span>${escapeHtml(`${t(language, "replayDebug.speed")} ${speedLabel}x | ${t(language, replayDebug.paused ? "replayDebug.paused" : "replayDebug.playing")}`)}</span>
+      </div>
+      <div class="pixi-replay-debug__controls">
+        <button type="button" class="pixi-event-log-toggle" data-action="toggle-replay-pause">
+          ${replayDebug.paused ? escapeHtml(t(language, "replayDebug.resume")) : escapeHtml(t(language, "replayDebug.pause"))}
+        </button>
+        <button type="button" class="pixi-event-log-toggle" data-action="rewind-replay" ${replayDebug.canRewind ? "" : "disabled"}>
+          ${escapeHtml(t(language, "replayDebug.rewind"))}
+        </button>
+        <button type="button" class="pixi-event-log-toggle" data-action="set-replay-speed-preset" data-speed="0.25">
+          ${escapeHtml(t(language, "replayDebug.slow"))}
+        </button>
+        <button type="button" class="pixi-event-log-toggle" data-action="set-replay-speed-preset" data-speed="1">
+          ${escapeHtml(t(language, "replayDebug.normal"))}
+        </button>
+      </div>
+      <label class="pixi-replay-debug__slider">
+        <span>${escapeHtml(t(language, "replayDebug.speed"))}</span>
+        <input
+          type="range"
+          min="0.1"
+          max="2"
+          step="0.05"
+          value="${replayDebug.speedMultiplier.toFixed(2)}"
+          data-action="set-replay-speed"
+        />
+      </label>
+    </div>
+  `;
 
   return `
     <section class="pixi-event-log ${eventLogExpanded ? "pixi-event-log--expanded" : ""}" ${panelStyle}>
@@ -2343,6 +2387,8 @@ function renderEventLog(
           ${eventLogExpanded ? t(language, "eventLog.minimize") : t(language, "eventLog.expand")}
         </button>
       </header>
+
+      ${controlsMarkup}
 
       <div class="pixi-event-log-history" data-event-log-history="true">
         ${messageMarkup}
@@ -2398,6 +2444,7 @@ function buildOverlayMarkup(
   eventLogExpanded: boolean,
   eventLogWidth: number,
   eventLogHeight: number,
+  replayDebug: ReplayDebugPanelState,
   cardReferenceOpen: boolean,
   cardReferencePreviewCardId: string,
   cardReferenceSearchQuery: string,
@@ -2512,7 +2559,7 @@ function buildOverlayMarkup(
         <button type="button" class="pixi-lang-button ${language === "en" ? "pixi-lang-button--active" : ""}" data-action="set-language" data-language="en">EN</button>
       </div>
       ${match.status !== "lobby"
-        ? renderEventLog(match, language, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight)
+        ? renderEventLog(match, language, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, replayDebug)
         : ""}
     </div>
     ${annulationChoice == null
@@ -3012,8 +3059,9 @@ function buildOverlayMarkup(
       : (() => {
           const isLocalActor = pendingSacrificeChoice.actorSeatNumber === localSeatNumber;
           const actorSeat = match.seats.find((s) => s.seatNumber === pendingSacrificeChoice.actorSeatNumber);
-          const parsedAmount = Number(sacrificeAmountInput);
-          const isValidAmount = Number.isInteger(parsedAmount) && parsedAmount >= 0 && parsedAmount <= pendingSacrificeChoice.maxAmount;
+          const sacrificeAmountText = sacrificeAmountInput.trim();
+          const parsedAmount = Number(sacrificeAmountText);
+          const isValidAmount = /^\d+$/.test(sacrificeAmountText) && parsedAmount >= 0 && parsedAmount <= pendingSacrificeChoice.maxAmount;
           return `
             <div class="pixi-modal-backdrop">
               <article class="telepathy-panel telepathy-panel--compact" data-pixi-modal-card="true">
@@ -3035,10 +3083,8 @@ function buildOverlayMarkup(
                         id="sacrifice-amount-input"
                         class="sacrifice-choice-form__input"
                         data-action="edit-sacrifice-amount"
-                        type="number"
-                        min="0"
-                        max="${pendingSacrificeChoice.maxAmount}"
-                        step="1"
+                        type="text"
+                        pattern="[0-9]*"
                         inputmode="numeric"
                         value="${escapeHtml(sacrificeAmountInput)}"
                       />
@@ -3272,6 +3318,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let activeHealBursts: Record<number, FloatingBurstState> = {};
   let displayedHpBySeat: Record<number, number> = {};
   let displayedSeatsBySeat: Record<number, SeatState> = {};
+  let displayedSeatReleaseBoxIndexBySeat: Record<number, number> = {};
+  let displayedSeatSnapshotTimelineBySeat: Record<number, Array<{ boxIndex: number; seat: SeatState }>> = {};
+  let pendingPostDeathSeatsBySeat: Record<number, SeatState> = {};
   let preUpdateLocalizedSeatsBySeat: Record<number, SeatState> = {};
   let seatResistancePills: Record<number, SeatResistancePillState> = {};
   let batonLoadHoverTs: number | null = null;
@@ -3279,6 +3328,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let activeCardFlights: CardFlightState[] = [];
   let activePlaybackArrows: PlaybackArrowState[] = [];
   let eventPlaybackActive = false;
+  let replaySpeedMultiplier = 1;
+  let replayPaused = false;
+  let replayTimelineMs = 0;
+  let replayTimelineWallAt = performance.now();
   let activeActionVisual: ActiveActionVisualState | null = null;
   let centerResponseCards: CardView[] = [];
   let overlayInteractionLocked = false;
@@ -3299,6 +3352,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let seenGameEventIds = new Set((match.game?.eventLog ?? []).map((event) => event.id));
   let seenEventMessageIds = new Set(buildEventLogEntries(match, language).map((entry) => entry.id));
   let eventReplayChain: Promise<void> = Promise.resolve();
+  let replayQueueToken = 0;
+  let replayRunId = 0;
+  let latestReplayBatch: GameEvent[] = [];
+  let latestReplayPreUpdateLocalizedSeatsBySeat: Record<number, SeatState> = {};
   const pendingActionPlaybackSnapshots = new Map<string, PendingActionPlaybackSnapshot>();
   const actionCardIdByBox = new Map<string, string>();
   let syncInFlight = false;
@@ -3359,7 +3416,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       [seatNumber]: {
         boxId,
         outcome,
-        updatedAt: Date.now()
+        updatedAt: getReplayNow()
       }
     };
   };
@@ -3525,6 +3582,218 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         sseEventSource = null;
       }
     });
+  };
+
+  const syncReplayClock = (): void => {
+    const now = performance.now();
+    const elapsed = now - replayTimelineWallAt;
+    if (!replayPaused && elapsed > 0) {
+      replayTimelineMs += elapsed * replaySpeedMultiplier;
+    }
+    replayTimelineWallAt = now;
+  };
+
+  const getReplayNow = (): number => {
+    syncReplayClock();
+    return replayTimelineMs;
+  };
+
+  const resetReplayClock = (): void => {
+    replayTimelineMs = 0;
+    replayTimelineWallAt = performance.now();
+  };
+
+  const setReplaySpeed = (nextSpeed: number): void => {
+    syncReplayClock();
+    replaySpeedMultiplier = Math.max(0.1, Math.min(2, nextSpeed));
+    replayTimelineWallAt = performance.now();
+    redraw();
+  };
+
+  const setReplayPaused = (nextPaused: boolean): void => {
+    syncReplayClock();
+    replayPaused = nextPaused;
+    replayTimelineWallAt = performance.now();
+    redraw();
+    if (!nextPaused) {
+      scheduleRedraw();
+    }
+  };
+
+  const isReplayRunActive = (runId: number): boolean => runId === replayRunId;
+
+  const waitForReplayMs = (ms: number, runId: number): Promise<boolean> => new Promise((resolve) => {
+    const startedAt = getReplayNow();
+
+    const tick = (): void => {
+      if (!isReplayRunActive(runId)) {
+        resolve(false);
+        return;
+      }
+
+      if (getReplayNow() - startedAt >= ms) {
+        resolve(true);
+        return;
+      }
+
+      window.requestAnimationFrame(tick);
+    };
+
+    tick();
+  });
+
+  const clearReplayPresentationState = (): void => {
+    activeCombatFx = null;
+    activeDamageBursts = {};
+    activeHealBursts = {};
+    activeImpactFlashes = {};
+    seatResistancePills = {};
+    activeCardFlights = [];
+    activePlaybackArrows = [];
+    displayedHpBySeat = {};
+    displayedSeatsBySeat = {};
+    displayedSeatReleaseBoxIndexBySeat = {};
+    displayedSeatSnapshotTimelineBySeat = {};
+    pendingPostDeathSeatsBySeat = {};
+    activeActionVisual = null;
+    centerResponseCards = [];
+    eventPlaybackActive = false;
+    resetReplayClock();
+  };
+
+  const cloneLocalizedSeatSnapshot = (source: Record<number, SeatState>): Record<number, SeatState> =>
+    Object.fromEntries(
+      Object.entries(source).map(([seatNumber, seat]) => [
+        Number(seatNumber),
+        {
+          ...seat,
+          hand: [...(seat.hand ?? [])],
+          objects: [...(seat.objects ?? [])],
+          statuses: [...(seat.statuses ?? [])]
+        }
+      ])
+    );
+
+  const getReplayEventSeatNumbers = (event: GameEvent): number[] => {
+    const seatNumbers = new Set<number>();
+    if ("seatNumber" in event && event.seatNumber != null) {
+      seatNumbers.add(event.seatNumber);
+    }
+    if ("actorSeatNumber" in event && event.actorSeatNumber != null) {
+      seatNumbers.add(event.actorSeatNumber);
+    }
+    if ("targetSeatNumber" in event && event.targetSeatNumber != null) {
+      seatNumbers.add(event.targetSeatNumber);
+    }
+    if (event.type === "action_start") {
+      for (const targetSeatNumber of event.targetSeatNumbers) {
+        seatNumbers.add(targetSeatNumber);
+      }
+    }
+    return [...seatNumbers];
+  };
+
+  const buildReplayBoxOrder = (replayableEvents: GameEvent[]): Map<string, number> => {
+    const boxOrder = new Map<string, number>();
+    let nextBoxIndex = 0;
+    for (const event of replayableEvents) {
+      const boxId = "boxId" in event ? event.boxId ?? null : null;
+      if (boxId == null || boxOrder.has(boxId)) {
+        continue;
+      }
+      boxOrder.set(boxId, nextBoxIndex);
+      nextBoxIndex += 1;
+    }
+    return boxOrder;
+  };
+
+  const buildDisplayedSeatReleaseMap = (
+    replayableEvents: GameEvent[],
+    changedSeatNumbers: Set<number>
+  ): Record<number, number> => {
+    const boxOrder = buildReplayBoxOrder(replayableEvents);
+
+    const releaseBoxIndexBySeat: Record<number, number> = {};
+    for (const seatNumber of changedSeatNumbers) {
+      releaseBoxIndexBySeat[seatNumber] = -1;
+    }
+
+    for (const event of replayableEvents) {
+      const boxId = "boxId" in event ? event.boxId ?? null : null;
+      if (boxId == null) {
+        continue;
+      }
+      const boxIndex = boxOrder.get(boxId);
+      if (boxIndex == null) {
+        continue;
+      }
+      for (const seatNumber of getReplayEventSeatNumbers(event)) {
+        if (!changedSeatNumbers.has(seatNumber)) {
+          continue;
+        }
+        releaseBoxIndexBySeat[seatNumber] = Math.max(releaseBoxIndexBySeat[seatNumber] ?? -1, boxIndex);
+      }
+    }
+
+    return releaseBoxIndexBySeat;
+  };
+
+  const releaseDisplayedSeatsThroughBox = (boxIndex: number): void => {
+    if (
+      boxIndex < 0 ||
+      (Object.keys(displayedSeatReleaseBoxIndexBySeat).length === 0
+        && Object.keys(displayedSeatSnapshotTimelineBySeat).length === 0)
+    ) {
+      return;
+    }
+
+    let nextDisplayedSeatsBySeat: Record<number, SeatState> = { ...displayedSeatsBySeat };
+    const nextReleaseBoxIndexBySeat: Record<number, number> = {};
+    const nextSeatSnapshotTimelineBySeat: Record<number, Array<{ boxIndex: number; seat: SeatState }>> = {};
+    let changed = false;
+
+    for (const [seatNumberStr, timeline] of Object.entries(displayedSeatSnapshotTimelineBySeat)) {
+      const seatNumber = Number(seatNumberStr);
+      let latestSnapshot: SeatState | null = null;
+      let nextTimelineIndex = 0;
+
+      while (nextTimelineIndex < timeline.length && timeline[nextTimelineIndex]!.boxIndex <= boxIndex) {
+        latestSnapshot = timeline[nextTimelineIndex]!.seat;
+        nextTimelineIndex += 1;
+      }
+
+      if (latestSnapshot != null) {
+        nextDisplayedSeatsBySeat[seatNumber] = latestSnapshot;
+        changed = true;
+      }
+
+      if (nextTimelineIndex < timeline.length) {
+        nextSeatSnapshotTimelineBySeat[seatNumber] = timeline.slice(nextTimelineIndex);
+      }
+    }
+
+    for (const [seatNumberStr, snapshot] of Object.entries(displayedSeatsBySeat)) {
+      const seatNumber = Number(seatNumberStr);
+      const releaseBoxIndex = displayedSeatReleaseBoxIndexBySeat[seatNumber];
+      if (releaseBoxIndex != null && releaseBoxIndex <= boxIndex) {
+        changed = true;
+        delete nextDisplayedSeatsBySeat[seatNumber];
+        continue;
+      }
+
+      if (releaseBoxIndex != null) {
+        nextReleaseBoxIndexBySeat[seatNumber] = releaseBoxIndex;
+      }
+      if (nextDisplayedSeatsBySeat[seatNumber] == null) {
+        nextDisplayedSeatsBySeat[seatNumber] = snapshot;
+      }
+    }
+
+    if (changed) {
+      displayedSeatsBySeat = nextDisplayedSeatsBySeat;
+      displayedSeatReleaseBoxIndexBySeat = nextReleaseBoxIndexBySeat;
+      displayedSeatSnapshotTimelineBySeat = nextSeatSnapshotTimelineBySeat;
+    }
   };
 
   const broadcastCursorTarget = (targetSeatNumber: number | null): void => {
@@ -3848,7 +4117,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   };
 
   const pruneExpiredCombatVisuals = (): boolean => {
-    const now = Date.now();
+    const now = getReplayNow();
     activeDamageBursts = Object.fromEntries(
       Object.entries(activeDamageBursts).filter(([, burst]) => now - burst.startedAt < burst.durationMs)
     );
@@ -3921,10 +4190,12 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     card: CardView | null,
     from: StagePoint,
     to: StagePoint,
+    runId: number,
     options?: Partial<Pick<CardFlightState, "durationMs" | "width" | "height" | "arcHeight" | "rotationFrom" | "rotationTo" | "tintColor">>
-  ): Promise<void> => {
-    const startedAt = Date.now();
+  ): Promise<boolean> => {
+    const startedAt = getReplayNow();
     const flightId = `${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
+    const durationMs = options?.durationMs ?? 520;
     activeCardFlights = [
       ...activeCardFlights,
       {
@@ -3933,7 +4204,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         from,
         to,
         startedAt,
-        durationMs: options?.durationMs ?? 520,
+        durationMs,
         width: options?.width ?? 114,
         height: options?.height ?? 160,
         arcHeight: options?.arcHeight ?? 76,
@@ -3943,9 +4214,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     ];
     redraw();
-    await delay(options?.durationMs ?? 520);
+    const completed = await waitForReplayMs(durationMs, runId);
+    if (!completed) {
+      return false;
+    }
     activeCardFlights = activeCardFlights.filter((flight) => flight.id !== flightId);
     redraw();
+    return true;
   };
 
   const addPlaybackArrow = async (
@@ -3953,9 +4228,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     target: StagePoint,
     color: string,
     width: number,
-    durationMs: number
-  ): Promise<void> => {
-    const startedAt = Date.now();
+    durationMs: number,
+    runId: number
+  ): Promise<boolean> => {
+    const startedAt = getReplayNow();
     const arrowId = `${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
     activePlaybackArrows = [
       ...activePlaybackArrows,
@@ -3970,9 +4246,13 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     ];
     redraw();
-    await delay(durationMs);
+    const completed = await waitForReplayMs(durationMs, runId);
+    if (!completed) {
+      return false;
+    }
     activePlaybackArrows = activePlaybackArrows.filter((arrow) => arrow.id !== arrowId);
     redraw();
+    return true;
   };
 
   const getResponsePlaybackCard = (event: CombatPresentationEvent): CardView | null => {
@@ -4074,7 +4354,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   rememberPendingActionSnapshot(match);
   updateVictoryCelebrationState();
 
-  const replayActionStartPresentation = async (event: ActionStartEvent): Promise<void> => {
+  const replayActionStartPresentation = async (event: ActionStartEvent, runId: number): Promise<boolean> => {
     centerResponseCards = [];
     const playSlot = currentGeometry?.playSlot;
     if (event.fromMirror === true && activeActionVisual != null) {
@@ -4099,16 +4379,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       };
     }
     if (playSlot == null) {
-      await showCombatFx(
+      return showCombatFx(
         t(language, "combat.actionPlayed", {
           playerName: getSeatDisplayName(event.actorSeatNumber),
           cardName: event.card.name
         }),
         "info",
         1000,
+        runId,
         { seatNumber: event.actorSeatNumber, showBanner: false }
       );
-      return;
     }
 
     const playCenter = getRectCenter(playSlot);
@@ -4120,13 +4400,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }),
       "info",
       1000,
+      runId,
       { seatNumber: event.actorSeatNumber, showBanner: false }
     );
 
     if (actorStart != null) {
-      await Promise.all([
-        addPlaybackArrow(actorStart, rectEdgePoint(actorStart.x, actorStart.y, playSlot), "#86cfff", 10, 560),
-        addCardFlight(event.card, actorStart, playCenter, {
+      const [arrowCompleted, cardCompleted] = await Promise.all([
+        addPlaybackArrow(actorStart, rectEdgePoint(actorStart.x, actorStart.y, playSlot), "#86cfff", 10, 560, runId),
+        addCardFlight(event.card, actorStart, playCenter, runId, {
           durationMs: 560,
           width: 116,
           height: 162,
@@ -4135,9 +4416,12 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           rotationTo: 0.02
         })
       ]);
+      if (!arrowCompleted || !cardCompleted) {
+        return false;
+      }
     }
 
-    const outgoingFlights: Array<Promise<void>> = [];
+    const outgoingFlights: Array<Promise<boolean>> = [];
     for (const targetSeatNumber of event.targetSeatNumbers) {
       if (targetSeatNumber === event.actorSeatNumber) {
         continue;
@@ -4154,8 +4438,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         playSlot
       );
       const targetPoint = rectEdgePoint(playCenter.x, playCenter.y, targetRect);
-      outgoingFlights.push(addPlaybackArrow(originPoint, targetPoint, "#d23a3a", 10, 620));
-      outgoingFlights.push(addCardFlight(event.card, playCenter, targetPoint, {
+      outgoingFlights.push(addPlaybackArrow(originPoint, targetPoint, "#d23a3a", 10, 620, runId));
+      outgoingFlights.push(addCardFlight(event.card, playCenter, targetPoint, runId, {
         durationMs: 620,
         width: 108,
         height: 150,
@@ -4171,8 +4455,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       );
       if (targetObject != null) {
         const objectCenter = getRectCenter(targetObject);
-        outgoingFlights.push(addPlaybackArrow(playCenter, objectCenter, "#d23a3a", 10, 620));
-        outgoingFlights.push(addCardFlight(event.card, playCenter, objectCenter, {
+        outgoingFlights.push(addPlaybackArrow(playCenter, objectCenter, "#d23a3a", 10, 620, runId));
+        outgoingFlights.push(addCardFlight(event.card, playCenter, objectCenter, runId, {
           durationMs: 620,
           width: 102,
           height: 142,
@@ -4181,16 +4465,19 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           rotationTo: -0.08
       }));
     }
-  }
-
-    if (outgoingFlights.length > 0) {
-      await Promise.all(outgoingFlights);
     }
 
-    await bannerPromise;
+    if (outgoingFlights.length > 0) {
+      const results = await Promise.all(outgoingFlights);
+      if (results.some((result) => result === false)) {
+        return false;
+      }
+    }
+
+    return bannerPromise;
   };
 
-  const replayResponseChoicePresentation = async (event: CombatPresentationEvent): Promise<void> => {
+  const replayResponseChoicePresentation = async (event: CombatPresentationEvent, runId: number): Promise<boolean> => {
     const key =
       event.responseChoice === "pass"
         ? "combat.response.pass"
@@ -4205,6 +4492,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       t(language, key, { playerName: getSeatDisplayName(event.seatNumber) }),
       "info",
       900,
+      runId,
       { seatNumber: event.seatNumber, showBanner: false }
     );
 
@@ -4214,9 +4502,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const responseCenter = getRectCenter(responseSlotRect);
       const responseCard = getResponsePlaybackCard(event);
       if (responderStart != null) {
-        await Promise.all([
-          addPlaybackArrow(responderStart, rectEdgePoint(responderStart.x, responderStart.y, responseSlotRect), "#8ac8ff", 9, 520),
-          addCardFlight(responseCard, responderStart, responseCenter, {
+        const [arrowCompleted, cardCompleted] = await Promise.all([
+          addPlaybackArrow(responderStart, rectEdgePoint(responderStart.x, responderStart.y, responseSlotRect), "#8ac8ff", 9, 520, runId),
+          addCardFlight(responseCard, responderStart, responseCenter, runId, {
             durationMs: 520,
             width: 98,
             height: 138,
@@ -4226,6 +4514,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             tintColor: "#243a54"
           })
         ]);
+        if (!arrowCompleted || !cardCompleted) {
+          return false;
+        }
         if (responseCard != null) {
           centerResponseCards = [...centerResponseCards, responseCard].slice(-3);
           redraw();
@@ -4233,13 +4524,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
-    await messagePromise;
+    return messagePromise;
   };
 
   const showCombatFx = async (
     message: string,
     tone: ActiveCombatFxState["tone"],
     durationMs: number,
+    runId: number,
     options?: {
       seatNumber?: number;
       damageAmount?: number;
@@ -4247,8 +4539,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       impactTargetSeatNumber?: number;
       showBanner?: boolean;
     }
-  ): Promise<void> => {
-    const startedAt = Date.now();
+  ): Promise<boolean> => {
+    const startedAt = getReplayNow();
     const showBanner = options?.showBanner ?? true;
     if (showBanner) {
       activeCombatFx = { message, tone, seatNumber: options?.seatNumber };
@@ -4276,7 +4568,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       };
     }
     redraw();
-    await delay(durationMs);
+    const completed = await waitForReplayMs(durationMs, runId);
+    if (!completed) {
+      return false;
+    }
     if (showBanner && activeCombatFx?.message === message) {
       activeCombatFx = null;
     }
@@ -4293,6 +4588,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       activeImpactFlashes = rest;
     }
     redraw();
+    return true;
   };
 
   const getPixiDiceStagePlacement = (seatNumber?: number): DiceStagePlacement | null => {
@@ -4328,38 +4624,35 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     };
   };
 
-  const replayDiceRollPresentation = async (event: DiceRollPlaybackEvent): Promise<void> => {
+  const replayDiceRollPresentation = async (event: DiceRollPlaybackEvent, runId: number): Promise<boolean> => {
     await diceController.roll(event.notation, {
       resolvedResult: {
         total: event.total,
         values: event.values
       },
       themeColor: getSeatDiceColor(event.seatNumber),
-      placement: getPixiDiceStagePlacement(event.seatNumber)
+      placement: getPixiDiceStagePlacement(event.seatNumber),
+      timeScale: replaySpeedMultiplier
     });
-    await delay(250);
+    return waitForReplayMs(250, runId);
   };
 
-  const replayCombatPresentationEvents = (): void => {
-    const unseenEvents = (match.game?.eventLog ?? []).filter((event) => !seenGameEventIds.has(event.id));
-    if (unseenEvents.length === 0) {
-      return;
+  const prepareReplayBatchState = (
+    replayableEvents: GameEvent[],
+    preUpdateSeats: Record<number, SeatState>
+  ): void => {
+    const hasActionStart = replayableEvents.some((event) => event.type === "action_start");
+    const preservedActionVisual = hasActionStart ? null : activeActionVisual;
+    const preservedCenterResponseCards = hasActionStart ? [] : [...centerResponseCards];
+    clearReplayPresentationState();
+    if (preservedActionVisual != null) {
+      activeActionVisual = preservedActionVisual;
+      centerResponseCards = preservedCenterResponseCards;
     }
-
-    unseenEvents.forEach((event) => seenGameEventIds.add(event.id));
-    const replayableEvents = unseenEvents.filter((event) =>
-      event.type === "action_start" ||
-      event.type === "response_choice" ||
-      event.type === "resistance_start" ||
-      event.type === "resistance_result" ||
-      event.type === "attack_impact" ||
-      event.type === "hp_loss" ||
-      event.type === "hp_gain" ||
-      event.type === "dice_roll"
-    );
-    if (replayableEvents.length === 0) {
-      return;
-    }
+    const changedSeatNumbers = new Set<number>();
+    const seatNumbersWithTimelineSnapshots = new Set<number>();
+    const replayBoxOrder = buildReplayBoxOrder(replayableEvents);
+    const dyingSeatNumbers = new Set<number>();
 
     // Seed displayedHpBySeat with pre-damage HP values by reverse-applying
     // the upcoming hp events from the final (already-updated) match state.
@@ -4383,22 +4676,59 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     for (const [key, startingHp] of Object.entries(displayedHpBySeat)) {
       const seatNumber = Number(key);
       if (startingHp > 0 && match.seats.find((s) => s.seatNumber === seatNumber)?.isAlive === false) {
-        const preDeath = preUpdateLocalizedSeatsBySeat[seatNumber];
+        dyingSeatNumbers.add(seatNumber);
+        const preDeath = preUpdateSeats[seatNumber];
         if (preDeath != null) {
           displayedSeatsBySeat[seatNumber] = preDeath;
+        }
+        const postDeathSeat = match.seats.find((s) => s.seatNumber === seatNumber);
+        if (postDeathSeat != null) {
+          pendingPostDeathSeatsBySeat[seatNumber] = localizeSeatState(postDeathSeat, language);
         }
       }
     }
 
+    for (const event of replayableEvents) {
+      if (event.type !== "seat_snapshot") {
+        continue;
+      }
+
+      if (dyingSeatNumbers.has(event.seatNumber)) {
+        continue;
+      }
+
+      const boxIndex = replayBoxOrder.get(event.boxId);
+      if (boxIndex == null) {
+        continue;
+      }
+
+      seatNumbersWithTimelineSnapshots.add(event.seatNumber);
+      if (displayedSeatsBySeat[event.seatNumber] == null) {
+        displayedSeatsBySeat[event.seatNumber] = preUpdateSeats[event.seatNumber] ?? localizeSeatState(event.seat, language);
+      }
+
+      displayedSeatSnapshotTimelineBySeat[event.seatNumber] = [
+        ...(displayedSeatSnapshotTimelineBySeat[event.seatNumber] ?? []),
+        {
+          boxIndex,
+          seat: localizeSeatState(event.seat, language)
+        }
+      ];
+    }
+
     // Freeze any seat row whose objects/statuses changed in this batch so cards
     // do not appear or disappear on the table before the owning action replay finishes.
-    for (const [seatNumberStr, preSeat] of Object.entries(preUpdateLocalizedSeatsBySeat)) {
+    for (const [seatNumberStr, preSeat] of Object.entries(preUpdateSeats)) {
       const seatNumber = Number(seatNumberStr);
       const newSeat = match.seats.find((s) => s.seatNumber === seatNumber);
       if (newSeat == null) continue;
+      if (seatNumbersWithTimelineSnapshots.has(seatNumber)) {
+        continue;
+      }
       const objectsChanged = !cardInstanceListsMatch(preSeat.objects, newSeat.objects);
       const statusesChanged = !cardInstanceListsMatch(preSeat.statuses, newSeat.statuses);
       if (objectsChanged || statusesChanged) {
+        changedSeatNumbers.add(seatNumber);
         const existing = displayedSeatsBySeat[seatNumber];
         displayedSeatsBySeat[seatNumber] = existing != null
           ? {
@@ -4410,195 +4740,327 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
-    // If this batch starts a new action, clear the previous action's targeting
-    // arrows now so the initial redraw() doesn't flash stale targeting.
-    if (replayableEvents.some((e) => e.type === "action_start")) {
+    displayedSeatReleaseBoxIndexBySeat = buildDisplayedSeatReleaseMap(replayableEvents, changedSeatNumbers);
+  };
+
+  const finishReplayBatch = (): void => {
+    eventPlaybackActive = false;
+    displayedHpBySeat = {};
+    displayedSeatsBySeat = {};
+    displayedSeatReleaseBoxIndexBySeat = {};
+    displayedSeatSnapshotTimelineBySeat = {};
+    pendingPostDeathSeatsBySeat = {};
+    if (match.game?.pendingAction == null) {
       activeActionVisual = null;
       centerResponseCards = [];
     }
+    updateVictoryCelebrationState();
+    redraw();
+    if (syncQueued && !syncInFlight) {
+      syncQueued = false;
+      void requestSync();
+    }
+  };
 
+  const runReplayBatch = async (
+    replayableEvents: GameEvent[],
+    preUpdateSeats: Record<number, SeatState>,
+    runId: number
+  ): Promise<void> => {
+    prepareReplayBatchState(replayableEvents, preUpdateSeats);
     eventPlaybackActive = true;
     redraw();
+
+    const lastDiceTotalBySeat = new Map<number, number>();
+    let activeReplayBoxId: string | null = null;
+    const boxOrder = new Map<string, number>();
+    let nextBoxIndex = 0;
+    for (const replayEvent of replayableEvents) {
+      const replayBoxId = "boxId" in replayEvent ? replayEvent.boxId ?? null : null;
+      if (replayBoxId == null || boxOrder.has(replayBoxId)) {
+        continue;
+      }
+      boxOrder.set(replayBoxId, nextBoxIndex);
+      nextBoxIndex += 1;
+    }
+
+    for (const event of replayableEvents) {
+      if (!isReplayRunActive(runId)) {
+        return;
+      }
+
+      const eventBoxId = "boxId" in event ? event.boxId ?? null : null;
+      if (activeReplayBoxId != null && eventBoxId != null && eventBoxId !== activeReplayBoxId) {
+        releaseDisplayedSeatsThroughBox(boxOrder.get(activeReplayBoxId) ?? -1);
+        clearSeatResistancePillsForBox(activeReplayBoxId);
+        redraw();
+      }
+      if (eventBoxId != null) {
+        activeReplayBoxId = eventBoxId;
+      }
+
+      if (event.type === "dice_roll") {
+        if (event.seatNumber != null) {
+          lastDiceTotalBySeat.set(event.seatNumber, event.total);
+        }
+        const completed = await replayDiceRollPresentation(event, runId);
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
+      revealEventLogEntriesForEvent(event);
+      redraw();
+
+      if (event.type === "dealer_message") {
+        continue;
+      }
+
+      if (event.type === "seat_snapshot") {
+        continue;
+      }
+
+      if (event.type === "action_start") {
+        rememberActionCardId(event.boxId, event.card.cardId);
+        const completed = await replayActionStartPresentation(event, runId);
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
+      if (event.type === "response_choice") {
+        const completed = await replayResponseChoicePresentation(event, runId);
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
+      if (event.type === "resistance_start") {
+        const bonus = event.bonus == null || event.bonus === 0 ? "" : ` ${event.bonus > 0 ? `+${event.bonus}` : `${event.bonus}`}`;
+        const completed = await showCombatFx(
+          t(language, "combat.resistance.prepare", {
+            playerName: getSeatDisplayName(event.seatNumber),
+            bonus,
+            threshold: event.threshold ?? 10
+          }),
+          "info",
+          850,
+          runId,
+          { seatNumber: event.seatNumber, showBanner: false }
+        );
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
+      if (event.type === "resistance_result") {
+        const resistanceOutcome = getSeatResistanceOutcome(event);
+        if (resistanceOutcome != null) {
+          setSeatResistancePill(event.seatNumber, event.boxId, resistanceOutcome);
+          redraw();
+        }
+        const diceTotal = event.seatNumber != null ? lastDiceTotalBySeat.get(event.seatNumber) : undefined;
+        const totalStr = diceTotal != null ? String(diceTotal) : "?";
+        const message = event.success === false
+          ? event.fatalFailure
+            ? t(language, "combat.resistance.failedCritical", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                total: totalStr
+              })
+            : t(language, "combat.resistance.failed", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                total: totalStr
+              })
+          : event.criticalSuccess
+            ? t(language, "combat.resistance.critical", {
+                playerName: getSeatDisplayName(event.seatNumber)
+              })
+            : t(language, "combat.resistance.success", {
+                playerName: getSeatDisplayName(event.seatNumber),
+                total: totalStr
+              });
+        const completed = await showCombatFx(
+          message,
+          event.success === false ? "failure" : "success",
+          1100,
+          runId,
+          { seatNumber: event.seatNumber, showBanner: false }
+        );
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
+      if (event.type === "attack_impact") {
+        const completed = await showCombatFx(
+          t(language, "combat.attackIncoming", {
+            cardName: event.cardName ?? (language === "fr" ? "Attaque" : "Attack"),
+            targetName: getSeatDisplayName(event.targetSeatNumber)
+          }),
+          "failure",
+          500,
+          runId,
+          {
+            seatNumber: event.targetSeatNumber,
+            impactTargetSeatNumber: event.targetSeatNumber,
+            showBanner: false
+          }
+        );
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
+      if (event.type === "hp_loss" && (event.amount ?? 0) > 0) {
+        let becameDead = false;
+        if (event.seatNumber != null) {
+          displayedHpBySeat[event.seatNumber] =
+            (displayedHpBySeat[event.seatNumber] ??
+              (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
+            - (event.amount ?? 0);
+          becameDead = displayedHpBySeat[event.seatNumber]! <= 0 && pendingPostDeathSeatsBySeat[event.seatNumber] != null;
+        }
+        clearSeatResistancePill(event.seatNumber, event.boxId);
+        redraw();
+        const completed = await showCombatFx(
+          t(language, "combat.tookDamage", {
+            playerName: getSeatDisplayName(event.seatNumber),
+            amount: event.amount ?? 0
+          }),
+          "failure",
+          1250,
+          runId,
+          {
+            seatNumber: event.seatNumber,
+            damageAmount: event.amount,
+            impactTargetSeatNumber: event.seatNumber,
+            showBanner: false
+          }
+        );
+        if (!completed) {
+          return;
+        }
+        if (becameDead && event.seatNumber != null) {
+          displayedSeatsBySeat[event.seatNumber] = pendingPostDeathSeatsBySeat[event.seatNumber]!;
+          const { [event.seatNumber]: _removed, ...rest } = pendingPostDeathSeatsBySeat;
+          pendingPostDeathSeatsBySeat = rest;
+          redraw();
+        }
+        continue;
+      }
+
+      if (event.type === "hp_gain" && (event.amount ?? 0) > 0) {
+        if (event.seatNumber != null) {
+          displayedHpBySeat[event.seatNumber] =
+            (displayedHpBySeat[event.seatNumber] ??
+              (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
+            + (event.amount ?? 0);
+        }
+        const completed = await showCombatFx(
+          t(language, "combat.gainsHp", {
+            playerName: getSeatDisplayName(event.seatNumber),
+            amount: event.amount ?? 0
+          }),
+          "success",
+          1100,
+          runId,
+          {
+            seatNumber: event.seatNumber,
+            healAmount: event.amount,
+            showBanner: false
+          }
+        );
+        if (!completed) {
+          return;
+        }
+      }
+    }
+
+    if (!isReplayRunActive(runId)) {
+      return;
+    }
+
+    clearSeatResistancePillsForBox(activeReplayBoxId);
+    finishReplayBatch();
+  };
+
+  const queueReplayBatch = (
+    replayableEvents: GameEvent[],
+    preUpdateSeats: Record<number, SeatState>
+  ): void => {
+    if (replayableEvents.length === 0) {
+      return;
+    }
+
+    latestReplayBatch = [...replayableEvents];
+    latestReplayPreUpdateLocalizedSeatsBySeat = cloneLocalizedSeatSnapshot(preUpdateSeats);
+    const queueToken = replayQueueToken;
 
     eventReplayChain = eventReplayChain
       .catch(() => undefined)
       .then(async () => {
-        const lastDiceTotalBySeat = new Map<number, number>();
-        let activeReplayBoxId: string | null = null;
-        for (const event of replayableEvents) {
-          const eventBoxId = "boxId" in event ? event.boxId ?? null : null;
-          if (activeReplayBoxId != null && eventBoxId != null && eventBoxId !== activeReplayBoxId) {
-            clearSeatResistancePillsForBox(activeReplayBoxId);
-            redraw();
-          }
-          if (eventBoxId != null) {
-            activeReplayBoxId = eventBoxId;
-          }
-
-          if (event.type === "dice_roll") {
-            if (event.seatNumber != null) {
-              lastDiceTotalBySeat.set(event.seatNumber, event.total);
-            }
-            await replayDiceRollPresentation(event);
-            continue;
-          }
-
-          revealEventLogEntriesForEvent(event);
-          redraw();
-
-          if (event.type === "action_start") {
-            rememberActionCardId(event.boxId, event.card.cardId);
-            await replayActionStartPresentation(event);
-            continue;
-          }
-
-          if (event.type === "response_choice") {
-            await replayResponseChoicePresentation(event);
-            continue;
-          }
-
-          if (event.type === "resistance_start") {
-            const bonus = event.bonus == null || event.bonus === 0 ? "" : ` ${event.bonus > 0 ? `+${event.bonus}` : `${event.bonus}`}`;
-            await showCombatFx(
-              t(language, "combat.resistance.prepare", {
-                playerName: getSeatDisplayName(event.seatNumber),
-                bonus,
-                threshold: event.threshold ?? 10
-              }),
-              "info",
-              850,
-              { seatNumber: event.seatNumber, showBanner: false }
-            );
-            continue;
-          }
-
-          if (event.type === "resistance_result") {
-            const resistanceOutcome = getSeatResistanceOutcome(event);
-            if (resistanceOutcome != null) {
-              setSeatResistancePill(event.seatNumber, event.boxId, resistanceOutcome);
-              redraw();
-            }
-            const diceTotal = event.seatNumber != null ? lastDiceTotalBySeat.get(event.seatNumber) : undefined;
-            const totalStr = diceTotal != null ? String(diceTotal) : "?";
-            const message = event.success === false
-              ? event.fatalFailure
-                ? t(language, "combat.resistance.failedCritical", {
-                    playerName: getSeatDisplayName(event.seatNumber),
-                    total: totalStr
-                  })
-                : t(language, "combat.resistance.failed", {
-                    playerName: getSeatDisplayName(event.seatNumber),
-                    total: totalStr
-                  })
-              : event.criticalSuccess
-                ? t(language, "combat.resistance.critical", {
-                    playerName: getSeatDisplayName(event.seatNumber)
-                  })
-                : t(language, "combat.resistance.success", {
-                    playerName: getSeatDisplayName(event.seatNumber),
-                    total: totalStr
-                  });
-            await showCombatFx(
-              message,
-              event.success === false ? "failure" : "success",
-              1100,
-              { seatNumber: event.seatNumber, showBanner: false }
-            );
-            continue;
-          }
-
-          if (event.type === "attack_impact") {
-            await showCombatFx(
-              t(language, "combat.attackIncoming", {
-                cardName: event.cardName ?? (language === "fr" ? "Attaque" : "Attack"),
-                targetName: getSeatDisplayName(event.targetSeatNumber)
-              }),
-              "failure",
-              500,
-              {
-                seatNumber: event.targetSeatNumber,
-                impactTargetSeatNumber: event.targetSeatNumber,
-                showBanner: false
-              }
-            );
-            continue;
-          }
-
-          if (event.type === "hp_loss" && (event.amount ?? 0) > 0) {
-            if (event.seatNumber != null) {
-              displayedHpBySeat[event.seatNumber] =
-                (displayedHpBySeat[event.seatNumber] ??
-                  (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
-                - (event.amount ?? 0);
-            }
-            clearSeatResistancePill(event.seatNumber, event.boxId);
-            redraw();
-            await showCombatFx(
-              t(language, "combat.tookDamage", {
-                playerName: getSeatDisplayName(event.seatNumber),
-                amount: event.amount ?? 0
-              }),
-              "failure",
-              1250,
-              {
-                seatNumber: event.seatNumber,
-                damageAmount: event.amount,
-                impactTargetSeatNumber: event.seatNumber,
-                showBanner: false
-              }
-            );
-            continue;
-          }
-
-          if (event.type === "hp_gain" && (event.amount ?? 0) > 0) {
-            if (event.seatNumber != null) {
-              displayedHpBySeat[event.seatNumber] =
-                (displayedHpBySeat[event.seatNumber] ??
-                  (match.seats.find((s) => s.seatNumber === event.seatNumber)?.hp ?? 0))
-                + (event.amount ?? 0);
-            }
-            await showCombatFx(
-              t(language, "combat.gainsHp", {
-                playerName: getSeatDisplayName(event.seatNumber),
-                amount: event.amount ?? 0
-              }),
-              "success",
-              1100,
-              {
-                seatNumber: event.seatNumber,
-                healAmount: event.amount,
-                showBanner: false
-              }
-            );
-          }
+        if (queueToken !== replayQueueToken) {
+          return;
         }
-        clearSeatResistancePillsForBox(activeReplayBoxId);
-        eventPlaybackActive = false;
-        displayedHpBySeat = {};
-        displayedSeatsBySeat = {};
-        if (match.game?.pendingAction == null) {
-          activeActionVisual = null;
-          centerResponseCards = [];
-        }
-        updateVictoryCelebrationState();
-        redraw();
-        if (syncQueued && !syncInFlight) {
-          syncQueued = false;
-          void requestSync();
-        }
+
+        const runId = ++replayRunId;
+        await runReplayBatch(replayableEvents, preUpdateSeats, runId);
       })
       .catch(() => {
-        seatResistancePills = {};
-        eventPlaybackActive = false;
-        displayedHpBySeat = {};
-        displayedSeatsBySeat = {};
-        if (match.game?.pendingAction == null) {
-          activeActionVisual = null;
-          centerResponseCards = [];
+        if (queueToken !== replayQueueToken) {
+          return;
         }
+
+        clearReplayPresentationState();
         updateVictoryCelebrationState();
         redraw();
       });
+  };
+
+  const replayLatestBatch = (): void => {
+    if (latestReplayBatch.length === 0) {
+      return;
+    }
+
+    replayQueueToken += 1;
+    replayRunId += 1;
+    clearReplayPresentationState();
+    updateVictoryCelebrationState();
+    redraw();
+    eventReplayChain = Promise.resolve();
+    queueReplayBatch(latestReplayBatch, latestReplayPreUpdateLocalizedSeatsBySeat);
+  };
+
+  const replayCombatPresentationEvents = (): void => {
+    const unseenEvents = (match.game?.eventLog ?? []).filter((event) => !seenGameEventIds.has(event.id));
+    if (unseenEvents.length === 0) {
+      return;
+    }
+
+    unseenEvents.forEach((event) => seenGameEventIds.add(event.id));
+    const replayableEvents = unseenEvents.filter((event) =>
+      event.type === "action_start" ||
+      event.type === "dealer_message" ||
+      event.type === "seat_snapshot" ||
+      event.type === "response_choice" ||
+      event.type === "resistance_start" ||
+      event.type === "resistance_result" ||
+      event.type === "attack_impact" ||
+      event.type === "hp_loss" ||
+      event.type === "hp_gain" ||
+      event.type === "dice_roll"
+    );
+    if (replayableEvents.length === 0) {
+      return;
+    }
+
+    queueReplayBatch(replayableEvents, preUpdateLocalizedSeatsBySeat);
   };
 
   const canStartInteractionForCard = (card: CardView): boolean => {
@@ -4682,12 +5144,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   };
 
   const syncEventLogSeenState = (): void => {
-    const entries = buildEventLogEntries(match, language);
-    for (const entry of entries) {
-      if (entry.id.startsWith("dealer:")) {
-        seenEventMessageIds.add(entry.id);
-      }
-    }
+    // Event log visibility now follows the unified game.eventLog stream.
+    // New entries are revealed through replayCombatPresentationEvents.
   };
 
   const revealEventLogEntriesForEvent = (event: GameEvent): void => {
@@ -4712,6 +5170,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         return;
       case "hp_gain":
         seenEventMessageIds.add(`heal:${event.id}`);
+        return;
+      case "dealer_message":
+        seenEventMessageIds.add(`dealer:${event.id}`);
         return;
       default:
         return;
@@ -4954,7 +5415,15 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           seats: localizedMatch.seats.map((seat) => {
             const snapshot = displayedSeatsBySeat[seat.seatNumber];
             if (snapshot == null) return seat;
-            return { ...seat, hand: snapshot.hand, objects: snapshot.objects, statuses: snapshot.statuses };
+            return {
+              ...seat,
+              hand: snapshot.hand,
+              objects: snapshot.objects,
+              statuses: snapshot.statuses,
+              powerLevel: snapshot.powerLevel,
+              isAlive: snapshot.isAlive,
+              hp: displayedHpBySeat[seat.seatNumber] ?? snapshot.hp ?? seat.hp
+            };
           })
         }
       : localizedMatch;
@@ -5050,6 +5519,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const batonLoadProgress = batonLoadHoverTs == null ? 0 : Math.min(1, (Date.now() - batonLoadHoverTs) / 220);
       const batonEased = batonLoadProgress < 1 ? 1 - Math.pow(1 - batonLoadProgress, 3) : 1;
       const batonLoadScale = 1 + 0.45 * batonEased;
+      const replayNow = getReplayNow();
 
       currentGeometry = renderTableScene(
         scene,
@@ -5075,7 +5545,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         scheduleRedraw,
         displayedHpBySeat,
         targetHintDismissed,
-        batonLoadScale
+        batonLoadScale,
+        replayNow
       );
     }
 
@@ -5142,7 +5613,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -5594,19 +6065,31 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     });
 
     frameElement.querySelector<HTMLInputElement>("[data-action='edit-sacrifice-amount']")?.addEventListener("input", (event) => {
-      sacrificeAmountInput = (event.currentTarget as HTMLInputElement).value;
+      const input = event.currentTarget as HTMLInputElement;
+      const selStart = input.selectionStart ?? input.value.length;
+      const selEnd = input.selectionEnd ?? input.value.length;
+      sacrificeAmountInput = input.value.replace(/[^\d]/g, "");
       const pendingSacrificeChoice = match.game?.pendingSacrificeChoice;
       const confirmBtn = frameElement.querySelector<HTMLButtonElement>("[data-action='confirm-sacrifice-amount']");
       if (pendingSacrificeChoice != null && confirmBtn != null) {
-        const parsed = Number(sacrificeAmountInput);
-        confirmBtn.disabled = !(Number.isInteger(parsed) && parsed >= 0 && parsed <= pendingSacrificeChoice.maxAmount);
+        const normalizedValue = sacrificeAmountInput.trim();
+        const parsed = Number(normalizedValue);
+        confirmBtn.disabled = !(/^\d+$/.test(normalizedValue) && parsed >= 0 && parsed <= pendingSacrificeChoice.maxAmount);
+      }
+      redraw();
+      const newInput = frameElement.querySelector<HTMLInputElement>("[data-action='edit-sacrifice-amount']");
+      if (newInput != null) {
+        newInput.focus();
+        const nextCursor = Math.min(selStart, newInput.value.length);
+        newInput.setSelectionRange(nextCursor, Math.min(selEnd, newInput.value.length));
       }
     });
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='confirm-sacrifice-amount']")?.addEventListener("click", async () => {
       const pendingSacrificeChoice = match.game?.pendingSacrificeChoice;
-      const parsed = Number(sacrificeAmountInput);
-      if (pendingSacrificeChoice == null || !Number.isInteger(parsed) || parsed < 0 || parsed > pendingSacrificeChoice.maxAmount) {
+      const normalizedValue = sacrificeAmountInput.trim();
+      const parsed = Number(normalizedValue);
+      if (pendingSacrificeChoice == null || !/^\d+$/.test(normalizedValue) || !Number.isInteger(parsed) || parsed < 0 || parsed > pendingSacrificeChoice.maxAmount) {
         errorMessage = t(language, "error.sacrificeRange", { maxAmount: pendingSacrificeChoice?.maxAmount ?? 0 });
         redraw();
         return;
@@ -5703,6 +6186,26 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         if (historyEl != null) {
           historyEl.scrollTop = historyEl.scrollHeight;
         }
+      }
+    });
+    frameElement.querySelector<HTMLButtonElement>("[data-action='toggle-replay-pause']")?.addEventListener("click", () => {
+      setReplayPaused(!replayPaused);
+    });
+    frameElement.querySelector<HTMLButtonElement>("[data-action='rewind-replay']")?.addEventListener("click", () => {
+      replayLatestBatch();
+    });
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='set-replay-speed-preset']").forEach((button) => {
+      button.addEventListener("click", () => {
+        const nextSpeed = Number(button.dataset.speed ?? "1");
+        if (Number.isFinite(nextSpeed)) {
+          setReplaySpeed(nextSpeed);
+        }
+      });
+    });
+    frameElement.querySelector<HTMLInputElement>("[data-action='set-replay-speed']")?.addEventListener("input", (event) => {
+      const nextSpeed = Number((event.currentTarget as HTMLInputElement).value);
+      if (Number.isFinite(nextSpeed)) {
+        setReplaySpeed(nextSpeed);
       }
     });
 
