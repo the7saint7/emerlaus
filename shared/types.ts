@@ -382,6 +382,7 @@ export interface JoinResponse {
 
 export interface MatchConfigResponse {
   discordClientId: string;
+  enableDevTools: boolean;
 }
 
 export interface DisconnectRequest {

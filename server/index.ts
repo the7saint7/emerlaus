@@ -81,13 +81,30 @@ const builtClientDir = currentDir == null
 
 app.use(express.json());
 
+function requireDevToolsEnabled(
+  _request: express.Request,
+  response: express.Response,
+  next: express.NextFunction
+): void {
+  if (config.enableDevTools) {
+    next();
+    return;
+  }
+
+  response.status(404).json({ error: "Not found" });
+}
+
+app.use("/api/dev", requireDevToolsEnabled);
+app.use(/^\/api\/matches\/[^/]+\/dev(?:\/|$)/, requireDevToolsEnabled);
+
 app.get("/health", (_request, response) => {
   response.json({ ok: true });
 });
 
 app.get("/api/config", (_request, response) => {
   const payload: MatchConfigResponse = {
-    discordClientId: config.discordClientId
+    discordClientId: config.discordClientId,
+    enableDevTools: config.enableDevTools
   };
 
   response.json(payload);

@@ -7,6 +7,7 @@ interface ActivitySession {
   instanceId: string;
   currentUser: LocalUserProfile;
   mode: "browser" | "discord";
+  enableDevTools: boolean;
   subscribeToParticipantUpdates(onChange: () => void): () => void;
 }
 
@@ -86,6 +87,7 @@ export async function createDiscordSession(): Promise<ActivitySession> {
       instanceId,
       currentUser: browserUser,
       mode: "browser",
+      enableDevTools: config.enableDevTools,
       subscribeToParticipantUpdates: () => () => undefined
     };
   }
@@ -98,6 +100,7 @@ export async function createDiscordSession(): Promise<ActivitySession> {
     instanceId: sdk.instanceId || instanceId,
     currentUser,
     mode: "discord",
+    enableDevTools: config.enableDevTools,
     subscribeToParticipantUpdates(onChange: () => void) {
       const handler = () => onChange();
       void sdk.subscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, handler);

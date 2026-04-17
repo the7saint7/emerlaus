@@ -1951,18 +1951,20 @@ function renderTableScene(
   // While replay is locked to earlier boxes, ignore the live lastPlayedCard from the
   // freshly synced match state so the next action cannot leak into the center stack.
   const lastPlayedCard = presentationLockActive ? null : (match.game?.lastPlayedCard?.card ?? null);
-  const centerSlotTopY = pendingAction == null ? 292 : 302;
+  const centerSlotTopY = pendingAction == null ? 218 : 228;
+  const centerSlotHeight = 278;
+  const centerSlotCardCenterOffsetY = 0;
   const isLocalResponder = pendingAction != null
     && pendingAction.responderSeatNumbers.includes(localSeatNumber);
   const responseSlot: RectGeometry | null = isLocalResponder
-    ? { x: 544, y: centerSlotTopY - 12, width: 128, height: 214 }
+    ? { x: 538, y: centerSlotTopY - 16, width: 140, height: centerSlotHeight }
     : null;
   const draggedCard = localSeat?.hand?.find((card) =>
     card.instanceId === (interactionState.arrowDrag?.cardInstanceId ?? interactionState.draggingCardInstanceId)
   );
   const playSlot: RectGeometry = pendingAction == null
-    ? { x: 708, y: centerSlotTopY - 12, width: 184, height: 214 }
-    : { x: 698, y: centerSlotTopY - 12, width: 196, height: 214 };
+    ? { x: 700, y: centerSlotTopY - 16, width: 200, height: centerSlotHeight }
+    : { x: 690, y: centerSlotTopY - 16, width: 212, height: centerSlotHeight };
   const handArea: RectGeometry = { x: 390, y: 660, width: 820, height: 180 };
   const discardZone: RectGeometry = { x: handArea.x - 198, y: handArea.y, width: 182, height: handArea.height };
   const seatTargets: SeatTargetGeometry[] = [];
@@ -2244,9 +2246,9 @@ function renderTableScene(
       scene.addChild(createCenterCardFace(
         card,
         responseSlot.x + responseSlot.width / 2,
-        responseSlot.y + responseSlot.height / 2 - (visibleResponseCards.length - 1 - index) * 4,
-        98,
-        138,
+        responseSlot.y + responseSlot.height / 2 + centerSlotCardCenterOffsetY - (visibleResponseCards.length - 1 - index) * 4,
+        118,
+        165,
         0,
         "thumb",
         onTextureReady
@@ -2254,10 +2256,10 @@ function renderTableScene(
       inspectTargets.push({
         card,
         group: "response",
-        x: responseSlot.x + responseSlot.width / 2 - 49,
-        y: responseSlot.y + responseSlot.height / 2 - (visibleResponseCards.length - 1 - index) * 4 - 69,
-        width: 98,
-        height: 138
+        x: responseSlot.x + responseSlot.width / 2 - 59,
+        y: responseSlot.y + responseSlot.height / 2 + centerSlotCardCenterOffsetY - (visibleResponseCards.length - 1 - index) * 4 - 82.5,
+        width: 118,
+        height: 165
       });
     });
   }
@@ -2282,9 +2284,9 @@ function renderTableScene(
       scene.addChild(createCenterCardFace(
         card,
         playSlot.x + playSlot.width / 2 + stackOffset,
-        playSlot.y + playSlot.height / 2 - liftOffset,
-        isTop ? 130 : 120,
-        isTop ? 182 : 170,
+        playSlot.y + playSlot.height / 2 + centerSlotCardCenterOffsetY - liftOffset,
+        isTop ? 156 : 142,
+        isTop ? 220 : 200,
         isTop ? 0 : -0.08,
         "thumb",
         onTextureReady
@@ -2292,10 +2294,10 @@ function renderTableScene(
       inspectTargets.push({
         card,
         group: "center",
-        x: playSlot.x + playSlot.width / 2 + stackOffset - (isTop ? 65 : 60),
-        y: playSlot.y + playSlot.height / 2 - liftOffset - (isTop ? 91 : 85),
-        width: isTop ? 130 : 120,
-        height: isTop ? 182 : 170
+        x: playSlot.x + playSlot.width / 2 + stackOffset - (isTop ? 78 : 71),
+        y: playSlot.y + playSlot.height / 2 + centerSlotCardCenterOffsetY - liftOffset - (isTop ? 110 : 100),
+        width: isTop ? 156 : 142,
+        height: isTop ? 220 : 200
       });
     });
   }
@@ -2561,6 +2563,7 @@ function renderEventLog(
   eventLogExpanded: boolean,
   eventLogWidth: number,
   eventLogHeight: number,
+  enableDevTools: boolean,
   replayDebug: ReplayDebugPanelState
 ): string {
   const entries = buildEventLogEntries(match, language).filter(
@@ -2574,7 +2577,7 @@ function renderEventLog(
 
   const panelStyle = `style="--event-log-width:${eventLogWidth}px; --event-log-height:${eventLogHeight}px;"`;
   const speedLabel = Number(replayDebug.speedMultiplier.toFixed(2)).toString();
-  const controlsMarkup = `
+  const controlsMarkup = enableDevTools ? `
     <div class="pixi-replay-debug">
       <div class="pixi-replay-debug__header">
         <strong>${escapeHtml(t(language, "replayDebug.title"))}</strong>
@@ -2606,7 +2609,7 @@ function renderEventLog(
         />
       </label>
     </div>
-  `;
+  ` : "";
 
   return `
     <section class="pixi-event-log ${eventLogExpanded ? "pixi-event-log--expanded" : ""}" ${panelStyle}>
@@ -2689,9 +2692,11 @@ function buildOverlayMarkup(
   activeCombatFx: ActiveCombatFxState | null,
   playbackLocked: boolean,
   showVictoryCelebration: boolean,
+  enableDevTools: boolean,
   sessionMode: "discord" | "browser",
   combatBannerLeftPx = 0,
   combatBannerTopPx = 0,
+  playbackLockTopPx = 0,
   passButtonLeftPx = 0,
   passButtonTopPx = 0,
   lobbyLayout: LobbyOverlayLayout | null = null
@@ -2720,7 +2725,7 @@ function buildOverlayMarkup(
       return [separatorMarkup, ...cardOptionsMarkup];
     })
     .join("");
-  const seatFxRowsMarkup = !amHost
+  const seatFxRowsMarkup = !enableDevTools || !amHost
     ? ""
     : match.seats.map((seat) => {
       const activeEffects = new Set(devSeatVisualEffectsBySeat[seat.seatNumber] ?? []);
@@ -2770,11 +2775,11 @@ function buildOverlayMarkup(
         ${match.status === "in_progress"
           ? `<button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>`
           : ""}
-        ${match.status === "in_progress" && amHost
+        ${enableDevTools && match.status === "in_progress" && amHost
           ? `<button type="button" class="pixi-overlay-button ${seatFxEditorOpen ? "pixi-overlay-button--accent" : ""}" data-action="open-seat-fx">${t(language, "table.seatFx")}</button>`
           : ""}
         ${match.status === "in_progress" || match.status === "lobby" ? "" : ""}
-        ${match.status === "in_progress"
+        ${enableDevTools && match.status === "in_progress"
           ? `
             <div class="pixi-dev-draw">
               <select class="pixi-dev-select" data-action="dev-draw-card" title="Dev: draw card">
@@ -2816,7 +2821,7 @@ function buildOverlayMarkup(
       ? ""
       : `<div class="pixi-combat-banner pixi-combat-banner--${activeCombatFx.tone}" style="left:${combatBannerLeftPx}px; top:${combatBannerTopPx}px;">${escapeHtml(activeCombatFx.message)}</div>`}
     ${playbackLocked && match.status === "in_progress"
-      ? `<div class="pixi-playback-lock" style="left:${combatBannerLeftPx}px; top:${Math.max(18, combatBannerTopPx - 42)}px;">${escapeHtml(t(language, "table.resolving"))}</div>`
+      ? `<div class="pixi-playback-lock" style="left:${combatBannerLeftPx}px; top:${playbackLockTopPx}px;">${escapeHtml(t(language, "table.resolving"))}</div>`
       : ""}
     ${buildVictoryCelebrationMarkup(match, language, showVictoryCelebration)}
     ${showPassButton
@@ -2846,7 +2851,7 @@ function buildOverlayMarkup(
         <button type="button" class="pixi-lang-button ${language === "en" ? "pixi-lang-button--active" : ""}" data-action="set-language" data-language="en">EN</button>
       </div>
       ${match.status !== "lobby"
-        ? renderEventLog(match, language, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, replayDebug)
+        ? renderEventLog(match, language, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, enableDevTools, replayDebug)
         : ""}
     </div>
     ${annulationChoice == null
@@ -2923,7 +2928,7 @@ function buildOverlayMarkup(
           </section>
         </div>
       `}
-    ${!amHost || !seatFxEditorOpen
+    ${!enableDevTools || !amHost || !seatFxEditorOpen
       ? ""
       : `
         <div class="pixi-modal-backdrop" data-action="close-seat-fx">
@@ -6073,6 +6078,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     const combatBannerTopPx = currentGeometry == null
       ? 88
       : Math.max(18, currentGeometry.playSlot.y - 52);
+    const playbackLockTopPx = currentGeometry == null
+      ? 56
+      : Math.max(18, currentGeometry.playSlot.y - 34);
     const kickTarget = getKickTarget();
     const kickActionTarget = getSeatKickActionTarget();
     const lobbyLayout: LobbyOverlayLayout | null = localizedMatch.status === "lobby" ? (() => {
@@ -6124,7 +6132,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.mode, combatBannerLeftPx, combatBannerTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, session.mode, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;

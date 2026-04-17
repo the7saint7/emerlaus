@@ -7594,6 +7594,26 @@ export function resolvePendingDeathSearchForBot(match: StoredMatchState, chooser
   }
 
   const chooserSeat = getPublicSeat(match, chooserSeatNumber);
+  if (pendingDeathSearch.sourceCard.cardId === "fouille-de-mort") {
+    const chooserState = getStoredSeat(game, chooserSeatNumber);
+    const sourceCard = moveCardFromHand(chooserState.hand, pendingDeathSearch.sourceCard.instanceId);
+    discardInstances(game, [sourceCard, ...pendingDeathSearch.corpses.flatMap((corpse) => corpse.cards)]);
+    appendDealerMessage(
+      match,
+      `${chooserSeat.displayName} uses ${requireDefinition(sourceCard.cardId).name} and keeps their current hand.`
+    );
+    appendServerDebugLog(
+      match,
+      "death_search",
+      `Bot seat ${chooserSeatNumber} shortcut-resolved ${requireDefinition(sourceCard.cardId).name}; kept current hand and discarded all corpse cards`
+    );
+    const continuationActorSeatNumber = pendingDeathSearch.continuationActorSeatNumber ?? chooserSeat.seatNumber;
+    const continuationBoxId = pendingDeathSearch.continuationBoxId;
+    game.pendingDeathSearch = undefined;
+    resumeAfterDeathSearch(match, continuationActorSeatNumber, continuationBoxId);
+    return;
+  }
+
   const botRequest = buildBotPendingDeathSearchRequest(match, pendingDeathSearch);
   resolvePendingDeathSearch(match, chooserSeat.userId, botRequest);
 }

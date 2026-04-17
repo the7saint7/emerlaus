@@ -16,6 +16,7 @@ export const config = {
   discordClientId: process.env.DISCORD_CLIENT_ID ?? "",
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET ?? "",
   discordPublicKey: process.env.DISCORD_PUBLIC_KEY ?? "",
+  enableDevTools: process.env.ENABLE_DEV_TOOLS === "true",
   requireDiscordSecrets(): { clientId: string; clientSecret: string; redirectUri?: string } {
     const redirectUri = process.env.DISCORD_REDIRECT_URI?.trim();
 
