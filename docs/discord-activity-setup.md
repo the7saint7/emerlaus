@@ -87,7 +87,9 @@ Recommended alpha shape:
 1. Deploy the app to one HTTPS host.
 2. Set `PORT`, `DISCORD_CLIENT_ID`, and `DISCORD_CLIENT_SECRET` in the host environment.
 3. Point Discord `Activities -> URL Mappings` `/` at that host.
-4. Launch the Activity from Discord and verify multiplayer joins, chat, and game state updates.
+4. Set the Discord application Terms of Service URL to `https://<your-host>/terms`.
+5. Set the Discord application Privacy Policy URL to `https://<your-host>/privacy`.
+6. Launch the Activity from Discord and verify multiplayer joins, chat, and game state updates.
 
 ## 5. What To Put In Discord
 
@@ -95,6 +97,8 @@ For this codebase, the important Discord configuration is:
 
 - `Activities -> Settings`: enable Activities
 - `Activities -> URL Mappings`: map `/` to your public Activity host
+- `General Information` or the relevant review form: use `https://<your-host>/terms` as the Terms of Service URL
+- `General Information` or the relevant review form: use `https://<your-host>/privacy` as the Privacy Policy URL
 
 You do not need a separate public backend hostname if you deploy this repo as one service.
 

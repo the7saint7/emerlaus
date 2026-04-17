@@ -487,8 +487,28 @@ app.post("/api/matches/:instanceId/forced-follow-up/pass", (request, response) =
 if (builtClientDir != null) {
   const builtAssetsDir = path.join(builtClientDir, "assets");
   const builtIndexHtml = path.join(builtClientDir, "index.html");
+  const builtTermsHtml = path.join(builtClientDir, "terms.html");
+  const builtPrivacyHtml = path.join(builtClientDir, "privacy.html");
 
   app.use("/assets", express.static(builtAssetsDir));
+
+  app.get(["/terms", "/terms.html"], (_request, response) => {
+    if (existsSync(builtTermsHtml)) {
+      response.sendFile(builtTermsHtml);
+      return;
+    }
+
+    response.status(404).send("Terms page not found");
+  });
+
+  app.get(["/privacy", "/privacy.html"], (_request, response) => {
+    if (existsSync(builtPrivacyHtml)) {
+      response.sendFile(builtPrivacyHtml);
+      return;
+    }
+
+    response.status(404).send("Privacy page not found");
+  });
 
   app.get("/", (_request, response) => {
     response.sendFile(builtIndexHtml);
