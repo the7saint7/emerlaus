@@ -5394,10 +5394,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "swap_bodies",
           "swapSeatOrder": true,
-          "swapHand": true,
-          "swapHp": true,
-          "swapObjects": true,
-          "swapStatuses": true
+          "swapHand": false,
+          "swapHp": false,
+          "swapObjects": false,
+          "swapStatuses": false
         }
       ]
     },

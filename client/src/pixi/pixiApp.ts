@@ -5242,10 +5242,6 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     preUpdateSeats: Record<number, SeatState>,
     runId: number
   ): Promise<void> => {
-    prepareReplayBatchState(replayableEvents, preUpdateSeats);
-    eventPlaybackActive = true;
-    redraw();
-
     const lastDiceTotalBySeat = new Map<number, number>();
     let activeReplayBoxId: string | null = null;
     const boxOrder = new Map<string, number>();
@@ -5475,6 +5471,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     latestReplayBatch = [...replayableEvents];
     latestReplayPreUpdateLocalizedSeatsBySeat = cloneLocalizedSeatSnapshot(preUpdateSeats);
+    prepareReplayBatchState(replayableEvents, preUpdateSeats);
+    eventPlaybackActive = true;
+    redraw();
     const queueToken = replayQueueToken;
 
     eventReplayChain = eventReplayChain
