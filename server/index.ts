@@ -65,14 +65,19 @@ import { getPlayerSessionUserId } from "./store/playerSessionStore.js";
 import { addSseConnection, broadcastCursorMove } from "./store/sseStore.js";
 
 const app = express();
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const builtClientDir = [
-  path.resolve(currentDir, "../dist/client"),
-  path.resolve(currentDir, "../client"),
-  path.resolve(currentDir, "../../client")
-].find((candidate) => {
-  return existsSync(path.join(candidate, "index.html")) && existsSync(path.join(candidate, "assets"));
-});
+const currentModuleUrl = typeof import.meta.url === "string" ? import.meta.url : null;
+const currentDir = currentModuleUrl != null && currentModuleUrl.startsWith("file:")
+  ? path.dirname(fileURLToPath(currentModuleUrl))
+  : null;
+const builtClientDir = currentDir == null
+  ? null
+  : [
+      path.resolve(currentDir, "../dist/client"),
+      path.resolve(currentDir, "../client"),
+      path.resolve(currentDir, "../../client")
+    ].find((candidate) => {
+      return existsSync(path.join(candidate, "index.html")) && existsSync(path.join(candidate, "assets"));
+    });
 
 app.use(express.json());
 
