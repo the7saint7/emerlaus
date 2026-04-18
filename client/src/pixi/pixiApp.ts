@@ -2710,6 +2710,8 @@ function buildOverlayMarkup(
   showVictoryCelebration: boolean,
   enableDevTools: boolean,
   sessionMode: "discord" | "browser",
+  sessionChannelId: string | null,
+  sessionGuildId: string | null,
   combatBannerLeftPx = 0,
   combatBannerTopPx = 0,
   playbackLockTopPx = 0,
@@ -2721,6 +2723,14 @@ function buildOverlayMarkup(
   const amHost = localSeat?.isHost === true;
   const showPassButton = match.status === "in_progress" && canPassPendingResponse(match);
   const annulationChoice = pendingAnnulationChoice;
+  const sessionDiagnostics = [
+    sessionMode === "discord" ? t(language, "lobby.discord") : t(language, "lobby.browser"),
+    t(language, "lobby.instance", { instanceId: match.instanceId }),
+    sessionChannelId != null ? t(language, "lobby.channel", { channelId: sessionChannelId }) : null,
+    sessionGuildId != null ? t(language, "lobby.guild", { guildId: sessionGuildId }) : null
+  ]
+    .filter((value): value is string => value != null && value !== "")
+    .join("  ·  ");
   const devDrawOptionsMarkup = getEnabledDevDrawGroups(match)
     .flatMap(({ label, cards }) => {
       const separatorMarkup = `<option value="${DEV_DRAW_SEPARATOR_PREFIX}${label}">--------------- ${escapeHtml(label)} ---------------</option>`;
@@ -2787,6 +2797,7 @@ function buildOverlayMarkup(
   return `
     ${match.shortId ? `<div class="pixi-session-id">${escapeHtml(match.shortId)}</div>` : ""}
     <div class="pixi-frame-topbar">
+      <div class="pixi-frame-meta">${escapeHtml(sessionDiagnostics)}</div>
       <div class="pixi-frame-actions">
         ${match.status === "in_progress"
           ? `<button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>`
@@ -6210,7 +6221,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, session.mode, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;

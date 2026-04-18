@@ -157,6 +157,18 @@ select {
   padding: 22px;
 }
 
+.pixi-frame-meta {
+  max-width: min(62vw, 860px);
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  color: rgba(136, 182, 142, 0.92);
+  pointer-events: none;
+  user-select: text;
+  white-space: normal;
+}
+
 .pixi-frame-status,
 .pixi-frame-actions,
 .pixi-kick-panel,
