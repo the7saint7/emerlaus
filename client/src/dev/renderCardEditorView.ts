@@ -6,6 +6,7 @@ import type {
   DefenseBandRules,
   RollExpression
 } from "../../../shared/cards/types";
+import { getImportedCardImageUrl } from "../cards/cardImageUrls";
 
 export interface CardEditorViewParams {
   cards: BaseCardDefinition[];
@@ -291,7 +292,7 @@ export function renderCardEditorView({
   statusMessage,
   isSaving
 }: CardEditorViewParams): string {
-  const cardImagePath = card.image.importedAssetPath?.replace("client/public", "") ?? "";
+  const cardImagePath = getImportedCardImageUrl(card.image.importedAssetPath);
   const defenseBand = defenseBandOrDefault(card);
 
   return `

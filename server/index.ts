@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type {
   AddBotRequest,
   AnnounceDiceRollRequest,
+  CreateBugReportRequest,
   DisconnectRequest,
   DiscordAuthTokenRequest,
   JoinRequest,
@@ -21,7 +22,8 @@ import type {
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
-  StartMatchRequest
+  StartMatchRequest,
+  UpdateBugReportStatusRequest
 } from "../shared/types.js";
 import type { SaveBaseDefenseBandMappingRequest } from "../shared/cards/types.js";
 import type { SaveBaseCardDefinitionRequest } from "../shared/cards/types.js";
@@ -36,6 +38,12 @@ import {
   writeBaseDefenseBandMapping
 } from "./services/baseDefenseBandMappingService.js";
 import { exchangeDiscordCode } from "./services/discordOAuth.js";
+import {
+  createBugReport,
+  listBugReports,
+  readBugReport,
+  updateBugReportStatus
+} from "./services/bugReportService.js";
 import {
   addBot,
   announceDiceRoll,
@@ -150,6 +158,37 @@ app.post("/api/dev/base-defense-band-mappings/:cardId", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to save defense band mapping"
+    });
+  }
+});
+
+app.get("/api/dev/bug-reports", (_request, response) => {
+  try {
+    response.json(listBugReports());
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to list bug reports"
+    });
+  }
+});
+
+app.get("/api/dev/bug-reports/:reportId", (request, response) => {
+  try {
+    response.json(readBugReport(request.params.reportId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to read bug report"
+    });
+  }
+});
+
+app.post("/api/dev/bug-reports/:reportId/status", (request, response) => {
+  try {
+    const body = request.body as UpdateBugReportStatusRequest;
+    response.json(updateBugReportStatus(request.params.reportId, body.status));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to update bug report status"
     });
   }
 });
@@ -317,7 +356,7 @@ app.post("/api/matches/:instanceId/client-log", (request, response) => {
     const userId = requireAuthenticatedUserId(request);
     const body = request.body as { entries?: unknown };
     const entries = Array.isArray(body.entries)
-      ? body.entries.filter((entry): entry is string => typeof entry === "string").slice(-300)
+      ? body.entries.filter((entry): entry is string => typeof entry === "string")
       : [];
     const matchForLog = getMatch(request.params.instanceId);
     const displayName = matchForLog?.seats.find((seat) => seat.userId === userId)?.displayName ?? userId;
@@ -327,6 +366,23 @@ app.post("/api/matches/:instanceId/client-log", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to persist client log"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/bug-report", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as CreateBugReportRequest;
+    const match = getMatch(request.params.instanceId);
+    if (match == null) {
+      throw new Error("Match not found");
+    }
+
+    response.json(createBugReport(match, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to save bug report"
     });
   }
 });

@@ -1,6 +1,7 @@
 import "./styles.css";
 import { fetchConfig } from "./src/api/gameApi";
 import { createCardBandMapperApp } from "./src/dev/cardBandMapperApp";
+import { createBugReportsApp } from "./src/dev/bugReportsApp";
 import { createCardEditorApp } from "./src/dev/cardEditorApp";
 import { createPixiApp } from "./src/pixi/pixiApp";
 
@@ -25,6 +26,8 @@ async function bootApp(): Promise<void> {
   const boot = enableDevTools
     ? requestedDevMode === "band-mapper"
       ? createCardBandMapperApp
+      : requestedDevMode === "bug-reports"
+        ? createBugReportsApp
       : requestedDevMode === "card-editor"
         ? createCardEditorApp
         : createPixiApp

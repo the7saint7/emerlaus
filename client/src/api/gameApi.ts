@@ -1,5 +1,7 @@
 import type {
   AnnounceDiceRollRequest,
+  BugReportRecord,
+  CreateBugReportRequest,
   JoinResponse,
   KickPlayerRequest,
   LocalUserProfile,
@@ -134,6 +136,20 @@ export async function persistClientLogSnapshot(
     const payload = await response.json().catch(() => ({ error: "Unable to persist client log" }));
     throw new Error(typeof payload.error === "string" ? payload.error : "Unable to persist client log");
   }
+}
+
+export async function submitBugReport(
+  instanceId: string,
+  playerSessionToken: string,
+  request: CreateBugReportRequest
+): Promise<BugReportRecord> {
+  const response = await fetch(`/api/matches/${instanceId}/bug-report`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<BugReportRecord>(response);
 }
 
 export async function playCard(

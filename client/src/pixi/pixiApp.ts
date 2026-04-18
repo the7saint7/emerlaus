@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject } from "../api/gameApi";
+import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject, submitBugReport } from "../api/gameApi";
 import { createDiscordSession } from "../discord/session";
 import {
   canDiscardCard,
@@ -14,7 +14,7 @@ import {
   isSeatTargetable,
   objectCardMatchesSelectedTargeting
 } from "../gameplay/interactionRules";
-import { getCardImageVariantUrl, getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage, type CardImageVariant } from "../i18n";
+import { getCardImageVariantUrl, getImportedCardImageUrl, getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage, type CardImageVariant } from "../i18n";
 import { diceController, type DiceStagePlacement } from "../features/dice/diceController";
 import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
@@ -2689,6 +2689,10 @@ function buildOverlayMarkup(
   cardReferenceShowBase: boolean,
   cardReferenceShowAbondance: boolean,
   cardReferenceShowPuissance: boolean,
+  bugReportOpen: boolean,
+  bugReportDraft: string,
+  bugReportSubmitting: boolean,
+  bugReportErrorMessage: string,
   activeCombatFx: ActiveCombatFxState | null,
   playbackLocked: boolean,
   showVictoryCelebration: boolean,
@@ -2774,6 +2778,9 @@ function buildOverlayMarkup(
       <div class="pixi-frame-actions">
         ${match.status === "in_progress"
           ? `<button type="button" class="pixi-overlay-button" data-action="open-card-reference">${t(language, "table.cardReference")}</button>`
+          : ""}
+        ${localSeat != null
+          ? `<button type="button" class="pixi-overlay-button ${bugReportOpen ? "pixi-overlay-button--accent" : ""}" data-action="open-bug-report">${t(language, "table.reportBug")}</button>`
           : ""}
         ${enableDevTools && match.status === "in_progress" && amHost
           ? `<button type="button" class="pixi-overlay-button ${seatFxEditorOpen ? "pixi-overlay-button--accent" : ""}" data-action="open-seat-fx">${t(language, "table.seatFx")}</button>`
@@ -2926,6 +2933,41 @@ function buildOverlayMarkup(
               <button type="button" class="pixi-overlay-button pixi-overlay-button--danger" data-action="kick-confirm">${t(language, "defense.yes")}</button>
             </div>
           </section>
+        </div>
+      `}
+    ${!bugReportOpen
+      ? ""
+      : `
+        <div class="pixi-modal-backdrop">
+          <article class="telepathy-panel telepathy-panel--compact bug-report-panel" data-pixi-modal-card="true">
+            <div class="telepathy-panel__header">
+              <div>
+                <p class="eyebrow">${escapeHtml(t(language, "table.reportBug"))}</p>
+                <h2>${escapeHtml(t(language, "bugReport.title"))}</h2>
+                <p>${escapeHtml(t(language, "bugReport.body", { shortId: match.shortId }))}</p>
+              </div>
+            </div>
+            <div class="bug-report-form">
+              <label class="bug-report-form__label" for="bug-report-description">${escapeHtml(t(language, "bugReport.descriptionLabel"))}</label>
+              <textarea
+                id="bug-report-description"
+                class="bug-report-form__textarea"
+                data-action="edit-bug-report-description"
+                placeholder="${escapeHtml(t(language, "bugReport.placeholder"))}"
+                ${bugReportSubmitting ? "disabled" : ""}
+              >${escapeHtml(bugReportDraft)}</textarea>
+              <p class="bug-report-form__meta">${escapeHtml(t(language, "bugReport.session", { shortId: match.shortId }))}</p>
+              ${bugReportErrorMessage === ""
+                ? ""
+                : `<p class="bug-report-form__error">${escapeHtml(bugReportErrorMessage)}</p>`}
+            </div>
+            <div class="modal-actions pixi-annulation-choice__actions">
+              <button type="button" class="pixi-overlay-button" data-action="close-bug-report" ${bugReportSubmitting ? "disabled" : ""}>${escapeHtml(t(language, "bugReport.cancel"))}</button>
+              <button type="button" class="pixi-overlay-button pixi-overlay-button--accent" data-action="send-bug-report" ${bugReportSubmitting ? "disabled" : ""}>
+                ${escapeHtml(t(language, bugReportSubmitting ? "bugReport.sending" : "bugReport.send"))}
+              </button>
+            </div>
+          </article>
         </div>
       `}
     ${!enableDevTools || !amHost || !seatFxEditorOpen
@@ -3083,9 +3125,11 @@ function buildOverlayMarkup(
             .map((seatNumber) => match.seats.find((seat) => seat.seatNumber === seatNumber))
             .filter((seat): seat is SeatState => seat != null);
           const remainingSeconds = Math.max(0, Math.ceil((new Date(pendingPublicHandReveal.expiresAt).getTime() - Date.now()) / 1000));
-          const readyCount = pendingPublicHandReveal.readySeatNumbers.length;
-          const totalSeatCount = match.seats.length;
+          const requiredReadySeatNumbers = pendingPublicHandReveal.requiredReadySeatNumbers;
+          const readyCount = pendingPublicHandReveal.readySeatNumbers.filter((seatNumber) => requiredReadySeatNumbers.includes(seatNumber)).length;
+          const totalSeatCount = requiredReadySeatNumbers.length;
           const localSeatReady = pendingPublicHandReveal.readySeatNumbers.includes(localSeatNumber);
+          const localSeatCanAcknowledge = requiredReadySeatNumbers.includes(localSeatNumber);
           return `
             <div class="pixi-modal-backdrop">
               <article class="telepathy-panel sous-grades-panel" data-pixi-modal-card="true">
@@ -3101,11 +3145,11 @@ function buildOverlayMarkup(
                       type="button"
                       class="action-button ${localSeatReady ? "action-button--secondary" : ""}"
                       data-action="ack-public-hand-reveal"
-                      ${localSeatReady ? "disabled" : ""}
+                      ${localSeatReady || !localSeatCanAcknowledge ? "disabled" : ""}
                     >${escapeHtml(`${t(language, localSeatReady ? "sousGrades.ready" : "sousGrades.done")} ${readyCount}/${totalSeatCount}`)}</button>
                   </div>
                 </div>
-                <div class="sous-grades-grid">
+                <div class="sous-grades-grid" data-modal-list-scroll="true">
                   ${revealedSeats.map((seat) => `
                     <section class="sous-grades-seat">
                       <div class="sous-grades-seat__header">
@@ -3704,6 +3748,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let cardReferenceShowBase = true;
   let cardReferenceShowAbondance = true;
   let cardReferenceShowPuissance = true;
+  let bugReportOpen = false;
+  let bugReportDraft = "";
+  let bugReportSubmitting = false;
+  let bugReportErrorMessage = "";
   let pendingAnnulationChoice: PendingAnnulationChoiceState | null = null;
   let activeCombatFx: ActiveCombatFxState | null = null;
   let activeDamageBursts: Record<number, FloatingBurstState> = {};
@@ -4273,9 +4321,6 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     const entry = `${new Date().toISOString()} [client:${scope}] ${message}`;
     clientDebugLog.push(entry);
     clientLogDirty = true;
-    if (clientDebugLog.length > 500) {
-      clientDebugLog.shift();
-    }
   };
 
   const persistClientLogNow = async (): Promise<void> => {
@@ -4457,6 +4502,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     || confirmingLeave
     || confirmingDiscardCardInstanceId !== ""
     || confirmingKickSeatNumber !== 0
+    || bugReportOpen
     || seatFxEditorOpen
     || match.game?.pendingObjectChoice != null
     || match.game?.pendingHandInspection != null
@@ -4788,9 +4834,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       cardId: definition.id,
       name: localized?.name ?? definition.name,
       description: localized?.description ?? definition.description,
-      imageUrl: definition.image.importedAssetPath == null
-        ? ""
-        : `/${definition.image.importedAssetPath.replace(/^client[\\/]+public[\\/]+/, "").replace(/\\/g, "/")}`,
+      imageUrl: getImportedCardImageUrl(definition.image.importedAssetPath),
       categoryCode: definition.category.code,
       categoryLabel: definition.category.label,
       selectionMode: definition.rules.selectionMode,
@@ -6123,6 +6167,15 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     const savedEventLogScroll = prevEventLogEl != null
       ? { top: prevEventLogEl.scrollTop, atBottom: prevEventLogEl.scrollTop + prevEventLogEl.clientHeight >= prevEventLogEl.scrollHeight - 4 }
       : null;
+    const prevModalScrollEl = frameElement.querySelector<HTMLElement>("[data-modal-list-scroll='true']");
+    const savedModalScrollTop = prevModalScrollEl?.scrollTop ?? null;
+    const prevBugReportTextarea = frameElement.querySelector<HTMLTextAreaElement>("[data-action='edit-bug-report-description']");
+    const savedBugReportSelection = prevBugReportTextarea != null && document.activeElement === prevBugReportTextarea
+      ? {
+          start: prevBugReportTextarea.selectionStart ?? prevBugReportTextarea.value.length,
+          end: prevBugReportTextarea.selectionEnd ?? prevBugReportTextarea.value.length
+        }
+      : null;
 
     const nextOverlayMarkup =
       leftMessage !== ""
@@ -6132,7 +6185,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, session.mode, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, session.mode, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -6144,6 +6197,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         newEventLogEl.scrollTop = savedEventLogScroll.atBottom
           ? newEventLogEl.scrollHeight
           : savedEventLogScroll.top;
+      }
+
+      const newModalScrollEl = frameElement.querySelector<HTMLElement>("[data-modal-list-scroll='true']");
+      if (newModalScrollEl != null && savedModalScrollTop != null) {
+        newModalScrollEl.scrollTop = savedModalScrollTop;
+      }
+
+      const newBugReportTextarea = frameElement.querySelector<HTMLTextAreaElement>("[data-action='edit-bug-report-description']");
+      if (newBugReportTextarea != null && savedBugReportSelection != null) {
+        newBugReportTextarea.focus();
+        newBugReportTextarea.setSelectionRange(savedBugReportSelection.start, savedBugReportSelection.end);
       }
     }
     syncPublicHandRevealRefreshTimer();
@@ -6273,6 +6337,27 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       redraw();
     });
 
+    frameElement.querySelector<HTMLButtonElement>("[data-action='open-bug-report']")?.addEventListener("click", () => {
+      bugReportOpen = true;
+      bugReportErrorMessage = "";
+      redraw();
+      frameElement.querySelector<HTMLTextAreaElement>("[data-action='edit-bug-report-description']")?.focus();
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='close-bug-report']")?.addEventListener("click", () => {
+      if (bugReportSubmitting) {
+        return;
+      }
+
+      bugReportOpen = false;
+      bugReportErrorMessage = "";
+      redraw();
+      if (syncQueued && !syncInFlight) {
+        syncQueued = false;
+        void requestSync();
+      }
+    });
+
     frameElement.querySelector<HTMLButtonElement>("[data-action='close-card-reference']")?.addEventListener("click", () => {
       cardReferenceOpen = false;
       cardReferenceSearchQuery = "";
@@ -6361,6 +6446,51 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       if (newInput != null) {
         newInput.focus();
         newInput.setSelectionRange(selStart, selEnd);
+      }
+    });
+
+    frameElement.querySelector<HTMLTextAreaElement>("[data-action='edit-bug-report-description']")?.addEventListener("input", (event) => {
+      const input = event.currentTarget as HTMLTextAreaElement;
+      const selStart = input.selectionStart ?? input.value.length;
+      const selEnd = input.selectionEnd ?? input.value.length;
+      bugReportDraft = input.value;
+      bugReportErrorMessage = "";
+      redraw();
+      const newInput = frameElement.querySelector<HTMLTextAreaElement>("[data-action='edit-bug-report-description']");
+      if (newInput != null) {
+        newInput.focus();
+        newInput.setSelectionRange(selStart, selEnd);
+      }
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='send-bug-report']")?.addEventListener("click", async () => {
+      const description = bugReportDraft.trim();
+      if (description === "") {
+        bugReportErrorMessage = t(language, "error.submitBugReport");
+        redraw();
+        return;
+      }
+
+      bugReportSubmitting = true;
+      bugReportErrorMessage = "";
+      redraw();
+
+      try {
+        await persistClientLogNow();
+        await submitBugReport(session.instanceId, playerSessionToken, { description });
+        logClient("bug_report", `Submitted bug report for ${match.shortId}`);
+        bugReportDraft = "";
+        bugReportOpen = false;
+      } catch (error) {
+        bugReportErrorMessage = error instanceof Error ? error.message : t(language, "error.submitBugReport");
+      } finally {
+        bugReportSubmitting = false;
+      }
+
+      redraw();
+      if (!bugReportOpen && syncQueued && !syncInFlight) {
+        syncQueued = false;
+        void requestSync();
       }
     });
 

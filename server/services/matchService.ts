@@ -36,13 +36,13 @@ import {
   getCurrentTurnSeat,
   initializeMatchGame,
   passForcedFollowUp,
+  resolvePendingPublicHandReveal,
   passTurnWithoutPlaying,
   playCardFromHand,
   resolvePendingBoardResetKeep,
   resolvePendingDeathSearch,
   resolvePendingDeathSearchForBot,
   resolvePendingPickpocket,
-  resolvePendingPublicHandReveal,
   resolvePendingSacrificeChoice,
   resolvePendingCurseRelease,
   respondToPendingAction,
@@ -250,6 +250,14 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
   const pendingPublicHandReveal = match.internalGame?.pendingPublicHandReveal;
   if (pendingPublicHandReveal != null) {
     const timerKey = `${instanceId}:public-hand-reveal`;
+    for (const [key, timer] of botTurnTimers.entries()) {
+      if (!key.startsWith(`${instanceId}:`) || key === timerKey) {
+        continue;
+      }
+
+      clearTimeout(timer);
+      botTurnTimers.delete(key);
+    }
     if (!botTurnTimers.has(timerKey)) {
       const delayMs = Math.max(0, new Date(pendingPublicHandReveal.expiresAt).getTime() - Date.now());
       const timer = setTimeout(() => {
@@ -468,9 +476,19 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
       return;
     }
 
+    let attemptedBotCardName: string | undefined;
     try {
       const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
       if (botRequest != null) {
+        const actorSeatState = latestMatch.internalGame?.seatStates.find(
+          (seatState) => seatState.seatNumber === latestCurrentSeat.seatNumber
+        );
+        const attemptedCardId = actorSeatState?.hand.find(
+          (card) => card.instanceId === botRequest.cardInstanceId
+        )?.cardId;
+        attemptedBotCardName = attemptedCardId == null
+          ? undefined
+          : (baseCardDefinitionById[attemptedCardId]?.name ?? attemptedCardId);
         playCardFromHand(latestMatch, latestCurrentSeat.userId, botRequest);
       } else {
         appendServerDebugLog(
@@ -481,12 +499,17 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
         passTurnWithoutPlaying(latestMatch, latestCurrentSeat.seatNumber, "bot had no playable action");
       }
     } catch (error) {
+      const attemptedCardLabel = attemptedBotCardName == null ? "" : ` with ${attemptedBotCardName}`;
       appendServerDebugLog(
         latestMatch,
         "bot_ai",
-        `Seat ${latestCurrentSeat.seatNumber} turn failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Seat ${latestCurrentSeat.seatNumber} turn failed${attemptedCardLabel}: ${error instanceof Error ? error.message : "Unknown error"}`
       );
-      passTurnWithoutPlaying(latestMatch, latestCurrentSeat.seatNumber, "bot action failed");
+      passTurnWithoutPlaying(
+        latestMatch,
+        latestCurrentSeat.seatNumber,
+        attemptedBotCardName == null ? "bot action failed" : `bot action failed on ${attemptedBotCardName}`
+      );
     }
     saveMatch(latestMatch);
 
@@ -499,6 +522,10 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
 export function getMatchState(instanceId: string, viewerUserId?: string): MatchState {
   const match = getOrCreateMatch(instanceId);
   cleanupReconnectedBotSeats(match);
+  const pendingPublicHandReveal = match.internalGame?.pendingPublicHandReveal;
+  if (pendingPublicHandReveal != null && new Date(pendingPublicHandReveal.expiresAt).getTime() <= Date.now()) {
+    resolvePendingPublicHandReveal(match);
+  }
   saveMatch(match, true);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, viewerUserId);

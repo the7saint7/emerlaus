@@ -5,7 +5,7 @@ import type { StoredMatchState } from "./gameEngineTypes.js";
 
 const LOG_ROOT = path.resolve(process.cwd(), "runtime-logs");
 
-function sanitizePathSegment(value: string): string {
+export function sanitizePathSegment(value: string): string {
   const trimmed = value.trim();
   if (trimmed === "") {
     return "unknown";
@@ -14,10 +14,14 @@ function sanitizePathSegment(value: string): string {
   return trimmed.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
 }
 
-function ensureInstanceLogDir(instanceId: string, shortId?: string): string {
-  const folderName = shortId != null
+export function getInstanceLogDirectoryName(instanceId: string, shortId?: string): string {
+  return shortId != null
     ? `${shortId}-${sanitizePathSegment(instanceId)}`
     : sanitizePathSegment(instanceId);
+}
+
+function ensureInstanceLogDir(instanceId: string, shortId?: string): string {
+  const folderName = getInstanceLogDirectoryName(instanceId, shortId);
   const instanceDir = path.join(LOG_ROOT, folderName);
   fs.mkdirSync(instanceDir, { recursive: true });
   return instanceDir;

@@ -1,4 +1,5 @@
 import type { BaseCardDefinition, DefenseBandRules } from "../../../shared/cards/types";
+import { getImportedCardImageUrl } from "../cards/cardImageUrls";
 
 export interface BandMapperViewParams {
   card: BaseCardDefinition;
@@ -32,7 +33,7 @@ export function renderBandMapperView({
   statusMessage,
   isSaving
 }: BandMapperViewParams): string {
-  const cardImagePath = card.image.importedAssetPath?.replace("client/public", "") ?? "";
+  const cardImagePath = getImportedCardImageUrl(card.image.importedAssetPath);
 
   return `
     <main class="mapper-screen">

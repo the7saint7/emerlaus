@@ -760,9 +760,6 @@ export function appendServerDebugLog(match: StoredMatchState, scope: string, mes
   };
 
   match.internalGame.debugLog.push(entry);
-  if (match.internalGame.debugLog.length > 2000) {
-    match.internalGame.debugLog = match.internalGame.debugLog.slice(-2000);
-  }
 }
 
 function pushGameEvent(match: StoredMatchState, event: GameEvent): void {
@@ -771,9 +768,6 @@ function pushGameEvent(match: StoredMatchState, event: GameEvent): void {
   }
 
   match.internalGame.eventLog.push(event);
-  if (match.internalGame.eventLog.length > 250) {
-    match.internalGame.eventLog = match.internalGame.eventLog.slice(-250);
-  }
 }
 
 function getGameEventSeatNumbers(event: GameEvent): number[] {
@@ -1234,6 +1228,14 @@ function getActiveTimedPotionStatuses(seatState: StoredSeatState): StoredSeatSta
   return seatState.statuses.filter(
     (status) => TIMED_POTION_STATUS_BY_CARD_ID[status.cardId] != null
       && status.activatesNextTurn !== true
+      && (status.remainingTurnTriggers ?? 0) > 0
+  );
+}
+
+function hasTimedPotionAttackImmunity(seatState: StoredSeatState): boolean {
+  return seatState.statuses.some(
+    (status) =>
+      TIMED_POTION_STATUS_BY_CARD_ID[status.cardId]?.grantsAttackImmunity === true
       && (status.remainingTurnTriggers ?? 0) > 0
   );
 }
@@ -1863,7 +1865,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
           ? { canPlay: true }
           : { canPlay: false, reason: "The target opponent must have at least one object on the table" };
       }
-      return livingOpponents.length > 0
+      return attackableOpponents.length > 0
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid opponent target" };
     case "self_or_single_opponent":
@@ -2163,7 +2165,7 @@ function isProtectedFromAttack(match: StoredMatchState, targetSeatNumber: number
   }
 
   if (
-    getActiveTimedPotionStatuses(targetSeat).some((status) => TIMED_POTION_STATUS_BY_CARD_ID[status.cardId]?.grantsAttackImmunity === true)
+    hasTimedPotionAttackImmunity(targetSeat)
   ) {
     return true;
   }
@@ -5278,8 +5280,21 @@ function buildPendingPublicHandRevealPublicState(match: StoredMatchState): GameS
     targetSeatNumbers: [...pendingPublicHandReveal.targetSeatNumbers],
     cardName: requireDefinition(pendingPublicHandReveal.sourceCard.cardId).name,
     expiresAt: pendingPublicHandReveal.expiresAt,
-    readySeatNumbers: [...pendingPublicHandReveal.readySeatNumbers]
+    readySeatNumbers: [...pendingPublicHandReveal.readySeatNumbers],
+    requiredReadySeatNumbers: listPublicHandRevealReadySeatNumbers(match)
   };
+}
+
+function listPublicHandRevealReadySeatNumbers(match: StoredMatchState): number[] {
+  const game = match.internalGame;
+  if (game == null) {
+    return [];
+  }
+
+  return match.seats
+    .filter((seat) => seat.controllerType === "human" && seat.connected && getStoredSeat(game, seat.seatNumber).alive)
+    .map((seat) => seat.seatNumber)
+    .sort((left, right) => left - right);
 }
 
 function buildPendingBoardResetKeepPublicState(
@@ -7353,9 +7368,12 @@ export function acknowledgePendingPublicHandReveal(match: StoredMatchState, user
   }
 
   const seat = match.seats.find((candidate) => candidate.userId === userId);
-  if (seat == null || seat.controllerType !== "human") {
+  const requiredReadySeatNumbers = listPublicHandRevealReadySeatNumbers(match);
+  if (seat == null || !requiredReadySeatNumbers.includes(seat.seatNumber)) {
     throw new Error("Only active human players can acknowledge the public hand reveal");
   }
+
+  const readyCount = pendingPublicHandReveal.readySeatNumbers.filter((seatNumber) => requiredReadySeatNumbers.includes(seatNumber)).length;
 
   if (!pendingPublicHandReveal.readySeatNumbers.includes(seat.seatNumber)) {
     pendingPublicHandReveal.readySeatNumbers = [...pendingPublicHandReveal.readySeatNumbers, seat.seatNumber]
@@ -7363,11 +7381,11 @@ export function acknowledgePendingPublicHandReveal(match: StoredMatchState, user
     appendServerDebugLog(
       match,
       "telepathy",
-      `Seat ${seat.seatNumber} is ready to close ${requireDefinition(pendingPublicHandReveal.sourceCard.cardId).name} (${pendingPublicHandReveal.readySeatNumbers.length}/${match.seats.length})`
+      `Seat ${seat.seatNumber} is ready to close ${requireDefinition(pendingPublicHandReveal.sourceCard.cardId).name} (${readyCount + 1}/${requiredReadySeatNumbers.length})`
     );
   }
 
-  if (pendingPublicHandReveal.readySeatNumbers.length >= match.seats.length) {
+  if (pendingPublicHandReveal.readySeatNumbers.filter((seatNumber) => requiredReadySeatNumbers.includes(seatNumber)).length >= requiredReadySeatNumbers.length) {
     resolvePendingPublicHandReveal(match, "all_ready");
     return;
   }
@@ -8022,9 +8040,7 @@ function resolveRemovedCardPlay(
     };
 
     const revealSeatNumbers = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
-    const readySeatNumbers = sortBySeatNumber(match.seats)
-      .filter((seat) => seat.controllerType === "bot")
-      .map((seat) => seat.seatNumber);
+    const requiredReadySeatNumbers = listPublicHandRevealReadySeatNumbers(match);
     game.pendingPublicHandReveal = {
       boxId,
       actorSeatNumber,
@@ -8032,7 +8048,7 @@ function resolveRemovedCardPlay(
       sourceCard: removedCard,
       finalizeActorSeatNumber: actorSeatNumber,
       expiresAt: new Date(Date.now() + SOUS_GRADES_DURATION_MS).toISOString(),
-      readySeatNumbers
+      readySeatNumbers: []
     };
     appendDealerMessage(match, `${actorSeat.displayName} reveals every opponent hand for 30 seconds with ${definition.name}.`);
     appendServerDebugLog(
@@ -8040,7 +8056,7 @@ function resolveRemovedCardPlay(
       "telepathy",
       `${definition.name} reveals hands from seats ${revealSeatNumbers.join(", ")} until ${game.pendingPublicHandReveal.expiresAt}`
     );
-    if (readySeatNumbers.length >= match.seats.length) {
+    if (requiredReadySeatNumbers.length === 0) {
       resolvePendingPublicHandReveal(match, "all_ready");
       return;
     }

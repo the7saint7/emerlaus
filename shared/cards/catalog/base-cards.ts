@@ -4051,7 +4051,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
     "rules": {
       "selectionMode": "confirm",
       "targets": "all_opponents",
-      "requiresDefenseWindow": false,
+      "requiresDefenseWindow": true,
       "requiresResistanceCheck": false,
       "staysInPlay": false,
       "effects": [

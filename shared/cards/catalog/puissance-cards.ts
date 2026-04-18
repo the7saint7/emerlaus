@@ -291,7 +291,9 @@ function makeTimedPotionCard(card: {
 function makeCard(card: {
   id: string;
   name: string;
+  enName?: string;
   description: string;
+  enDescription?: string;
   code: CardCategoryCode;
   file: string;
   rules: CardRules;
@@ -299,10 +301,15 @@ function makeCard(card: {
   implementation?: BaseCardDefinition["implementation"];
 }): BaseCardDefinition {
   const categoryLabel = CATEGORY_LABEL_BY_CODE[card.code];
-  const englishLocalization = englishLocalizationByFile[card.file] ?? {
-    name: card.name,
-    description: card.description
-  };
+  const englishLocalization = card.enName != null || card.enDescription != null
+    ? {
+        name: card.enName ?? card.name,
+        description: card.enDescription ?? card.description
+      }
+    : englishLocalizationByFile[card.file] ?? {
+        name: card.name,
+        description: card.description
+      };
   return {
     id: card.id,
     name: card.name,
@@ -363,31 +370,46 @@ export const puissanceCardDefinitions = [
     }
   }),
   makeCard({
-    id: "extase-mystique",
-    name: "Extase mystique",
-    description: "Le magicien reçoit un bonus de 100 points de vie.",
-    code: "A",
-    file: "Extase_mystique.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "heal",
-          amount: { kind: "fixed", amount: 100 },
-          target: "self"
-        }
-      ]
-    },
-    defenseBand: SELF_HEAL_DEFENSE_BAND,
-    implementation: {
-      status: "generic",
-      notes: "Straight self-heal for 100 HP."
+      id: "extase-mystique",
+      name: "Extase mystique",
+      enName: "Mystic Ecstasy",
+      description: "Le magicien reçoit un bonus de 100 points de vie.",
+      enDescription: "The Wizard receives a bonus of 100 Life points.",
+      code: "A",
+      file: "Extase_mystique.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "heal",
+            amount: {
+              kind: "fixed",
+              amount: 100
+            },
+            target: "self"
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Straight self-heal for 100 HP."
+      }
     }
-  }),
+  ),
   makeCard({
     id: "nectar-supreme",
     name: "Nectar suprême",
@@ -450,20 +472,88 @@ export const puissanceCardDefinitions = [
     file: "Engelure.png",
     damageNotation: "1D8"
   }),
-  makeSuccessfulHitFreezeAttackCard({
-    id: "flechette-glacee",
-    name: "Fléchette glacée",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D4 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
-    file: "Flechette_glacee.png",
-    damageNotation: "1D4"
-  }),
-  makeSuccessfulHitFreezeAttackCard({
-    id: "rayon-glacial",
-    name: "Rayon glacial",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D12 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
-    file: "Rayon_glacial.png",
-    damageNotation: "1D12"
-  }),
+  makeCard({
+      id: "flechette-glacee",
+      name: "Fléchette glacée",
+      enName: "Ice Dart",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D4 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
+      enDescription: "The Wizard subtracts Life points from the Opponent of their choice. Damage: 1D4 per power level. Additionally, if the attack is successful, the Wizard rolls 1D12. If they roll a 1, the Opponent skips their next turn and has no right of retaliation for one full turn.",
+      code: "AD",
+      file: "Flechette_glacee.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D4",
+              scaleBy: "multiply_power"
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard AD damage plus a successful-hit 1D12 trigger; on 1, the target loses their next turn and cannot riposte for one full turn."
+      }
+    }
+  ),
+  makeCard({
+      id: "rayon-glacial",
+      name: "Rayon glacial",
+      enName: "Glacial Ray",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D12 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
+      enDescription: "The Wizard subtracts Life points from the Opponent of their choice.\nDamage: 1D12 per Power level\nAdditionally, if the attack is successful, the Wizard rolls 1D12. If they roll a 1, the Opponent skips their next turn and has no right of retaliation for a full turn.",
+      code: "AD",
+      file: "Rayon_glacial.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D12",
+              scaleBy: "multiply_power"
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard AD damage plus a successful-hit 1D12 trigger; on 1, the target loses their next turn and cannot riposte for one full turn."
+      }
+    }
+  ),
   makeSuccessfulHitFreezeAttackCard({
     id: "refroidissement",
     name: "Refroidissement",
@@ -514,18 +604,37 @@ export const puissanceCardDefinitions = [
     notes: "Rolls 1D4 on play, starts next turn, doubles outgoing damage, and blocks incoming attacks during each affected turn."
   }),
   makeCard({
-    id: "puissance",
-    name: "Puissance",
-    description: "Le magicien dépose cette carte devant lui. Pour un nombre de tours égal à son niveau de puissance, il utilisera le niveau de puissance total de tous les joueurs sur ses prochains sorts. Ne fonctionne pas avec les cartes « E ».",
-    code: "S",
-    file: "Puissance.png",
-    rules: stubRules("self", { staysInPlay: true }),
-    defenseBand: SELF_HEAL_DEFENSE_BAND,
-    implementation: {
-      status: "manual",
-      notes: "Persistent self-status that makes hand-played non-E cards use the total power of all living players for a number of turns equal to the caster's current power."
+      id: "puissance",
+      name: "Puissance",
+      enName: "Power",
+      description: "Le magicien dépose cette carte devant lui. Pour un nombre de tours égal à son niveau de puissance, il utilisera le niveau de puissance total de tous les joueurs sur ses prochains sorts. Ne fonctionne pas avec les cartes « E ».",
+      enDescription: "The Wizard places this card in front of them. For a number of turns equal to their power level, they will use the total power level of all players on their next spells. Does not work with « E » cards.",
+      code: "S",
+      file: "Puissance.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: true,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Persistent self-status that makes hand-played non-E cards use the total power of all living players for a number of turns equal to the caster's current power."
+      }
     }
-  }),
+  ),
   makeCard({
     id: "ceinture-de-force-2",
     name: "Ceinture de force 2",
@@ -576,103 +685,159 @@ export const puissanceCardDefinitions = [
     }
   }),
   makeCard({
-    id: "transformation-energetique-dun-anneau",
-    name: "Transformation énergétique d’un anneau",
-    description: "Le magicien jette au talon un anneau de puissance qu'il porte déjà. Il se rajoute 25 points de vie par niveau de puissance de l'anneau sacrifié.",
-    code: "A",
-    file: "Transformation_energetique_dun_anneau.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: []
-    },
-    defenseBand: SELF_HEAL_DEFENSE_BAND,
-    implementation: {
-      status: "manual",
-      notes: "Consumes one equipped power ring and heals 25 HP per ring power level."
-    }
-  }),
-  makeCard({
-    id: "changement-vital",
-    name: "Changement vital",
-    description: "Le magicien change de place avec l'adversaire de son choix. De plus, l'adversaire perd des points de vie.\nDégâts : 1D4 par niveau de puissance",
-    code: "AD",
-    file: "Changement_vital.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "swap_bodies",
-          swapSeatOrder: true,
-          swapHand: false,
-          swapHp: false,
-          swapObjects: false,
-          swapStatuses: false
+      id: "transformation-energetique-dun-anneau",
+      name: "Transformation énergétique d’un anneau",
+      enName: "Energetic Transformation of a Ring",
+      description: "Le magicien jette au talon un anneau de puissance qu'il porte déjà. Il se rajoute 25 points de vie par niveau de puissance de l'anneau sacrifié.",
+      enDescription: "The Wizard discards a ring of power that he already wears. He gains 25 Life points per power level of the sacrificed ring.",
+      code: "A",
+      file: "Transformation_energetique_dun_anneau.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
         },
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D4", scaleBy: "multiply_power" }
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Uses the existing swap_bodies effect with seat-order swap only, then applies normal AD damage."
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Consumes one equipped power ring and heals 25 HP per ring power level."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "corruption-dun-anneau",
-    name: "Corruption d’un anneau",
-    description: "Le magicien jette au talon un anneau de puissance qu'il porte déjà. Il soustrait 25 points de vie par niveau de puissance de l'anneau sacrifié à l'adversaire de son choix.",
-    code: "AD",
-    file: "Corruption_dun_anneau.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Consumes one equipped power ring and deals 25 HP loss per ring power level to the chosen opponent after the normal AD defense window resolves."
+      id: "changement-vital",
+      name: "Changement vital",
+      enName: "Vital Change",
+      description: "Le magicien change de place avec l'adversaire de son choix. De plus, l'adversaire perd des points de vie.\nDégâts : 1D4 par niveau de puissance",
+      enDescription: "The Wizard swaps places with the Opponent of their choice. Additionally, the Opponent loses Life points.\nDamage: 1D4 per power level",
+      code: "AD",
+      file: "Changement_vital.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "swap_bodies",
+            swapSeatOrder: true,
+            swapHand: false,
+            swapHp: false,
+            swapObjects: false,
+            swapStatuses: false
+          },
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D4",
+              scaleBy: "multiply_power"
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Uses the existing swap_bodies effect with seat-order swap only, then applies normal AD damage."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "double-attaque",
-    name: "Double attaque",
-    description: "Le magicien qui utilise ce sort peut faire 2 attaques une à la suite de l'autre avec la catégorie « AD ». Le niveau de puissance est augmenté de 2 sur les 2 cartes « AD ».",
-    code: "ST",
-    file: "Double_attaque.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "play_extra_cards",
-          count: 2,
-          allowedCategories: ["AD"],
-          refillAtTurnEnd: false
-        }
-      ]
-    },
-    defenseBand: STRATEGY_FOLLOW_UP_DEFENSE_BAND,
-    implementation: {
-      status: "manual",
-      notes: "Uses the Masse double extra-play flow, but restricted to AD cards instead of AM cards and with the same +2 temporary power intent."
+      id: "corruption-dun-anneau",
+      name: "Corruption d’un anneau",
+      enName: "Corruption of a Ring",
+      description: "Le magicien jette au talon un anneau de puissance qu'il porte déjà. Il soustrait 25 points de vie par niveau de puissance de l'anneau sacrifié à l'adversaire de son choix.",
+      enDescription: "The Wizard sacrifices a ring of power that he already wears. He subtracts 25 Life points per Power level of the sacrificed ring from the Opponent of his choice.",
+      code: "AD",
+      file: "Corruption_dun_anneau.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Consumes one equipped power ring and deals 25 HP loss per ring power level to the chosen opponent after the normal AD defense window resolves."
+      }
     }
-  }),
+  ),
+  makeCard({
+      id: "double-attaque",
+      name: "Double attaque",
+      enName: "Double Attack",
+      description: "Le magicien qui utilise ce sort peut faire 2 attaques une à la suite de l'autre avec la catégorie « AD ». Le niveau de puissance est augmenté de 2 sur les 2 cartes « AD ».",
+      enDescription: "The Wizard who uses this spell can make 2 attacks one after the other with the category \"AD\". The Power level is increased by 2 on the 2 \"AD\" cards.",
+      code: "ST",
+      file: "Double_attaque.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: false,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "play_extra_cards",
+            count: 2,
+            allowedCategories: [
+              "AD"
+            ],
+            refillAtTurnEnd: false
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: false,
+        annulationCardsRequired: 0,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Uses the Masse double extra-play flow, but restricted to AD cards instead of AM cards and with the same +2 temporary power intent."
+      }
+    }
+  ),
   makeCard({
     id: "puissance-totale",
     name: "Puissance totale",
@@ -701,279 +866,460 @@ export const puissanceCardDefinitions = [
     }
   }),
   makeCard({
-    id: "appel-de-la-mort",
-    name: "Appel de la mort",
-    description: "Il faut un minimum de 4 de niveau de puissance pour utiliser ce sort. Le magicien décide de la mort d'un de ses adversaires.",
-    code: "AD",
-    file: "Appel_de_la_mort.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "instant_kill"
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Uses the generic instant_kill effect. Active-play validation separately enforces the minimum power level of 4."
-    }
-  }),
-  makeCard({
-    id: "cercle-fantastique",
-    name: "Cercle fantastique",
-    description: "Tous les adversaires reçoivent des dégâts.\nDégâts : le résultat de 1D8 multiplié par le niveau de puissance",
-    code: "AM",
-    file: "Cercle_fantastique.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "all_opponents",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D8", scaleBy: "multiply_power" }
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Standard mass-damage AM card."
-    }
-  }),
-  makeCard({
-    id: "champ-energetique-diminue",
-    name: "Champ énergétique diminué",
-    description: "Tous les adversaires reçoivent des dégâts.\nDégâts : le résultat de 1D10 multiplié par le niveau de puissance",
-    code: "AM",
-    file: "Champ_energetique_diminue.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "all_opponents",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D10", scaleBy: "multiply_power" }
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Standard mass-damage AM card."
-    }
-  }),
-  makeCard({
-    id: "tornade",
-    name: "Tornade",
-    description: "Tous les adversaires manquant leur jet de résistance reçoivent des dégâts.\nDégâts : 1D4 + 1D6 + 1D8 + 1D10 + 1D12 + 1D20",
-    code: "AM",
-    file: "Tornade.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "all_opponents",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D4" }
+      id: "appel-de-la-mort",
+      name: "Appel de la mort",
+      enName: "Call of Death",
+      description: "Il faut un minimum de 4 de niveau de puissance pour utiliser ce sort. Le magicien décide de la mort d'un de ses adversaires.",
+      enDescription: "Requires a minimum of 4 power level to use this spell. The wizard decides the death of one of their opponents.",
+      code: "AD",
+      file: "Appel_de_la_mort.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "instant_kill"
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
         },
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D6" }
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Uses the generic instant_kill effect. Active-play validation separately enforces the minimum power level of 4."
+      }
+    }
+  ),
+  makeCard({
+      id: "cercle-fantastique",
+      name: "Cercle fantastique",
+      enName: "Fantastic Circle",
+      description: "Tous les adversaires reçoivent des dégâts.\nDégâts : le résultat de 1D8 multiplié par le niveau de puissance",
+      enDescription: "All opponents receive damage.\nDamage: the result of 1D8 multiplied by the power level",
+      code: "AM",
+      file: "Cercle_fantastique.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "all_opponents",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D8",
+              scaleBy: "multiply_power"
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
         },
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D8" }
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard mass-damage AM card."
+      }
+    }
+  ),
+  makeCard({
+      id: "champ-energetique-diminue",
+      name: "Champ énergétique diminué",
+      enName: "Diminished Energy Field",
+      description: "Tous les adversaires reçoivent des dégâts.\nDégâts : le résultat de 1D10 multiplié par le niveau de puissance",
+      enDescription: "All opponents receive damage. Damage: the result of 1D10 multiplied by the power level.",
+      code: "AM",
+      file: "Champ_energetique_diminue.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "all_opponents",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D10",
+              scaleBy: "multiply_power"
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
         },
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D10" }
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard mass-damage AM card."
+      }
+    }
+  ),
+  makeCard({
+      id: "tornade",
+      name: "Tornade",
+      enName: "Tornado",
+      description: "Tous les adversaires manquant leur jet de résistance reçoivent des dégâts.\nDégâts : 1D4 + 1D6 + 1D8 + 1D10 + 1D12 + 1D20",
+      enDescription: "All opponents failing their Resistance roll take Damage.\nDamage: 1D4 + 1D6 + 1D8 + 1D10 + 1D12 + 1D20",
+      code: "AM",
+      file: "Tornade.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "all_opponents",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D4"
+            }
+          },
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D6"
+            }
+          },
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D8"
+            }
+          },
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D10"
+            }
+          },
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D12"
+            }
+          },
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D20"
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
         },
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D12" }
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 2,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Resolved as stacked mass-damage effects under one resistance window because the roll parser does not support summed mixed-dice notation in a single effect."
+      }
+    }
+  ),
+  makeCard({
+      id: "vent-du-nord",
+      name: "Vent du nord",
+      enName: "North Wind",
+      description: "Le magicien dépose cette carte devant lui. Tous les adversaires reçoivent 1D6 points de dégâts par tour, pour un nombre de tours égal au niveau de puissance du magicien. Ensuite, il écarte cette carte au talon.",
+      enDescription: "The Wizard places this card in front of them. All Opponents receive 1D6 damage per turn, for a number of turns equal to the Wizard's power level. Then, they discard this card to the discard pile.",
+      code: "AM",
+      file: "Vent_du_nord.png",
+      rules: {
+        selectionMode: "target",
+        targets: "all_opponents",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: true,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
         },
-        {
-          type: "damage",
-          amount: { kind: "dice", notation: "1D20" }
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Resolved as stacked mass-damage effects under one resistance window because the roll parser does not support summed mixed-dice notation in a single effect."
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 2,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "persistent-owner-turn-mass-damage",
+        notes: "Same persistent mass-damage family as Grêle and Tremblement de terre, but with a 1D6 tick."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "vent-du-nord",
-    name: "Vent du nord",
-    description: "Le magicien dépose cette carte devant lui. Tous les adversaires reçoivent 1D6 points de dégâts par tour, pour un nombre de tours égal au niveau de puissance du magicien. Ensuite, il écarte cette carte au talon.",
-    code: "AM",
-    file: "Vent_du_nord.png",
-    rules: {
-      selectionMode: "target",
-      targets: "all_opponents",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: false,
-      staysInPlay: true,
-      effects: []
-    },
-    defenseBand: PERSISTENT_MASS_DAMAGE_DEFENSE_BAND,
-    implementation: {
-      status: "manual",
-      handler: "persistent-owner-turn-mass-damage",
-      notes: "Same persistent mass-damage family as Grêle and Tremblement de terre, but with a 1D6 tick."
+      id: "detonation-13",
+      name: "Détonation 13",
+      enName: "Detonation 13",
+      description: "Le magicien dépose cette carte devant l'adversaire de son choix. Si l'adversaire obtient un 13 sur n'importe lequel de ses lancers de jet de résistance, il meurt. Cette carte reste active tant que l'adversaire ne sera pas libéré de ce sortilège.",
+      enDescription: "The wizard places this card in front of the opponent of their choice. If the opponent rolls a 13 on any of their Resistance rolls, they die. This card remains active until the opponent is freed from this spell.",
+      code: "SO",
+      file: "Detonation_13.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: true,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 2,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Persistent curse placed on one opponent; any future resistance roll of exactly 13 kills the cursed target until they remove the curse."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "detonation-13",
-    name: "Détonation 13",
-    description: "Le magicien dépose cette carte devant l'adversaire de son choix. Si l'adversaire obtient un 13 sur n'importe lequel de ses lancers de jet de résistance, il meurt. Cette carte reste active tant que l'adversaire ne sera pas libéré de ce sortilège.",
-    code: "SO",
-    file: "Detonation_13.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: false,
-      staysInPlay: true,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Persistent curse placed on one opponent; any future resistance roll of exactly 13 kills the cursed target until they remove the curse."
+      id: "roulette-russe",
+      name: "Roulette russe",
+      enName: "Russian Roulette",
+      description: "Le magicien lance un dé pour déterminer un joueur au hasard (y compris lui-même). Si le hasard choisit un adversaire, celui-ci descend à 5 points de vie; si le hasard choisit le magicien, celui-ci perd la moitié de ses points de vie.",
+      enDescription: "The Wizard rolls a die to determine a random player (including themselves). If chance chooses an Opponent, they descend to 5 Life points; if chance chooses the Wizard, they lose half of their Life points.",
+      code: "AM",
+      file: "Roulette_russe.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Chooses one living player at random, including the caster. Opponents are reduced to 5 HP; the caster instead loses half their current HP."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "roulette-russe",
-    name: "Roulette russe",
-    description: "Le magicien lance un dé pour déterminer un joueur au hasard (y compris lui-même). Si le hasard choisit un adversaire, celui-ci descend à 5 points de vie; si le hasard choisit le magicien, celui-ci perd la moitié de ses points de vie.",
-    code: "AM",
-    file: "Roulette_russe.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Chooses one living player at random, including the caster. Opponents are reduced to 5 HP; the caster instead loses half their current HP."
+      id: "equilibre",
+      name: "Équilibre",
+      enName: "Balance",
+      description: "On additionne le total des points de vie de tous les joueurs et on partage le résultat également entre les joueurs.",
+      enDescription: "Sum the total life points of all players and divide the result equally among the players.",
+      code: "S",
+      file: "Equilibre.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: false,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: false,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Rebalances the total HP of all living players into an even split, distributing any remainder in seat order."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "equilibre",
-    name: "Équilibre",
-    description: "On additionne le total des points de vie de tous les joueurs et on partage le résultat également entre les joueurs.",
-    code: "S",
-    file: "Equilibre.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Rebalances the total HP of all living players into an even split, distributing any remainder in seat order."
+      id: "arret-temporaire-demmerlaus",
+      name: "Arrêt temporaire d’Emmerlaüs",
+      enName: "Emmerlaus's Temporary Halt",
+      description: "Le magicien arrête le temps. Tous les adversaires sont paralysés. Le magicien joue un 2e tour et aucun adversaire n'a le droit de riposte (jet de résistance, cartes « CA ») pendant ce tour.",
+      enDescription: "The wizard stops time. All opponents are paralyzed. The wizard takes a 2nd turn and no opponent has the right to counterattack (resistance roll, « CA » cards) during this turn.",
+      code: "E",
+      file: "Arret_temporaire_dEmmerlaus.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 2,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Queues one immediate extra turn for the caster. During that stopped-time bonus turn, opponents cannot use resistance rolls or CA-category responses."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "arret-temporaire-demmerlaus",
-    name: "Arrêt temporaire d’Emmerlaüs",
-    description: "Le magicien arrête le temps. Tous les adversaires sont paralysés. Le magicien joue un 2e tour et aucun adversaire n'a le droit de riposte (jet de résistance, cartes « CA ») pendant ce tour.",
-    code: "E",
-    file: "Arret_temporaire_dEmmerlaus.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Queues one immediate extra turn for the caster. During that stopped-time bonus turn, opponents cannot use resistance rolls or CA-category responses."
+      id: "sous-grades",
+      name: "Sous-gradés",
+      enName: "Underlings",
+      description: "Tous les adversaires doivent mettre leurs cartes en main à la vue de tous pendant 30 secondes.",
+      enDescription: "All opponents must reveal their hands for 30 seconds.",
+      code: "S",
+      file: "Sous-grades.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 2,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Reveals every living opponent hand to all players for 30 seconds, then automatically resumes the turn."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "sous-grades",
-    name: "Sous-gradés",
-    description: "Tous les adversaires doivent mettre leurs cartes en main à la vue de tous pendant 30 secondes.",
-    code: "S",
-    file: "Sous-grades.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Reveals every living opponent hand to all players for 30 seconds, then automatically resumes the turn."
+      id: "vierge",
+      name: "Vierge",
+      enName: "Virgin",
+      description: "Cette pierre reproduit la derniere pierre ecartee au talon (sans considerer les cartes \"CA\" et \"O\"), au niveau de puissance du magicien (s'il y a lieu).",
+      enDescription: "This stone reproduces the last stone discarded to the heel (without considering \"CA\" and \"O\" cards), at the wizard's power level (if applicable).",
+      code: "S",
+      file: "Vierge.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "self",
+        requiresDefenseWindow: false,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: []
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: false,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Replays the last eligible non-CA/non-O active hand card that actually reached the discard pile, reusing its prior target selection at the current caster power."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "vierge",
-    name: "Vierge",
-    description: "Cette pierre reproduit la derniere pierre ecartee au talon (sans considerer les cartes \"CA\" et \"O\"), au niveau de puissance du magicien (s'il y a lieu).",
-    code: "S",
-    file: "Vierge.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "self",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: []
-    },
-    implementation: {
-      status: "manual",
-      notes: "Replays the last eligible non-CA/non-O active hand card that actually reached the discard pile, reusing its prior target selection at the current caster power."
+      id: "ordre-demmerlaus",
+      name: "Ordre d'Emmerlaus",
+      enName: "Order of Emmerlaus",
+      description: "Cette carte permet d'annuler n'importe quel sort lance. Permet de detruire un objet. Annule n'importe quel effet, meme les cartes \"CA\", \"E\", ou celles requerant 2 annulations.",
+      enDescription: "Cancel any cast spell. Destroy an object. Cancel any effect, even \"CA\", \"E\" cards, or those requiring 2 cancellations.",
+      code: "E",
+      file: "Ordre_dEmmerlaus.png",
+      rules: {
+        selectionMode: "target",
+        targets: "target_object",
+        requiresDefenseWindow: false,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "remove_target_object",
+            mode: "chosen_by_attacker"
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: false,
+        annulationCardsRequired: 2,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Active play destroys any chosen object. As a pending response, it universally cancels any action, including CA, E, mirror-chain actions, and effects that would normally require 2 Annulations."
+      }
     }
-  }),
-  makeCard({
-    id: "ordre-demmerlaus",
-    name: "Ordre d'Emmerlaus",
-    description: "Cette carte permet d'annuler n'importe quel sort lance. Permet de detruire un objet. Annule n'importe quel effet, meme les cartes \"CA\", \"E\", ou celles requerant 2 annulations.",
-    code: "E",
-    file: "Ordre_dEmmerlaus.png",
-    rules: {
-      selectionMode: "target",
-      targets: "target_object",
-      requiresDefenseWindow: false,
-      requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "remove_target_object",
-          mode: "chosen_by_attacker"
-        }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      notes: "Active play destroys any chosen object. As a pending response, it universally cancels any action, including CA, E, mirror-chain actions, and effects that would normally require 2 Annulations."
-    }
-  })
+  ),
 ] as const satisfies BaseCardDefinition[];
 
 export const puissanceDeckCardQuantities: Record<string, number> = {

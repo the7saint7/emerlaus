@@ -232,6 +232,7 @@ export interface PendingPublicHandRevealState {
   cardName: string;
   expiresAt: string;
   readySeatNumbers: number[];
+  requiredReadySeatNumbers: number[];
 }
 
 export interface PendingBoardResetKeepState {
@@ -385,6 +386,30 @@ export interface MatchConfigResponse {
   enableDevTools: boolean;
 }
 
+export type BugReportStatus = "open" | "fixed" | "ignored";
+
+export interface BugReportSummary {
+  id: string;
+  instanceId: string;
+  shortId: string;
+  status: BugReportStatus;
+  createdAt: string;
+  updatedAt: string;
+  reporterDisplayName: string;
+  reporterSeatNumber: number | null;
+  turnNumber: number | null;
+  currentTurnSeatNumber: number | null;
+  descriptionPreview: string;
+  runtimeLogDirectoryName: string;
+}
+
+export interface BugReportRecord extends BugReportSummary {
+  reporterUserId: string;
+  currentTurnDisplayName: string | null;
+  matchStatus: MatchStatus;
+  description: string;
+}
+
 export interface DisconnectRequest {
 }
 
@@ -453,6 +478,14 @@ export interface PendingSacrificeChoiceRequest {
 
 export interface PendingCurseReleaseRequest {
   choice: "accept" | "pass";
+}
+
+export interface CreateBugReportRequest {
+  description: string;
+}
+
+export interface UpdateBugReportStatusRequest {
+  status: BugReportStatus;
 }
 
 export interface DiscordAuthTokenRequest {

@@ -1,5 +1,6 @@
 import { baseCardDefinitionById } from "../../shared/cards";
 import type { CardCategoryCode } from "../../shared/cards";
+import { getCardImageVariantUrl, getImportedCardImageUrl, type CardImageVariant } from "./cards/cardImageUrls";
 import type {
   CardView,
   MatchState,
@@ -9,7 +10,7 @@ import type {
 } from "../../shared/types";
 
 export type AppLanguage = "fr" | "en";
-export type CardImageVariant = "full" | "thumb";
+export type { CardImageVariant } from "./cards/cardImageUrls";
 
 const LANGUAGE_STORAGE_KEY = "emerlaus.language";
 
@@ -77,6 +78,7 @@ type TranslationKey =
   | "table.clientLog"
   | "table.leaveMatch"
   | "table.cardReference"
+  | "table.reportBug"
   | "table.seatFx"
   | "table.currentTurn"
   | "table.thinking"
@@ -137,6 +139,38 @@ type TranslationKey =
   | "reference.deckAbondance"
   | "reference.deckPuissance"
   | "reference.empty"
+  | "bugReport.title"
+  | "bugReport.body"
+  | "bugReport.descriptionLabel"
+  | "bugReport.placeholder"
+  | "bugReport.session"
+  | "bugReport.send"
+  | "bugReport.sending"
+  | "bugReport.cancel"
+  | "bugInbox.title"
+  | "bugInbox.subtitle"
+  | "bugInbox.filterLabel"
+  | "bugInbox.filterAll"
+  | "bugInbox.refresh"
+  | "bugInbox.empty"
+  | "bugInbox.loadingList"
+  | "bugInbox.loadingDetail"
+  | "bugInbox.noSelection"
+  | "bugInbox.open"
+  | "bugInbox.fixed"
+  | "bugInbox.ignored"
+  | "bugInbox.reportedBy"
+  | "bugInbox.session"
+  | "bugInbox.createdAt"
+  | "bugInbox.updatedAt"
+  | "bugInbox.turn"
+  | "bugInbox.currentTurn"
+  | "bugInbox.logs"
+  | "bugInbox.description"
+  | "bugInbox.copyPrompt"
+  | "bugInbox.markOpen"
+  | "bugInbox.markFixed"
+  | "bugInbox.markIgnored"
   | "boardReset.title"
   | "boardReset.inProgress"
   | "boardReset.body"
@@ -216,6 +250,8 @@ type TranslationKey =
   | "error.passFollowUp"
   | "error.resolveCurse"
   | "error.drawCard"
+  | "error.submitBugReport"
+  | "error.copyBugPrompt"
   | "error.passResponse"
   | "error.selectObject"
   | "error.updateExpansion"
@@ -296,6 +332,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.clientLog": "Client Log",
     "table.leaveMatch": "Leave Match",
     "table.cardReference": "Card Guide",
+    "table.reportBug": "Report Bug",
     "table.seatFx": "Seat FX",
     "table.currentTurn": "Current turn",
     "table.thinking": "Thinking",
@@ -364,6 +401,38 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.deckAbondance": "Abondance",
     "reference.deckPuissance": "Puissance",
     "reference.empty": "No cards match this search.",
+    "bugReport.title": "Report A Bug",
+    "bugReport.body": "Describe what happened. Session {shortId} will be attached automatically.",
+    "bugReport.descriptionLabel": "Bug description",
+    "bugReport.placeholder": "What did you expect, what happened instead, and which card or action caused it?",
+    "bugReport.session": "Attached session: {shortId}",
+    "bugReport.send": "Send",
+    "bugReport.sending": "Sending...",
+    "bugReport.cancel": "Cancel",
+    "bugInbox.title": "Bug Reports",
+    "bugInbox.subtitle": "Review saved player reports and update their status.",
+    "bugInbox.filterLabel": "Filter",
+    "bugInbox.filterAll": "All",
+    "bugInbox.refresh": "Refresh",
+    "bugInbox.empty": "No bug reports match the current filter.",
+    "bugInbox.loadingList": "Loading bug reports...",
+    "bugInbox.loadingDetail": "Loading report details...",
+    "bugInbox.noSelection": "Select a report to inspect its details.",
+    "bugInbox.open": "Open",
+    "bugInbox.fixed": "Fixed",
+    "bugInbox.ignored": "Ignored",
+    "bugInbox.reportedBy": "Reported by",
+    "bugInbox.session": "Session",
+    "bugInbox.createdAt": "Created",
+    "bugInbox.updatedAt": "Updated",
+    "bugInbox.turn": "Turn",
+    "bugInbox.currentTurn": "Current seat",
+    "bugInbox.logs": "Logs",
+    "bugInbox.description": "Description",
+    "bugInbox.copyPrompt": "Copy Codex Prompt",
+    "bugInbox.markOpen": "Mark Open",
+    "bugInbox.markFixed": "Mark Fixed",
+    "bugInbox.markIgnored": "Mark Ignored",
     "boardReset.title": "Choose {count} card{plural} to keep",
     "boardReset.inProgress": "Intervention divine in progress",
     "boardReset.body": "Select the {selectionLabel} that {stayVerb} in your hand before the rest of the board is cleared and reshuffled.",
@@ -443,6 +512,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.passFollowUp": "Unable to pass forced follow-up",
     "error.resolveCurse": "Unable to resolve curse release",
     "error.drawCard": "Failed to draw card",
+    "error.submitBugReport": "Please describe the bug before sending it.",
+    "error.copyBugPrompt": "Unable to copy the Codex prompt.",
     "error.passResponse": "Unable to pass",
     "error.selectObject": "Unable to select object",
     "error.updateExpansion": "Unable to update expansion",
@@ -512,6 +583,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.clientLog": "Journal client",
     "table.leaveMatch": "Quitter la partie",
     "table.cardReference": "Guide des cartes",
+    "table.reportBug": "Signaler un bug",
     "table.seatFx": "Effets siege",
     "table.currentTurn": "Tour actuel",
     "table.thinking": "Réfléchit",
@@ -580,6 +652,38 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.deckAbondance": "Abondance",
     "reference.deckPuissance": "Puissance",
     "reference.empty": "Aucune carte ne correspond a cette recherche.",
+    "bugReport.title": "Signaler un bug",
+    "bugReport.body": "Decrivez ce qui s'est passe. La session {shortId} sera jointe automatiquement.",
+    "bugReport.descriptionLabel": "Description du bug",
+    "bugReport.placeholder": "Qu'attendiez-vous, qu'est-ce qui s'est produit a la place, et quelle carte ou action a cause le probleme ?",
+    "bugReport.session": "Session jointe : {shortId}",
+    "bugReport.send": "Envoyer",
+    "bugReport.sending": "Envoi...",
+    "bugReport.cancel": "Annuler",
+    "bugInbox.title": "Signalements de bugs",
+    "bugInbox.subtitle": "Consultez les signalements joueurs et mettez leur statut a jour.",
+    "bugInbox.filterLabel": "Filtre",
+    "bugInbox.filterAll": "Tous",
+    "bugInbox.refresh": "Actualiser",
+    "bugInbox.empty": "Aucun signalement ne correspond au filtre actuel.",
+    "bugInbox.loadingList": "Chargement des signalements...",
+    "bugInbox.loadingDetail": "Chargement du detail...",
+    "bugInbox.noSelection": "Selectionnez un signalement pour consulter ses details.",
+    "bugInbox.open": "Ouvert",
+    "bugInbox.fixed": "Corrige",
+    "bugInbox.ignored": "Ignore",
+    "bugInbox.reportedBy": "Signale par",
+    "bugInbox.session": "Session",
+    "bugInbox.createdAt": "Cree",
+    "bugInbox.updatedAt": "Mis a jour",
+    "bugInbox.turn": "Tour",
+    "bugInbox.currentTurn": "Siege actuel",
+    "bugInbox.logs": "Logs",
+    "bugInbox.description": "Description",
+    "bugInbox.copyPrompt": "Copier le prompt Codex",
+    "bugInbox.markOpen": "Remettre ouvert",
+    "bugInbox.markFixed": "Marquer corrige",
+    "bugInbox.markIgnored": "Marquer ignore",
     "boardReset.title": "Choisissez {count} carte{plural} à garder",
     "boardReset.inProgress": "Intervention divine en cours",
     "boardReset.body": "Sélectionnez {selectionLabel} qui {stayVerb} dans votre main avant que le reste du plateau soit vidé et brassé à nouveau.",
@@ -659,6 +763,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.passFollowUp": "Impossible de passer la riposte forcée",
     "error.resolveCurse": "Impossible de résoudre la levée de malédiction",
     "error.drawCard": "Impossible de piger la carte",
+    "error.submitBugReport": "Decrivez le bug avant de l'envoyer.",
+    "error.copyBugPrompt": "Impossible de copier le prompt Codex.",
     "error.passResponse": "Impossible de passer",
     "error.selectObject": "Impossible de sélectionner l'objet",
     "left.replacedByBot": "Votre siège a été remplacé par un bot. Démarrez une nouvelle session d'activité pour entrer dans un nouveau salon."
@@ -725,18 +831,6 @@ export function getLocalizedCategoryLabel(categoryCode: CardCategoryCode, langua
   return categoryLabels[language][categoryCode];
 }
 
-export function getCardImageVariantUrl(imageUrl: string, variant: CardImageVariant): string {
-  const normalized = imageUrl.replace(/\\/g, "/");
-  const match = normalized.match(/^\/assets\/cards\/(base|base-en)(?:-webp|-thumb)?\/([^/?#]+?)(?:\.[^./?]+)$/);
-  if (match == null) {
-    return imageUrl;
-  }
-
-  const [, languageDir, basename] = match;
-  const suffix = variant === "thumb" ? "-thumb" : "-webp";
-  return `/assets/cards/${languageDir}${suffix}/${basename}.webp`;
-}
-
 export function getLocalizedCardImageUrl(
   cardId: string,
   fallbackImageUrl: string,
@@ -744,22 +838,24 @@ export function getLocalizedCardImageUrl(
   variant: CardImageVariant = "full"
 ): string {
   const baseImageUrl = (() => {
-  if (language === "fr") {
+    if (language === "fr") {
       return fallbackImageUrl;
-  }
+    }
 
-  const definition = baseCardDefinitionById[cardId];
-  const sourcePath = definition?.image.localSourcePath ?? definition?.image.importedAssetPath ?? "";
-  const filename = sourcePath.split(/[\\/]/).pop();
-  if (filename == null || filename === "") {
+    const definition = baseCardDefinitionById[cardId];
+    const sourcePath = definition?.image.localSourcePath ?? definition?.image.importedAssetPath ?? "";
+    const filename = sourcePath.split(/[\\/]/).pop();
+    if (filename == null || filename === "") {
       return fallbackImageUrl;
-  }
+    }
 
     return `/assets/cards/base-en/${filename}`;
   })();
 
   return getCardImageVariantUrl(baseImageUrl, variant);
 }
+
+export { getCardImageVariantUrl, getImportedCardImageUrl };
 
 export function localizeCardView(card: CardView, language: AppLanguage): CardView {
   const definition = baseCardDefinitionById[card.cardId];

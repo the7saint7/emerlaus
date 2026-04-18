@@ -140,6 +140,13 @@ export function isSeatTargetable(
     return false;
   }
 
+  if (
+    isAttackCard(selectedCard)
+    && (seat.statuses ?? []).some((card) => card.cardId === "potion-dinvincibilite")
+  ) {
+    return false;
+  }
+
   if (selectedCard.cardId === "dissipation-dun-anneau" && !(seat.objects ?? []).some((card) => card.cardId.startsWith("anneau"))) {
     return false;
   }
