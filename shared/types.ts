@@ -401,6 +401,7 @@ export interface BugReportSummary {
   currentTurnSeatNumber: number | null;
   descriptionPreview: string;
   runtimeLogDirectoryName: string;
+  reportedFromBaseUrl: string | null;
 }
 
 export interface BugReportRecord extends BugReportSummary {
@@ -408,6 +409,22 @@ export interface BugReportRecord extends BugReportSummary {
   currentTurnDisplayName: string | null;
   matchStatus: MatchStatus;
   description: string;
+}
+
+export interface BugReportLogFile {
+  filename: string;
+  content: string;
+}
+
+export interface BugReportLogsResponse {
+  reportId: string;
+  instanceId: string;
+  shortId: string;
+  runtimeLogDirectoryName: string;
+  reportedFromBaseUrl: string | null;
+  serverLog: BugReportLogFile | null;
+  matchState: BugReportLogFile | null;
+  clientLogs: BugReportLogFile[];
 }
 
 export interface DisconnectRequest {

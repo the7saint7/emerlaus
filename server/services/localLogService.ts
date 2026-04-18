@@ -27,6 +27,10 @@ function ensureInstanceLogDir(instanceId: string, shortId?: string): string {
   return instanceDir;
 }
 
+export function getInstanceLogDirPath(directoryName: string): string {
+  return path.join(LOG_ROOT, sanitizePathSegment(directoryName));
+}
+
 function formatDebugLogEntries(entries: DebugLogEntry[]): string {
   return entries.map((entry) => `${entry.createdAt} [${entry.source}:${entry.scope}] ${entry.message}`).join("\n");
 }

@@ -42,6 +42,7 @@ import {
   createBugReport,
   listBugReports,
   readBugReport,
+  readBugReportLogs,
   updateBugReportStatus
 } from "./services/bugReportService.js";
 import {
@@ -105,6 +106,16 @@ app.get("/api/dev/bug-reports/:reportId", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to read bug report"
+    });
+  }
+});
+
+app.get("/api/dev/bug-reports/:reportId/logs", (request, response) => {
+  try {
+    response.json(readBugReportLogs(request.params.reportId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to read bug report logs"
     });
   }
 });
@@ -256,6 +267,22 @@ function requireAuthenticatedUserId(request: express.Request): string {
   return userId;
 }
 
+function requestBaseUrl(request: express.Request): string | null {
+  const forwardedProto = request.header("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = request.header("x-forwarded-host")?.split(",")[0]?.trim();
+  const protocol = forwardedProto != null && forwardedProto !== ""
+    ? forwardedProto
+    : request.protocol;
+  const host = forwardedHost != null && forwardedHost !== ""
+    ? forwardedHost
+    : request.get("host");
+  if (host == null || host.trim() === "") {
+    return null;
+  }
+
+  return `${protocol}://${host.trim()}`;
+}
+
 app.post("/api/matches/:instanceId/join", (request, response) => {
   try {
     const body = request.body as JoinRequest;
@@ -379,7 +406,7 @@ app.post("/api/matches/:instanceId/bug-report", (request, response) => {
       throw new Error("Match not found");
     }
 
-    response.json(createBugReport(match, userId, body));
+    response.json(createBugReport(match, userId, body, requestBaseUrl(request)));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to save bug report"

@@ -1,7 +1,7 @@
 import type { CardView, MatchState, PendingActionResponderState, ResponseChoiceType, SeatState } from "../../../shared/types";
 
 function isAttackCard(card: CardView): boolean {
-  return ["AD", "AM", "S", "E", "CO"].includes(card.categoryCode);
+  return ["AD", "AM", "S", "E", "CO", "ST", "SO"].includes(card.categoryCode);
 }
 
 export function cardNeedsArrow(card: CardView): boolean {
@@ -140,10 +140,7 @@ export function isSeatTargetable(
     return false;
   }
 
-  if (
-    isAttackCard(selectedCard)
-    && (seat.statuses ?? []).some((card) => card.cardId === "potion-dinvincibilite")
-  ) {
+  if ((seat.statuses ?? []).some((card) => card.cardId === "potion-dinvincibilite")) {
     return false;
   }
 

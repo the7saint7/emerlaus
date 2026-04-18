@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
+  BugReportLogsResponse,
   BugReportRecord,
   BugReportStatus,
   BugReportSummary,
@@ -9,6 +10,7 @@ import type {
 } from "../../shared/types.js";
 import type { StoredMatchState } from "./gameEngineTypes.js";
 import {
+  getInstanceLogDirPath,
   getInstanceLogDirectoryName,
   persistMatchLogs
 } from "./localLogService.js";
@@ -63,7 +65,10 @@ function readBugReportFile(reportId: string): StoredBugReportFile {
 
 function toRecord(file: StoredBugReportFile): BugReportRecord {
   const { schemaVersion: _schemaVersion, ...record } = file;
-  return record;
+  return {
+    ...record,
+    reportedFromBaseUrl: record.reportedFromBaseUrl ?? null
+  };
 }
 
 function toSummary(record: BugReportRecord): BugReportSummary {
@@ -79,14 +84,16 @@ function toSummary(record: BugReportRecord): BugReportSummary {
     turnNumber: record.turnNumber,
     currentTurnSeatNumber: record.currentTurnSeatNumber,
     descriptionPreview: record.descriptionPreview,
-    runtimeLogDirectoryName: record.runtimeLogDirectoryName
+    runtimeLogDirectoryName: record.runtimeLogDirectoryName,
+    reportedFromBaseUrl: record.reportedFromBaseUrl
   };
 }
 
 export function createBugReport(
   match: StoredMatchState,
   userId: string,
-  request: CreateBugReportRequest
+  request: CreateBugReportRequest,
+  reportedFromBaseUrl: string | null
 ): BugReportRecord {
   const description = normalizeDescription(request.description);
   if (description === "") {
@@ -117,6 +124,7 @@ export function createBugReport(
     currentTurnSeatNumber,
     descriptionPreview: buildDescriptionPreview(description),
     runtimeLogDirectoryName: getInstanceLogDirectoryName(match.instanceId, match.shortId),
+    reportedFromBaseUrl,
     reporterUserId: userId,
     currentTurnDisplayName,
     matchStatus: match.status,
@@ -155,4 +163,39 @@ export function updateBugReportStatus(reportId: string, status: BugReportStatus)
   };
   writeBugReport(nextRecord);
   return nextRecord;
+}
+
+function readLogFile(filePath: string): string | null {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  return fs.readFileSync(filePath, "utf8");
+}
+
+export function readBugReportLogs(reportId: string): BugReportLogsResponse {
+  const report = readBugReport(reportId);
+  const logDir = getInstanceLogDirPath(report.runtimeLogDirectoryName);
+  const clientLogs = fs.existsSync(logDir)
+    ? fs.readdirSync(logDir)
+      .filter((entry) => entry.startsWith("client-") && entry.endsWith(".log"))
+      .sort((left, right) => left.localeCompare(right))
+      .map((filename) => ({
+        filename,
+        content: fs.readFileSync(path.join(logDir, filename), "utf8")
+      }))
+    : [];
+
+  const serverLogContent = readLogFile(path.join(logDir, "server.log"));
+  const matchStateContent = readLogFile(path.join(logDir, "match-state.json"));
+  return {
+    reportId: report.id,
+    instanceId: report.instanceId,
+    shortId: report.shortId,
+    runtimeLogDirectoryName: report.runtimeLogDirectoryName,
+    reportedFromBaseUrl: report.reportedFromBaseUrl,
+    serverLog: serverLogContent == null ? null : { filename: "server.log", content: serverLogContent },
+    matchState: matchStateContent == null ? null : { filename: "match-state.json", content: matchStateContent },
+    clientLogs
+  };
 }

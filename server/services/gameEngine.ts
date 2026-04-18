@@ -8329,6 +8329,82 @@ export function passForcedFollowUp(match: StoredMatchState, userId: string): voi
   finalizeResolvedAction(match, turnOwnerSeatNumber);
 }
 
+function validateActionRequestBeforeHandRemoval(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  handCard: StoredCardInstance,
+  definition: BaseCardDefinition,
+  request: PlayCardRequest,
+  forcedFollowUp?: StoredForcedFollowUpState
+): void {
+  const game = match.internalGame;
+  if (game == null || request.mode !== "active") {
+    return;
+  }
+
+  const targetSeatNumbers = forcedFollowUp != null
+    ? [forcedFollowUp.targetSeatNumber]
+    : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets);
+  const effectiveTargetSeatNumbers =
+    definition.rules.targets === "all_opponents"
+      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
+      : targetSeatNumbers;
+
+  if (
+    forcedFollowUp != null
+    && request.targetSeatNumber != null
+    && request.targetSeatNumber !== forcedFollowUp.targetSeatNumber
+  ) {
+    throw new Error("Colère du magicien follow-up must target the paralyzed opponent");
+  }
+
+  if (
+    definition.rules.targets === "single_opponent"
+    && targetSeatNumbers[0] != null
+    && !getStoredSeat(game, targetSeatNumbers[0]).alive
+  ) {
+    throw new Error("Original target is no longer alive");
+  }
+
+  if (
+    definition.rules.targets === "single_opponent"
+    && targetSeatNumbers[0] != null
+    && singleOpponentTargetRequiresEligibleObject(definition)
+    && !seatHasEligibleTargetObject(game, targetSeatNumbers[0], getAllowedObjectSlotsForDefinition(definition))
+  ) {
+    throw new Error("The target opponent must have at least one object on the table");
+  }
+
+  if (
+    definition.id === "puissance-totale"
+    && !getStoredSeat(game, actorSeatNumber).hand.some(
+      (candidate) => candidate.instanceId !== handCard.instanceId && ["A", "AD", "AM"].includes(requireDefinition(candidate.cardId).category.code)
+    )
+  ) {
+    throw new Error("Puissance totale requires an A/AD/AM card in hand");
+  }
+
+  if (
+    definition.rules.targets !== "all_opponents"
+    && targetSeatNumbers.some((seatNumber) => isProtectedFromAttack(match, seatNumber, definition))
+  ) {
+    throw new Error("That target is protected and cannot be attacked right now");
+  }
+
+  if (definition.rules.targets === "all_opponents" && effectiveTargetSeatNumbers.length === 0) {
+    throw new Error("No valid opponent target");
+  }
+
+  if (
+    definition.category.code === "AM"
+    && request.targetObjectInstanceId == null
+    && forcedFollowUp == null
+    && effectiveTargetSeatNumbers.length === 0
+  ) {
+    throw new Error("No valid opponent target");
+  }
+}
+
 export function playCardFromHand(match: StoredMatchState, userId: string, request: PlayCardRequest): void {
   const game = match.internalGame;
   if (game == null) {
@@ -8477,6 +8553,7 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
   if (request.mode === "active" && !playState.canPlay) {
     throw new Error(playState.reason ?? "That card cannot be played right now");
   }
+  validateActionRequestBeforeHandRemoval(match, actorSeat.seatNumber, handCard, definition, request, forcedFollowUp);
 
   const removedCard = moveCardFromHand(actorState.hand, handCard.instanceId);
   recordCardsPlayed(match, actorSeat.seatNumber, request.mode);

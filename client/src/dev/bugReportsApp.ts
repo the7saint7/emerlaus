@@ -24,18 +24,29 @@ function filteredSummaries(state: BugReportsState): BugReportSummary[] {
 }
 
 function buildCodexPrompt(report: BugReportRecord): string {
+  const baseUrl = report.reportedFromBaseUrl ?? window.location.origin;
+  const logsUrl = (() => {
+    try {
+      return new URL(`/api/dev/bug-reports/${report.id}/logs`, `${baseUrl}/`).toString();
+    } catch {
+      return `/api/dev/bug-reports/${report.id}/logs`;
+    }
+  })();
+
   return [
     `Please inspect session ${report.shortId} and analyze this bug report.`,
     "",
     `Session id: ${report.shortId}`,
     `Instance id: ${report.instanceId}`,
+    `Base URL: ${baseUrl}`,
+    `Logs endpoint: ${logsUrl}`,
     `Runtime logs folder: ${report.runtimeLogDirectoryName}`,
     report.turnNumber == null ? "Reported turn: unknown" : `Reported turn: ${report.turnNumber}`,
     "",
     "Reported bug:",
     report.description,
     "",
-    "Use the saved logs for that session and explain the likely cause."
+    "Use the saved logs endpoint for that session and explain the likely cause."
   ].join("\n");
 }
 
