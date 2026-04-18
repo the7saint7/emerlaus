@@ -1687,6 +1687,9 @@ function renderLobbyScene(
   match: MatchState,
   localSeatNumber: number,
   language: AppLanguage,
+  sessionMode: "discord" | "browser",
+  sessionChannelId: string | null,
+  sessionGuildId: string | null,
   onTextureReady: () => void = () => {}
 ): void {
   const localSeat = getLocalSeat(match, localSeatNumber);
@@ -1700,12 +1703,21 @@ function renderLobbyScene(
   // ── Header bar ───────────────────────────────────────────────────────────────
   scene.addChild(createRect(70, 70, 980, 86, "#0d1910", 0.92, 16));
   scene.addChild(createLabel(t(language, "lobby.title"), 98, 80, { fontSize: 34, fontWeight: "700" }));
+  const lobbyDiagnostics = [
+    sessionMode === "discord" ? t(language, "lobby.discord") : t(language, "lobby.browser"),
+    t(language, "lobby.instance", { instanceId: match.instanceId }),
+    sessionChannelId != null ? t(language, "lobby.channel", { channelId: sessionChannelId }) : null,
+    sessionGuildId != null ? t(language, "lobby.guild", { guildId: sessionGuildId }) : null
+  ]
+    .filter((value): value is string => value != null && value !== "")
+    .join("  ·  ");
   scene.addChild(createLabel(
     t(language, "lobby.seatsFilled", { filled: match.seats.length, max: match.maxSeats })
     + "  ·  " + t(language, "seat.label", { seatNumber: localSeatNumber })
     + (hostSeat != null ? "  ·  " + t(language, "seat.host") + ": " + hostSeat.displayName : ""),
     98, 126, { fontSize: 14, fill: "#8aaa80" }
   ));
+  scene.addChild(createLabel(lobbyDiagnostics, 98, 146, { fontSize: 12, fill: "#6f9176" }));
 
   // ── Seat grid (3 columns × 4 rows) ───────────────────────────────────────────
   // Row 0, col 0 = host seat; row 0, cols 1-2 = start-match button (drawn below).
@@ -4322,6 +4334,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     clientDebugLog.push(entry);
     clientLogDirty = true;
   };
+  logClient(
+    "session",
+    `mode=${session.mode} instance=${session.instanceId} channel=${session.channelId ?? "n/a"} guild=${session.guildId ?? "n/a"}`
+  );
 
   const persistClientLogNow = async (): Promise<void> => {
     if (playerSessionToken.trim() === "" || !clientLogDirty) {
@@ -6052,7 +6068,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       victoryRevealWinnerSeatNumber = null;
       cardInspectState = null;
       inspectLayerActive = false;
-      renderLobbyScene(scene, localizedMatch, localSeatNumber, language, scheduleRedraw);
+      renderLobbyScene(
+        scene,
+        localizedMatch,
+        localSeatNumber,
+        language,
+        session.mode,
+        session.channelId,
+        session.guildId,
+        scheduleRedraw
+      );
       currentGeometry = null;
     } else {
       // Compute baton load hover scale (smooth scale-up animation)

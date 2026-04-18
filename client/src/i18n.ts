@@ -52,6 +52,8 @@ type TranslationKey =
   | "lobby.discord"
   | "lobby.browser"
   | "lobby.instance"
+  | "lobby.channel"
+  | "lobby.guild"
   | "lobby.seatsFilled"
   | "lobby.localPlayer"
   | "lobby.host"
@@ -306,6 +308,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.discord": "Discord Activity",
     "lobby.browser": "Browser Mock Mode",
     "lobby.instance": "Instance {instanceId}",
+    "lobby.channel": "Channel {channelId}",
+    "lobby.guild": "Guild {guildId}",
     "lobby.seatsFilled": "{filled}/{max} seats filled",
     "lobby.localPlayer": "Local Player",
     "lobby.host": "Host",
@@ -557,6 +561,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.discord": "Activité Discord",
     "lobby.browser": "Mode navigateur",
     "lobby.instance": "Instance {instanceId}",
+    "lobby.channel": "Salon {channelId}",
+    "lobby.guild": "Serveur {guildId}",
     "lobby.seatsFilled": "{filled}/{max} sièges occupés",
     "lobby.localPlayer": "Joueur local",
     "lobby.host": "Hôte",

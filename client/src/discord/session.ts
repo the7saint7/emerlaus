@@ -5,6 +5,8 @@ import { fetchConfig } from "../api/gameApi";
 
 interface ActivitySession {
   instanceId: string;
+  channelId: string | null;
+  guildId: string | null;
   currentUser: LocalUserProfile;
   mode: "browser" | "discord";
   enableDevTools: boolean;
@@ -85,6 +87,8 @@ export async function createDiscordSession(): Promise<ActivitySession> {
   if (!isEmbeddedInDiscord() || config.discordClientId.trim() === "") {
     return {
       instanceId,
+      channelId: null,
+      guildId: null,
       currentUser: browserUser,
       mode: "browser",
       enableDevTools: config.enableDevTools,
@@ -94,10 +98,16 @@ export async function createDiscordSession(): Promise<ActivitySession> {
 
   const sdk = new DiscordSDK(config.discordClientId);
   await sdk.ready();
+  const discordInstanceId = sdk.instanceId.trim();
+  if (discordInstanceId === "") {
+    throw new Error("Discord did not provide an Activity instance ID. Refusing to join a shared fallback session.");
+  }
   const currentUser = await authenticateWithDiscord(sdk, config.discordClientId);
 
   return {
-    instanceId: sdk.instanceId || instanceId,
+    instanceId: discordInstanceId,
+    channelId: sdk.channelId,
+    guildId: sdk.guildId,
     currentUser,
     mode: "discord",
     enableDevTools: config.enableDevTools,
