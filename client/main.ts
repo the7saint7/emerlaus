@@ -31,6 +31,8 @@ async function bootApp(): Promise<void> {
       : requestedDevMode === "card-editor"
         ? createCardEditorApp
         : createPixiApp
+    : requestedDevMode === "bug-reports"
+      ? createBugReportsApp
     : createPixiApp;
 
   await boot(appRoot);

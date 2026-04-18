@@ -89,6 +89,37 @@ const builtClientDir = currentDir == null
 
 app.use(express.json());
 
+app.get("/api/dev/bug-reports", (_request, response) => {
+  try {
+    response.json(listBugReports());
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to list bug reports"
+    });
+  }
+});
+
+app.get("/api/dev/bug-reports/:reportId", (request, response) => {
+  try {
+    response.json(readBugReport(request.params.reportId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to read bug report"
+    });
+  }
+});
+
+app.post("/api/dev/bug-reports/:reportId/status", (request, response) => {
+  try {
+    const body = request.body as UpdateBugReportStatusRequest;
+    response.json(updateBugReportStatus(request.params.reportId, body.status));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to update bug report status"
+    });
+  }
+});
+
 function requireDevToolsEnabled(
   _request: express.Request,
   response: express.Response,
@@ -158,37 +189,6 @@ app.post("/api/dev/base-defense-band-mappings/:cardId", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to save defense band mapping"
-    });
-  }
-});
-
-app.get("/api/dev/bug-reports", (_request, response) => {
-  try {
-    response.json(listBugReports());
-  } catch (error) {
-    response.status(400).json({
-      error: error instanceof Error ? error.message : "Unable to list bug reports"
-    });
-  }
-});
-
-app.get("/api/dev/bug-reports/:reportId", (request, response) => {
-  try {
-    response.json(readBugReport(request.params.reportId));
-  } catch (error) {
-    response.status(400).json({
-      error: error instanceof Error ? error.message : "Unable to read bug report"
-    });
-  }
-});
-
-app.post("/api/dev/bug-reports/:reportId/status", (request, response) => {
-  try {
-    const body = request.body as UpdateBugReportStatusRequest;
-    response.json(updateBugReportStatus(request.params.reportId, body.status));
-  } catch (error) {
-    response.status(400).json({
-      error: error instanceof Error ? error.message : "Unable to update bug report status"
     });
   }
 });
