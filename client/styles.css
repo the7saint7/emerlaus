@@ -1637,6 +1637,26 @@ h2 {
   gap: 8px;
 }
 
+.victory-celebration__quit-hint {
+  position: absolute;
+  left: 50%;
+  top: calc(54% + 220px);
+  transform: translateX(-50%);
+  max-width: min(900px, calc(100% - 48px));
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: rgba(255, 241, 206, 0.86);
+  background: rgba(10, 17, 12, 0.72);
+  border: 1px solid rgba(255, 231, 166, 0.14);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  text-align: center;
+  font-size: 0.84rem;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
 .victory-stat {
   position: relative;
   display: grid;
@@ -1876,6 +1896,10 @@ h2 {
   .victory-stats__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .victory-celebration__quit-hint {
+    max-width: min(720px, calc(100% - 40px));
+  }
 }
 
 @media (max-width: 900px) {
@@ -1893,6 +1917,10 @@ h2 {
 
   .victory-stats__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .victory-celebration__quit-hint {
+    top: calc(56% + 260px);
   }
 }
 
@@ -1916,6 +1944,12 @@ h2 {
     width: 24px;
     height: 24px;
     flex-basis: 24px;
+  }
+
+  .victory-celebration__quit-hint {
+    top: calc(58% + 320px);
+    max-width: min(96vw, 520px);
+    font-size: 0.78rem;
   }
 }
 

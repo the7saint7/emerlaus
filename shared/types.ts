@@ -28,7 +28,7 @@ export const defaultMatchExpansionSettings: MatchExpansionSettings = {
   sorcellerie: false,
   invocation: false,
   abondance: true,
-  puissance: false,
+  puissance: true,
   communion: false,
   destin: false,
   compagnons: false,

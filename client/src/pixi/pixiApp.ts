@@ -1713,6 +1713,7 @@ function buildVictoryCelebrationMarkup(match: MatchState, language: AppLanguage,
         `;
       }).join("")}
       ${buildVictoryStatsMarkup(match, language, enabled)}
+      <p class="victory-celebration__quit-hint">${escapeHtml(t(language, "victory.quitHint"))}</p>
     </div>
   `;
 }

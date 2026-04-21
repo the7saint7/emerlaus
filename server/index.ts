@@ -40,6 +40,7 @@ import {
 import { exchangeDiscordCode } from "./services/discordOAuth.js";
 import {
   createBugReport,
+  deleteBugReport,
   listBugReports,
   readBugReport,
   readBugReportLogs,
@@ -127,6 +128,17 @@ app.post("/api/dev/bug-reports/:reportId/status", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to update bug report status"
+    });
+  }
+});
+
+app.delete("/api/dev/bug-reports/:reportId", (request, response) => {
+  try {
+    deleteBugReport(request.params.reportId);
+    response.status(204).end();
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to delete bug report"
     });
   }
 });

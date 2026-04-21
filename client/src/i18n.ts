@@ -175,6 +175,9 @@ type TranslationKey =
   | "bugInbox.markOpen"
   | "bugInbox.markFixed"
   | "bugInbox.markIgnored"
+  | "bugInbox.delete"
+  | "bugInbox.deleting"
+  | "bugInbox.deleteConfirm"
   | "boardReset.title"
   | "boardReset.inProgress"
   | "boardReset.body"
@@ -216,6 +219,7 @@ type TranslationKey =
   | "forced.followUp"
   | "forced.consume"
   | "forced.cursePrompt"
+  | "victory.quitHint"
   | "consume.title"
   | "consume.body"
   | "consume.confirm"
@@ -256,6 +260,7 @@ type TranslationKey =
   | "error.drawCard"
   | "error.submitBugReport"
   | "error.copyBugPrompt"
+  | "error.deleteBugReport"
   | "error.passResponse"
   | "error.selectObject"
   | "error.updateExpansion"
@@ -441,6 +446,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugInbox.markOpen": "Mark Open",
     "bugInbox.markFixed": "Mark Fixed",
     "bugInbox.markIgnored": "Mark Ignored",
+    "bugInbox.delete": "Delete Bug",
+    "bugInbox.deleting": "Deleting...",
+    "bugInbox.deleteConfirm": "Delete this bug report and its saved logs?",
     "boardReset.title": "Choose {count} card{plural} to keep",
     "boardReset.inProgress": "Intervention divine in progress",
     "boardReset.body": "Select the {selectionLabel} that {stayVerb} in your hand before the rest of the board is cleared and reshuffled.",
@@ -482,6 +490,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "forced.followUp": "{actorName} must play {categories} on {targetName} for {cardName}.",
     "forced.consume": "Drag a {categories} card to the center to consume it for {cardName} (or pass).",
     "forced.cursePrompt": "{actorName} may discard {count} {releaseCardName} to remove {cardName}.",
+    "victory.quitHint": "To quit the game, close the activity.",
     "consume.title": "Sacrifice a card",
     "consume.body": "Choose a {categories} card to sacrifice for {cardName}.",
     "consume.confirm": "Sacrifice",
@@ -522,6 +531,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.drawCard": "Failed to draw card",
     "error.submitBugReport": "Please describe the bug before sending it.",
     "error.copyBugPrompt": "Unable to copy the Codex prompt.",
+    "error.deleteBugReport": "Unable to delete bug report",
     "error.passResponse": "Unable to pass",
     "error.selectObject": "Unable to select object",
     "error.updateExpansion": "Unable to update expansion",
@@ -696,6 +706,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugInbox.markOpen": "Remettre ouvert",
     "bugInbox.markFixed": "Marquer corrige",
     "bugInbox.markIgnored": "Marquer ignore",
+    "bugInbox.delete": "Supprimer",
+    "bugInbox.deleting": "Suppression...",
+    "bugInbox.deleteConfirm": "Supprimer ce signalement et ses logs sauvegardes ?",
     "boardReset.title": "Choisissez {count} carte{plural} à garder",
     "boardReset.inProgress": "Intervention divine en cours",
     "boardReset.body": "Sélectionnez {selectionLabel} qui {stayVerb} dans votre main avant que le reste du plateau soit vidé et brassé à nouveau.",
@@ -737,6 +750,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "forced.followUp": "{actorName} doit jouer {categories} sur {targetName} à cause de {cardName}.",
     "forced.consume": "Glisser une carte {categories} au centre pour la consommer pour {cardName} (ou passer).",
     "forced.cursePrompt": "{actorName} peut défausser {count} {releaseCardName} pour retirer {cardName}.",
+    "victory.quitHint": "Pour quitter la partie, fermez l'activit\u00E9.",
     "consume.title": "Sacrifier une carte",
     "consume.body": "Choisissez une carte {categories} à sacrifier pour {cardName}.",
     "consume.confirm": "Sacrifier",
@@ -777,6 +791,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.drawCard": "Impossible de piger la carte",
     "error.submitBugReport": "Decrivez le bug avant de l'envoyer.",
     "error.copyBugPrompt": "Impossible de copier le prompt Codex.",
+    "error.deleteBugReport": "Impossible de supprimer le signalement",
     "error.passResponse": "Impossible de passer",
     "error.selectObject": "Impossible de sélectionner l'objet",
     "left.replacedByBot": "Votre siège a été remplacé par un bot. Démarrez une nouvelle session d'activité pour entrer dans un nouveau salon."

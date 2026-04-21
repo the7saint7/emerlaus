@@ -10,6 +10,7 @@ export interface BugReportsViewParams {
   loadingList: boolean;
   loadingDetail: boolean;
   updatingStatus: boolean;
+  deletingReport: boolean;
   errorMessage: string;
 }
 
@@ -53,6 +54,7 @@ export function renderBugReportsView({
   loadingList,
   loadingDetail,
   updatingStatus,
+  deletingReport,
   errorMessage
 }: BugReportsViewParams): string {
   return `
@@ -133,9 +135,10 @@ export function renderBugReportsView({
                   </div>
                   <div class="modal-actions bug-inbox-detail__actions">
                     <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="copy-prompt" data-report-id="${selectedReport.id}">${escapeHtml(t(language, "bugInbox.copyPrompt"))}</button>
-                    <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="mark-status" data-status="open" ${updatingStatus || selectedReport.status === "open" ? "disabled" : ""}>${escapeHtml(t(language, "bugInbox.markOpen"))}</button>
-                    <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="mark-status" data-status="fixed" ${updatingStatus || selectedReport.status === "fixed" ? "disabled" : ""}>${escapeHtml(t(language, "bugInbox.markFixed"))}</button>
-                    <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="mark-status" data-status="ignored" ${updatingStatus || selectedReport.status === "ignored" ? "disabled" : ""}>${escapeHtml(t(language, "bugInbox.markIgnored"))}</button>
+                    <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="mark-status" data-status="open" ${updatingStatus || deletingReport || selectedReport.status === "open" ? "disabled" : ""}>${escapeHtml(t(language, "bugInbox.markOpen"))}</button>
+                    <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="mark-status" data-status="fixed" ${updatingStatus || deletingReport || selectedReport.status === "fixed" ? "disabled" : ""}>${escapeHtml(t(language, "bugInbox.markFixed"))}</button>
+                    <button type="button" class="action-button action-button--secondary" data-bug-inbox-action="mark-status" data-status="ignored" ${updatingStatus || deletingReport || selectedReport.status === "ignored" ? "disabled" : ""}>${escapeHtml(t(language, "bugInbox.markIgnored"))}</button>
+                    <button type="button" class="action-button action-button--danger" data-bug-inbox-action="delete-report" ${updatingStatus || deletingReport ? "disabled" : ""}>${escapeHtml(t(language, deletingReport ? "bugInbox.deleting" : "bugInbox.delete"))}</button>
                   </div>
                 </div>
 

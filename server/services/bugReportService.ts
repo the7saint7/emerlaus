@@ -14,8 +14,9 @@ import {
   getInstanceLogDirectoryName,
   persistMatchLogs
 } from "./localLogService.js";
+import { resolveRuntimeDataPath } from "./runtimeDataPaths.js";
 
-const BUG_REPORT_ROOT = path.resolve(process.cwd(), "runtime-bug-reports");
+const BUG_REPORT_ROOT = resolveRuntimeDataPath("runtime-bug-reports");
 const BUG_REPORT_SCHEMA_VERSION = 1;
 const MAX_DESCRIPTION_LENGTH = 4_000;
 
@@ -61,6 +62,13 @@ function readBugReportFile(reportId: string): StoredBugReportFile {
   }
 
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as StoredBugReportFile;
+}
+
+function listStoredBugReportFiles(): StoredBugReportFile[] {
+  ensureBugReportDir();
+  return fs.readdirSync(BUG_REPORT_ROOT)
+    .filter((entry) => entry.endsWith(".json"))
+    .map((entry) => JSON.parse(fs.readFileSync(path.join(BUG_REPORT_ROOT, entry), "utf8")) as StoredBugReportFile);
 }
 
 function toRecord(file: StoredBugReportFile): BugReportRecord {
@@ -136,13 +144,8 @@ export function createBugReport(
 }
 
 export function listBugReports(): BugReportSummary[] {
-  ensureBugReportDir();
-  return fs.readdirSync(BUG_REPORT_ROOT)
-    .filter((entry) => entry.endsWith(".json"))
-    .map((entry) => {
-      const file = JSON.parse(fs.readFileSync(path.join(BUG_REPORT_ROOT, entry), "utf8")) as StoredBugReportFile;
-      return toSummary(toRecord(file));
-    })
+  return listStoredBugReportFiles()
+    .map((file) => toSummary(toRecord(file)))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
@@ -163,6 +166,25 @@ export function updateBugReportStatus(reportId: string, status: BugReportStatus)
   };
   writeBugReport(nextRecord);
   return nextRecord;
+}
+
+export function deleteBugReport(reportId: string): void {
+  const report = readBugReport(reportId);
+  const filePath = bugReportPath(reportId);
+  if (fs.existsSync(filePath)) {
+    fs.rmSync(filePath, { force: true });
+  }
+
+  const stillReferenced = listStoredBugReportFiles().some((file) => {
+    const record = toRecord(file);
+    return record.id !== reportId && record.runtimeLogDirectoryName === report.runtimeLogDirectoryName;
+  });
+  if (!stillReferenced) {
+    const logDir = getInstanceLogDirPath(report.runtimeLogDirectoryName);
+    if (fs.existsSync(logDir)) {
+      fs.rmSync(logDir, { recursive: true, force: true });
+    }
+  }
 }
 
 function readLogFile(filePath: string): string | null {

@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DebugLogEntry } from "../../shared/types.js";
 import type { StoredMatchState } from "./gameEngineTypes.js";
+import { resolveRuntimeDataPath } from "./runtimeDataPaths.js";
 
-const LOG_ROOT = path.resolve(process.cwd(), "runtime-logs");
+const LOG_ROOT = resolveRuntimeDataPath("runtime-logs");
 
 export function sanitizePathSegment(value: string): string {
   const trimmed = value.trim();

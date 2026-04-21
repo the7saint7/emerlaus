@@ -1,6 +1,6 @@
 import type { BugReportRecord, BugReportStatus, BugReportSummary } from "../../../shared/types";
 import { loadStoredLanguage, persistLanguage, t, type AppLanguage } from "../i18n";
-import { fetchBugReport, fetchBugReports, saveBugReportStatus } from "./bugReportsApi";
+import { deleteBugReport, fetchBugReport, fetchBugReports, saveBugReportStatus } from "./bugReportsApi";
 import { renderBugReportsView } from "./renderBugReportsView";
 
 interface BugReportsState {
@@ -12,6 +12,7 @@ interface BugReportsState {
   loadingList: boolean;
   loadingDetail: boolean;
   updatingStatus: boolean;
+  deletingReport: boolean;
   errorMessage: string;
 }
 
@@ -80,6 +81,7 @@ export async function createBugReportsApp(rootElement: HTMLDivElement): Promise<
     loadingList: true,
     loadingDetail: false,
     updatingStatus: false,
+    deletingReport: false,
     errorMessage: ""
   };
 
@@ -93,6 +95,7 @@ export async function createBugReportsApp(rootElement: HTMLDivElement): Promise<
       loadingList: state.loadingList,
       loadingDetail: state.loadingDetail,
       updatingStatus: state.updatingStatus,
+      deletingReport: state.deletingReport,
       errorMessage: state.errorMessage
     });
     bindEvents();
@@ -167,6 +170,38 @@ export async function createBugReportsApp(rootElement: HTMLDivElement): Promise<
     } finally {
       state.updatingStatus = false;
       render();
+    }
+  };
+
+  const removeReport = async (): Promise<void> => {
+    if (state.selectedReportId === "") {
+      return;
+    }
+
+    const reportId = state.selectedReportId;
+    if (!window.confirm(t(state.language, "bugInbox.deleteConfirm"))) {
+      return;
+    }
+
+    state.deletingReport = true;
+    state.errorMessage = "";
+    render();
+
+    try {
+      await deleteBugReport(reportId);
+      state.summaries = state.summaries.filter((summary) => summary.id !== reportId);
+      const visible = filteredSummaries(state);
+      state.selectedReportId = visible[0]?.id ?? "";
+      state.selectedReport = null;
+    } catch (error) {
+      state.errorMessage = error instanceof Error ? error.message : t(state.language, "error.deleteBugReport");
+    } finally {
+      state.deletingReport = false;
+      render();
+    }
+
+    if (state.selectedReportId !== "") {
+      await loadReportDetail(state.selectedReportId);
     }
   };
 
@@ -257,6 +292,10 @@ export async function createBugReportsApp(rootElement: HTMLDivElement): Promise<
           void updateStatus(status);
         }
       });
+    });
+
+    rootElement.querySelector<HTMLButtonElement>("[data-bug-inbox-action='delete-report']")?.addEventListener("click", () => {
+      void removeReport();
     });
   };
 

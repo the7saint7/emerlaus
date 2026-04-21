@@ -27,7 +27,16 @@ async function parseResponse<T>(response: Response): Promise<T> {
     throw new Error(message === "" ? `Request failed with status ${response.status}` : `Request failed with status ${response.status}: ${message}`);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const body = await response.text();
+  if (body.trim() === "") {
+    return undefined as T;
+  }
+
+  return JSON.parse(body) as T;
 }
 
 async function fetchWithTransientRetry<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -70,5 +79,11 @@ export async function saveBugReportStatus(reportId: string, status: BugReportSta
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteBugReport(reportId: string): Promise<void> {
+  await fetchWithTransientRetry<void>(`/api/dev/bug-reports/${encodeURIComponent(reportId)}`, {
+    method: "DELETE"
   });
 }
