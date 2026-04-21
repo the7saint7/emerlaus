@@ -75,6 +75,13 @@ export interface SeatState {
   handInspectionTargetSeatNumber?: number;
 }
 
+export interface SpectatorState {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  joinedAt: string;
+}
+
 export interface CardView {
   instanceId: string;
   cardId: string;
@@ -364,6 +371,7 @@ export interface MatchState {
   maxSeats: number;
   enabledExpansions: MatchExpansionSettings;
   seats: SeatState[];
+  spectators: SpectatorState[];
   game?: GameState;
   createdAt: string;
   startedAt?: string;
@@ -377,7 +385,7 @@ export interface JoinRequest {
 
 export interface JoinResponse {
   match: MatchState;
-  localSeatNumber: number;
+  localSeatNumber: number | null;
   playerSessionToken: string;
 }
 

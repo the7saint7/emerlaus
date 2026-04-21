@@ -5172,6 +5172,7 @@ export function buildPublicMatchState(match: StoredMatchState, viewerUserId?: st
     maxSeats: match.maxSeats,
     enabledExpansions: { ...match.enabledExpansions },
     seats: sortBySeatNumber(match.seats).map((seat) => buildPublicSeat(match, seat, viewerSeatNumber)),
+    spectators: match.spectators.map((spectator) => ({ ...spectator })),
     game: buildPublicGameState(match, viewerSeatNumber),
     createdAt: match.createdAt,
     startedAt: match.startedAt

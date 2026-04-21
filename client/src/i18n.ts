@@ -76,6 +76,8 @@ type TranslationKey =
   | "seat.disconnected"
   | "seat.host"
   | "seat.you"
+  | "spectator.mode"
+  | "spectator.list"
   | "table.serverLog"
   | "table.clientLog"
   | "table.leaveMatch"
@@ -332,6 +334,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "seat.disconnected": "Disconnected",
     "seat.host": "Host",
     "seat.you": "You",
+    "spectator.mode": "Spectator Mode",
+    "spectator.list": "Spectators",
     "table.serverLog": "Server Log",
     "table.clientLog": "Client Log",
     "table.leaveMatch": "Leave Match",
@@ -586,6 +590,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "seat.host": "Hôte",
     "table.serverLog": "Journal serveur",
     "seat.you": "Vous",
+    "spectator.mode": "Mode spectateur",
+    "spectator.list": "Spectateurs",
     "table.clientLog": "Journal client",
     "table.leaveMatch": "Quitter la partie",
     "table.cardReference": "Guide des cartes",

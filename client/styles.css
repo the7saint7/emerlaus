@@ -157,8 +157,14 @@ select {
   padding: 22px;
 }
 
-.pixi-frame-meta {
+.pixi-frame-topbar__left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-width: min(62vw, 860px);
+}
+
+.pixi-frame-meta {
   font-family: monospace;
   font-size: 11px;
   line-height: 1.35;
@@ -167,6 +173,49 @@ select {
   pointer-events: none;
   user-select: text;
   white-space: normal;
+}
+
+.pixi-spectator-panel {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(34vw, 420px);
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 239, 196, 0.12);
+  border-radius: 14px;
+  color: rgba(232, 238, 225, 0.86);
+  background: rgba(9, 15, 10, 0.58);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.pixi-spectator-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pixi-spectator-panel__mode,
+.pixi-spectator-panel__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pixi-spectator-panel__mode {
+  color: rgba(240, 207, 128, 0.94);
+}
+
+.pixi-spectator-panel__label {
+  color: rgba(150, 194, 156, 0.88);
+}
+
+.pixi-spectator-panel__names {
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(228, 235, 224, 0.8);
 }
 
 .pixi-frame-status,

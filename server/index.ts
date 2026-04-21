@@ -405,6 +405,10 @@ app.post("/api/matches/:instanceId/bug-report", (request, response) => {
     if (match == null) {
       throw new Error("Match not found");
     }
+    const reporterSeat = match.seats.find((seat) => seat.userId === userId);
+    if (reporterSeat == null) {
+      throw new Error("Spectators cannot submit bug reports");
+    }
 
     response.json(createBugReport(match, userId, body, requestBaseUrl(request)));
   } catch (error) {
@@ -416,6 +420,11 @@ app.post("/api/matches/:instanceId/bug-report", (request, response) => {
 
 app.post("/api/matches/:instanceId/cursor", (request, response) => {
   try {
+    const userId = requireAuthenticatedUserId(request);
+    const match = getMatch(request.params.instanceId);
+    if (match == null || !match.seats.some((seat) => seat.userId === userId)) {
+      throw new Error("Spectators cannot broadcast cursor targeting");
+    }
     const { seatNumber, targetSeatNumber } = request.body as { seatNumber: number; targetSeatNumber: number | null };
     broadcastCursorMove(request.params.instanceId, seatNumber, targetSeatNumber);
     response.status(204).end();

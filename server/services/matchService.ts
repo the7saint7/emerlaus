@@ -24,6 +24,7 @@ import type {
   PendingActionResponseRequest,
   PlayCardRequest,
   SeatState,
+  SpectatorState,
   StartMatchRequest
 } from "../../shared/types.js";
 import {
@@ -109,7 +110,18 @@ function requireHost(match: StoredMatchState, userId: string): void {
   }
 }
 
+function isSpectator(match: StoredMatchState, userId: string): boolean {
+  return match.spectators.some((spectator) => spectator.userId === userId);
+}
+
+function requireNotSpectator(match: StoredMatchState, userId: string): void {
+  if (isSpectator(match, userId)) {
+    throw new Error("Spectators cannot perform this action");
+  }
+}
+
 function requireHumanSeat(match: StoredMatchState, userId: string): SeatState {
+  requireNotSpectator(match, userId);
   const seat = getSeatByUserId(match, userId);
   if (seat == null || seat.controllerType !== "human") {
     throw new Error("Only active human players can perform this action");
@@ -153,6 +165,30 @@ function replaceSeatWithBot(match: StoredMatchState, seat: SeatState, difficulty
   seat.isHost = false;
 }
 
+function createSpectator(request: JoinRequest): SpectatorState {
+  return {
+    userId: request.userId,
+    displayName: request.displayName,
+    avatarUrl: request.avatarUrl || buildAvatarFallback(request.displayName),
+    joinedAt: new Date().toISOString()
+  };
+}
+
+function upsertSpectator(match: StoredMatchState, request: JoinRequest): void {
+  const existingSpectator = match.spectators.find((spectator) => spectator.userId === request.userId);
+  if (existingSpectator != null) {
+    existingSpectator.displayName = request.displayName;
+    existingSpectator.avatarUrl = request.avatarUrl || buildAvatarFallback(request.displayName);
+    return;
+  }
+
+  match.spectators.push(createSpectator(request));
+}
+
+function removeSpectator(match: StoredMatchState, userId: string): void {
+  match.spectators = match.spectators.filter((spectator) => spectator.userId !== userId);
+}
+
 export function joinMatch(instanceId: string, request: JoinRequest): JoinResponse {
   const match = getOrCreateMatch(instanceId);
   cleanupReconnectedBotSeats(match);
@@ -165,6 +201,7 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
     existingSeat.connected = true;
     existingSeat.controllerType = "human";
     existingSeat.disconnectedUserId = undefined;
+    removeSpectator(match, request.userId);
     saveMatch(match);
 
     return {
@@ -184,6 +221,7 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
     rejoinableSeat.isHost = rejoinableSeat.isHost || match.seats.every((seat) => !seat.isHost);
     rejoinableSeat.disconnectedUserId = undefined;
     rejoinableSeat.difficulty = undefined;
+    removeSpectator(match, request.userId);
     saveMatch(match);
 
     return {
@@ -194,7 +232,14 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
   }
 
   if (match.status !== "lobby") {
-    throw new Error("You can only join a running match by reclaiming your previous seat");
+    upsertSpectator(match, request);
+    saveMatch(match);
+
+    return {
+      match: buildPublicMatchState(match, request.userId),
+      localSeatNumber: null,
+      playerSessionToken: issuePlayerSession(instanceId, request.userId)
+    };
   }
 
   const seatNumber = findNextOpenSeat(match);
@@ -215,6 +260,7 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
   };
 
   match.seats.push(seat);
+  removeSpectator(match, request.userId);
 
   if (!match.seats.some((candidate) => candidate.isHost)) {
     assignHost(match, request.userId);
@@ -650,6 +696,13 @@ export function devRandomDiceRoll(instanceId: string, userId: string, targetSeat
 
 export function disconnectPlayer(instanceId: string, userId: string, _request: DisconnectRequest): MatchState {
   const match = requireMatch(instanceId);
+  if (isSpectator(match, userId)) {
+    removeSpectator(match, userId);
+    revokePlayerSession(instanceId, userId);
+    saveMatch(match);
+    return buildPublicMatchState(match, userId);
+  }
+
   const seat = getSeatByUserId(match, userId);
   if (seat == null) {
     return match;
@@ -724,6 +777,7 @@ export function playMatchCard(instanceId: string, userId: string, request: PlayC
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   playCardFromHand(match, userId, request);
@@ -737,6 +791,7 @@ export function devDrawCard(instanceId: string, userId: string, cardId: string):
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
   if (baseCardDefinitionById[cardId] == null) {
     throw new Error(`Unknown card: ${cardId}`);
   }
@@ -757,6 +812,7 @@ export function respondMatchAction(instanceId: string, userId: string, request: 
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   respondToPendingAction(match, userId, request);
@@ -770,6 +826,7 @@ export function selectMatchObject(instanceId: string, userId: string, objectInst
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   selectPendingObject(match, userId, objectInstanceId);
@@ -783,6 +840,7 @@ export function acknowledgeMatchHandInspection(instanceId: string, userId: strin
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   acknowledgePendingHandInspection(match, userId);
@@ -796,6 +854,7 @@ export function acknowledgeMatchPublicHandReveal(instanceId: string, userId: str
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   acknowledgePendingPublicHandReveal(match, userId);
@@ -809,6 +868,7 @@ export function resolveMatchBoardResetKeep(instanceId: string, userId: string, r
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   resolvePendingBoardResetKeep(match, userId, request.cardInstanceId);
@@ -822,6 +882,7 @@ export function resolveMatchDeathSearch(instanceId: string, userId: string, requ
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   resolvePendingDeathSearch(match, userId, request);
@@ -835,6 +896,7 @@ export function resolveMatchPickpocket(instanceId: string, userId: string, reque
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   resolvePendingPickpocket(match, userId, request);
@@ -848,6 +910,7 @@ export function resolveMatchSacrificeChoice(instanceId: string, userId: string, 
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   resolvePendingSacrificeChoice(match, userId, request.amount);
@@ -861,6 +924,7 @@ export function resolveMatchCurseRelease(instanceId: string, userId: string, cho
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   resolvePendingCurseRelease(match, userId, choice);
@@ -874,6 +938,7 @@ export function passMatchForcedFollowUp(instanceId: string, userId: string): Mat
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
   }
+  requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
   passForcedFollowUp(match, userId);

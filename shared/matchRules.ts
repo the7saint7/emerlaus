@@ -17,6 +17,7 @@ export function createEmptyMatch(instanceId: string, maxSeats = 10): MatchState 
     maxSeats,
     enabledExpansions: { ...defaultMatchExpansionSettings },
     seats: [],
+    spectators: [],
     createdAt: new Date().toISOString()
   };
 }
