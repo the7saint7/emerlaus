@@ -2349,6 +2349,26 @@ function removeObjectFromSeat(match: StoredMatchState, ownerSeatNumber: number, 
   return removed;
 }
 
+function removeAllObjectsFromSeat(match: StoredMatchState, ownerSeatNumber: number): StoredCardInstance[] {
+  const game = match.internalGame;
+  if (game == null) {
+    return [];
+  }
+
+  const owner = getStoredSeat(game, ownerSeatNumber);
+  if (owner.objects.length === 0) {
+    return [];
+  }
+
+  const removed = [...owner.objects];
+  owner.objects = [];
+  for (const card of removed) {
+    appendServerDebugLog(match, "object", `Seat ${ownerSeatNumber} lost object ${requireDefinition(card.cardId).name}`);
+  }
+  syncObjectOwnershipStats(match);
+  return removed;
+}
+
 function maybePassChanceRoll(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -4546,7 +4566,7 @@ function applyEffect(
 
       if (effect.mode === "all") {
         for (const targetSeatNumber of targetSeatNumbers) {
-          const removed = removeObjectFromSeat(match, targetSeatNumber);
+          const removed = removeAllObjectsFromSeat(match, targetSeatNumber);
           discardInstances(game, removed);
         }
       } else {
