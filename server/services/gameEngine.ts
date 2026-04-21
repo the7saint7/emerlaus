@@ -2012,6 +2012,10 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
     };
   }
 
+  if (pendingAction.targetSeatNumbers.includes(seatNumber) && temporalStopSuppressed) {
+    return options;
+  }
+
   if (
     pendingDefinition.defenseBand?.annulationAllowed &&
     annulations.length >= (pendingAction.responseMode === "collective" ? 1 : pendingDefinition.defenseBand.annulationCardsRequired)
