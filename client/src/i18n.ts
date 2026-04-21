@@ -1243,6 +1243,7 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
       : {
           ...match.game,
           discardTop: match.game.discardTop == null ? undefined : localizeCardView(match.game.discardTop, language),
+          viergeReplayCard: match.game.viergeReplayCard == null ? undefined : localizeCardView(match.game.viergeReplayCard, language),
           lastPlayedCard: localizePlayedCardState(match.game.lastPlayedCard, language),
           pendingAction: match.game.pendingAction == null
             ? undefined

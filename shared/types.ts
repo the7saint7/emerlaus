@@ -344,6 +344,7 @@ export interface GameState {
   deckCount: number;
   discardCount: number;
   discardTop?: CardView;
+  viergeReplayCard?: CardView;
   lastPlayedCard?: PlayedCardState;
   diceRolls: DiceRollEvent[];
   presentationEvents: CombatPresentationEvent[];

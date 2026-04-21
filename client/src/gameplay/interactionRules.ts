@@ -4,18 +4,31 @@ function isAttackCard(card: CardView): boolean {
   return ["AD", "AM", "S", "E", "CO", "ST", "SO"].includes(card.categoryCode);
 }
 
-export function cardNeedsArrow(card: CardView): boolean {
-  return card.targets === "single_opponent";
+export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?: CardView): CardView["targets"] {
+  if (
+    card.cardId === "vierge"
+    && viergeReplayCard != null
+    && viergeReplayCard.categoryCode === "AD"
+  ) {
+    return viergeReplayCard.targets;
+  }
+
+  return card.targets;
 }
 
-export function cardIsLiftPlayable(card: CardView): boolean {
+export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boolean {
+  return getEffectiveInteractionTargets(card, viergeReplayCard) === "single_opponent";
+}
+
+export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView): boolean {
+  const targets = getEffectiveInteractionTargets(card, viergeReplayCard);
   return (
     card.categoryCode === "O"
-    || card.targets === "self"
-    || card.targets === "self_or_single_opponent"
-    || card.targets === "all_opponents"
-    || card.targets === "left_opponent"
-    || card.targets === "none"
+    || targets === "self"
+    || targets === "self_or_single_opponent"
+    || targets === "all_opponents"
+    || targets === "left_opponent"
+    || targets === "none"
     || card.selectionMode === "confirm"
   );
 }
@@ -126,7 +139,8 @@ export function isSeatTargetable(
   selectedCard: CardView | undefined,
   seat: SeatState,
   localSeatNumber: number,
-  forcedTargetSeatNumber?: number
+  forcedTargetSeatNumber?: number,
+  viergeReplayCard?: CardView
 ): boolean {
   if (selectedCard == null || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
     return false;
@@ -152,10 +166,11 @@ export function isSeatTargetable(
     return false;
   }
 
+  const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
   return (
-    selectedCard.targets === "single_opponent"
-    || selectedCard.targets === "self_or_single_opponent"
-    || selectedCard.targets === "single_player_or_object"
+    targets === "single_opponent"
+    || targets === "self_or_single_opponent"
+    || targets === "single_player_or_object"
   );
 }
 

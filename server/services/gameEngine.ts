@@ -1509,6 +1509,33 @@ function buildCardView(
   };
 }
 
+function buildReplayPreviewCardView(cardId: string): CardView {
+  const definition = requireDefinition(cardId);
+  return {
+    instanceId: `preview:${cardId}`,
+    cardId: definition.id,
+    name: definition.name,
+    description: definition.description,
+    imageUrl: publicImageUrl(definition.image.importedAssetPath),
+    categoryCode: definition.category.code,
+    categoryLabel: definition.category.label,
+    selectionMode: definition.rules.selectionMode,
+    targets: definition.rules.targets,
+    defenseBand: definition.defenseBand,
+    canPlay: false,
+    zone: "discard"
+  };
+}
+
+function buildPendingActionPresentationCard(pendingAction: StoredPendingActionState): CardView {
+  return pendingAction.presentationCard ?? buildCardView(
+    pendingAction.storedCard,
+    requireDefinition(pendingAction.storedCard.cardId),
+    pendingAction.sourceZone === "object" ? "object" : "discard",
+    false
+  );
+}
+
 function getRequiredFollowUpCategory(definition: BaseCardDefinition): CardCategoryCode | undefined {
   switch (definition.id) {
     case "ad-points-de-vie":
@@ -3351,22 +3378,23 @@ interface ResistanceRollOutcome {
   detonationTriggered: boolean;
 }
 
-function getResistanceRollCount(
+function getBaseResistanceRollCount(definition: BaseCardDefinition): number {
+  return Math.max(1, definition.defenseBand?.resistance.rollsRequired || 1);
+}
+
+function getExtraResistanceRollCount(
   match: StoredMatchState,
   definition: BaseCardDefinition,
   targetSeatNumber: number
 ): number {
   const game = match.internalGame;
-  const baseRollsRequired = Math.max(1, definition.defenseBand?.resistance.rollsRequired || 1);
   if (game == null || !isAttackLikeDefinition(definition)) {
-    return baseRollsRequired;
+    return 0;
   }
 
-  const extraRolls = getStoredSeat(game, targetSeatNumber).objects.reduce((count, objectInstance) => (
+  return getStoredSeat(game, targetSeatNumber).objects.reduce((count, objectInstance) => (
     EXTRA_RESISTANCE_ROLL_OBJECT_CARD_IDS.has(objectInstance.cardId) ? count + 1 : count
   ), 0);
-
-  return baseRollsRequired + extraRolls;
 }
 
 function getFatalResistanceCurseStatus(match: StoredMatchState, seatNumber: number, rollTotal: number): StoredSeatStatus | undefined {
@@ -3411,7 +3439,8 @@ function rollResistanceForAction(
   definition: BaseCardDefinition,
   targetSeatNumber: number,
   responderChoice: ResponseChoiceType,
-  rollsRequired: number,
+  baseRollsRequired: number,
+  extraRolls = 0,
   attemptLabel?: string
 ): ResistanceRollOutcome {
   if (!canAttemptResistance(match, pendingAction, definition, targetSeatNumber, responderChoice)) {
@@ -3440,7 +3469,7 @@ function rollResistanceForAction(
   let criticalSuccess = false;
   let detonationTriggered = false;
   getSeatSessionStats(game, targetSeatNumber).resistAttempts += 1;
-  for (let rollIndex = 0; rollIndex < Math.max(1, rollsRequired); rollIndex += 1) {
+  const attemptSingleRoll = (): "success" | "failure" | "critical_success" | "fatal_failure" | "detonation" => {
     const roll = rollDiceNotationDetailed("1D20");
     publishSeatDiceRoll(match, targetSeatNumber, "1D20", roll.total, roll.values, pendingAction.boxId);
     recordLuckOutcome(match, targetSeatNumber, "1D20", roll.total, false);
@@ -3466,25 +3495,88 @@ function rollResistanceForAction(
         setSeatHp(match, targetSeatNumber, 0);
       }
       handleSeatDeath(match, targetSeatNumber, false, fatalCurseStatus.sourceSeatNumber);
-      break;
+      return "detonation";
     }
 
     if (roll.total === 20) {
-      resisted = false;
       fatalFailure = true;
-      break;
+      return "fatal_failure";
     }
 
     if (roll.total === 1) {
       // Critical success: resist is guaranteed, no damage even on yellow sphere
       criticalSuccess = true;
-      break;
+      return "critical_success";
     }
 
     if (roll.total > threshold) {
+      return "failure";
+    }
+
+    return "success";
+  };
+
+  const attemptGroupedExtraRoll = (rollCount: number): "success" | "failure" | "critical_success" | "fatal_failure" | "detonation" => {
+    const notation = `${Math.max(2, rollCount)}D20`;
+    const roll = rollDiceNotationDetailed(notation);
+    const keptTotal = Math.min(...roll.values);
+    publishSeatDiceRoll(match, targetSeatNumber, notation, keptTotal, roll.values, pendingAction.boxId);
+    recordLuckOutcome(match, targetSeatNumber, "1D20", keptTotal, false);
+    const fatalCurseStatus = getFatalResistanceCurseStatus(match, targetSeatNumber, keptTotal);
+    if (fatalCurseStatus != null) {
+      detonationTriggered = true;
       resisted = false;
+      const targetSeat = getPublicSeat(match, targetSeatNumber);
+      appendDealerMessage(match, `${targetSeat.displayName} rolled 13 on resistance and dies from ${requireDefinition(fatalCurseStatus.cardId).name}.`);
+      appendServerDebugLog(
+        match,
+        "curse",
+        `Seat ${targetSeatNumber} rolled 13 on resistance and was killed by ${requireDefinition(fatalCurseStatus.cardId).name}${labelSuffix}`
+      );
+      if (targetSeat.hp > 0) {
+        pushPresentationEvent(match, {
+          boxId: pendingAction.boxId,
+          type: "hp_loss",
+          seatNumber: targetSeatNumber,
+          cardName: requireDefinition(fatalCurseStatus.cardId).name,
+          amount: targetSeat.hp
+        });
+        setSeatHp(match, targetSeatNumber, 0);
+      }
+      handleSeatDeath(match, targetSeatNumber, false, fatalCurseStatus.sourceSeatNumber);
+      return "detonation";
+    }
+
+    if (keptTotal === 20) {
+      fatalFailure = true;
+      return "fatal_failure";
+    }
+
+    if (keptTotal === 1) {
+      criticalSuccess = true;
+      return "critical_success";
+    }
+
+    if (keptTotal > threshold) {
+      return "failure";
+    }
+
+    return "success";
+  };
+
+  for (let rollIndex = 0; rollIndex < Math.max(1, baseRollsRequired); rollIndex += 1) {
+    const outcome = extraRolls > 0
+      ? attemptGroupedExtraRoll(1 + extraRolls)
+      : attemptSingleRoll();
+    if (outcome === "success") {
+      continue;
+    }
+    if (outcome === "critical_success") {
+      resisted = true;
       break;
     }
+    resisted = false;
+    break;
   }
 
   pushPresentationEvent(match, {
@@ -5160,6 +5252,9 @@ function buildPublicGameState(match: StoredMatchState, viewerSeatNumber?: number
     discardTop: discardTop == null
       ? undefined
       : buildCardView(discardTop, requireDefinition(discardTop.cardId), "discard", false),
+    viergeReplayCard: game.lastViergeReplay == null
+      ? undefined
+      : buildReplayPreviewCardView(game.lastViergeReplay.cardId),
     lastPlayedCard: game.lastPlayedCard,
     diceRolls: [...game.diceRolls],
     presentationEvents: [...game.presentationEvents],
@@ -5223,12 +5318,7 @@ function buildPendingActionPublicState(match: StoredMatchState): PendingActionSt
     targetSeatNumbers: [...pendingAction.targetSeatNumbers],
     responderSeatNumbers: [...pendingAction.responderSeatNumbers],
     targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-    card: buildCardView(
-      pendingAction.storedCard,
-      requireDefinition(pendingAction.storedCard.cardId),
-      pendingAction.sourceZone === "object" ? "object" : "discard",
-      false
-    ),
+    card: buildPendingActionPresentationCard(pendingAction),
     summary: pendingAction.summary,
     responseMode: pendingAction.responseMode,
     fromMirror: pendingAction.fromMirror,
@@ -5744,6 +5834,7 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
     targetSeatNumbers: [reflectTargetSeatNumber],
     responderSeatNumbers: targetAlive ? [reflectTargetSeatNumber] : [],
     storedCard: pendingAction.storedCard,
+    presentationCard: pendingAction.presentationCard,
     summary: newSummary,
     responseMode: "per_target",
     sourceZone: pendingAction.sourceZone ?? "hand",
@@ -5762,12 +5853,7 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
     createdAt: new Date().toISOString(),
     actorSeatNumber: mirrorPlayerSeatNumber,
     targetSeatNumbers: [reflectTargetSeatNumber],
-    card: buildCardView(
-      pendingAction.storedCard,
-      definition,
-      pendingAction.sourceZone === "object" ? "object" : "discard",
-      false
-    ),
+    card: buildPendingActionPresentationCard(pendingAction),
     summary: newSummary,
     fromMirror: true,
     mirrorOriginActorSeatNumber: originActorSeatNumber
@@ -5901,7 +5987,8 @@ function beginPendingAction(
   definition: BaseCardDefinition,
   request: PlayCardRequest,
   targetSeatNumbers: number[],
-  skipStoredCardResolution = false
+  skipStoredCardResolution = false,
+  presentationCard?: CardView
 ): void {
   const game = match.internalGame;
   if (game == null) {
@@ -5922,7 +6009,7 @@ function beginPendingAction(
     actorSeatNumber,
     targetSeatNumbers: [...targetSeatNumbers],
     targetObjectInstanceId: request.targetObjectInstanceId,
-    card: buildCardView(removedCard, definition, "discard", false),
+    card: presentationCard ?? buildCardView(removedCard, definition, "discard", false),
     summary
   });
   appendServerDebugLog(
@@ -5938,6 +6025,7 @@ function beginPendingAction(
     responderSeatNumbers,
     targetObjectInstanceId: request.targetObjectInstanceId,
     storedCard: removedCard,
+    presentationCard,
     summary,
     responseMode: isSelfTargetedSinglePlayerSpell(definition, actorSeatNumber, targetSeatNumbers)
       ? "collective"
@@ -6102,7 +6190,8 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
       definition,
       targetSeatNumber,
       responder.choice,
-      getResistanceRollCount(match, definition, targetSeatNumber),
+      getBaseResistanceRollCount(definition),
+      getExtraResistanceRollCount(match, definition, targetSeatNumber),
       damageEffects.length > 1 ? `attack ${damageEffectIndex}/${damageEffects.length}` : undefined
     );
     if (resistanceOutcome.detonationTriggered) {
@@ -6226,7 +6315,8 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
       definition,
       targetSeatNumber,
       responder.choice,
-      getResistanceRollCount(match, definition, targetSeatNumber)
+      getBaseResistanceRollCount(definition),
+      getExtraResistanceRollCount(match, definition, targetSeatNumber)
     );
     resisted = outcome.resisted;
     fatalFailure = outcome.fatalFailure;
@@ -6511,12 +6601,7 @@ function finalizePendingAction(match: StoredMatchState): void {
     actorSeatNumber: pendingAction.actorSeatNumber,
     targetSeatNumbers: [...pendingAction.targetSeatNumbers],
     targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-    card: buildCardView(
-      pendingAction.storedCard,
-      definition,
-      pendingAction.sourceZone === "object" ? "object" : "discard",
-      false
-    ),
+    card: buildPendingActionPresentationCard(pendingAction),
     mode: "active",
     summary: pendingAction.summary,
     resolvedAt: new Date().toISOString()
@@ -6605,12 +6690,7 @@ function resolvePendingAction(match: StoredMatchState): void {
       actorSeatNumber: pendingAction.actorSeatNumber,
       targetSeatNumbers: [...pendingAction.targetSeatNumbers],
       targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-      card: buildCardView(
-        pendingAction.storedCard,
-        definition,
-        pendingAction.sourceZone === "object" ? "object" : "discard",
-        false
-      ),
+      card: buildPendingActionPresentationCard(pendingAction),
       mode: "active",
       summary: pendingAction.summary,
       resolvedAt: new Date().toISOString()
@@ -6740,7 +6820,8 @@ function resolvePendingAction(match: StoredMatchState): void {
         definition,
         targetSeatNumber,
         responder.choice,
-        getResistanceRollCount(match, definition, targetSeatNumber)
+        getBaseResistanceRollCount(definition),
+        getExtraResistanceRollCount(match, definition, targetSeatNumber)
       );
       if (outcome.criticalSuccess) {
         resistedTargets.add(targetSeatNumber);
@@ -7045,12 +7126,7 @@ function resolvePendingAction(match: StoredMatchState): void {
     actorSeatNumber: pendingAction.actorSeatNumber,
     targetSeatNumbers: [...pendingAction.targetSeatNumbers],
     targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-    card: buildCardView(
-      pendingAction.storedCard,
-      definition,
-      pendingAction.sourceZone === "object" ? "object" : "discard",
-      false
-    ),
+    card: buildPendingActionPresentationCard(pendingAction),
     mode: "active",
     summary: pendingAction.summary,
     resolvedAt: new Date().toISOString()
@@ -7520,12 +7596,7 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
       actorSeatNumber: pendingAction.actorSeatNumber,
       targetSeatNumbers: [...pendingAction.targetSeatNumbers],
       targetObjectInstanceId: pendingAction.targetObjectInstanceId,
-      card: buildCardView(
-        pendingAction.storedCard,
-        definition,
-        pendingAction.sourceZone === "object" ? "object" : "discard",
-        false
-      ),
+      card: buildPendingActionPresentationCard(pendingAction),
       mode: "active",
       summary: pendingAction.summary,
       resolvedAt: new Date().toISOString()
@@ -7812,6 +7883,7 @@ function resolveRemovedCardPlay(
     skipStoredCardResolution?: boolean;
     fizzleIfInvalid?: boolean;
     summaryOverride?: string;
+    presentationCard?: CardView;
   }
 ): void {
   const game = match.internalGame;
@@ -7916,6 +7988,7 @@ function resolveRemovedCardPlay(
   }
 
   const summary = options?.summaryOverride ?? describePlay(match, actorSeatNumber, definition, request, effectiveTargetSeatNumbers);
+  const presentationCard = options?.presentationCard ?? buildCardView(removedCard, definition, "discard", false);
   appendServerDebugLog(
     match,
     "play_card",
@@ -7937,7 +8010,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -7955,7 +8028,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -7975,7 +8048,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       summary
     });
 
@@ -7988,7 +8061,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -8015,7 +8088,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       summary
     });
 
@@ -8028,7 +8101,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -8053,7 +8126,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       summary
     });
 
@@ -8066,7 +8139,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -8107,7 +8180,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -8122,21 +8195,34 @@ function resolveRemovedCardPlay(
 
     const replayDefinition = requireDefinition(replay.cardId);
     appendServerDebugLog(match, "repeat", `Seat ${actorSeatNumber} uses ${definition.name} to reproduce ${replayDefinition.name}`);
+    const replayRequest: PlayCardRequest = {
+      cardInstanceId: removedCard.instanceId,
+      mode: "active"
+    };
+    switch (replayDefinition.rules.targets) {
+      case "single_opponent":
+      case "self_or_single_opponent":
+      case "single_player_or_object":
+        replayRequest.targetSeatNumber = request.targetSeatNumber;
+        break;
+      case "target_object":
+        replayRequest.targetObjectInstanceId = request.targetObjectInstanceId;
+        break;
+      default:
+        break;
+    }
     resolveRemovedCardPlay(
       match,
       actorSeatNumber,
       { instanceId: randomUUID(), cardId: replay.cardId },
       replayDefinition,
-      {
-        ...clonePlayCardRequest(replay.request),
-        cardInstanceId: removedCard.instanceId,
-        mode: "active"
-      },
+      replayRequest,
       undefined,
       {
         skipStoredCardResolution: true,
         fizzleIfInvalid: true,
-        summaryOverride: `${actorSeat.displayName}'s ${definition.name} reproduces ${replayDefinition.name}.`
+        summaryOverride: `${actorSeat.displayName}'s ${definition.name} reproduces ${replayDefinition.name}.`,
+        presentationCard
       }
     );
     return;
@@ -8153,7 +8239,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       summary
     });
 
@@ -8166,7 +8252,7 @@ function resolveRemovedCardPlay(
       actorSeatNumber,
       targetSeatNumbers: effectiveTargetSeatNumbers,
       targetObjectInstanceId: request.targetObjectInstanceId,
-      card: buildCardView(removedCard, definition, "discard", false),
+      card: presentationCard,
       mode: request.mode,
       summary,
       resolvedAt: new Date().toISOString()
@@ -8215,7 +8301,8 @@ function resolveRemovedCardPlay(
       definition,
       request,
       effectiveTargetSeatNumbers,
-      options?.skipStoredCardResolution === true
+      options?.skipStoredCardResolution === true,
+      presentationCard
     );
     refreshSeatSummaries(match);
     return;
@@ -8231,7 +8318,7 @@ function resolveRemovedCardPlay(
     actorSeatNumber,
     targetSeatNumbers: effectiveTargetSeatNumbers,
     targetObjectInstanceId: request.targetObjectInstanceId,
-    card: buildCardView(removedCard, definition, "discard", false),
+    card: presentationCard,
     summary
   });
 
@@ -8266,7 +8353,7 @@ function resolveRemovedCardPlay(
         actorSeatNumber,
         targetSeatNumbers: effectiveTargetSeatNumbers,
         targetObjectInstanceId: request.targetObjectInstanceId,
-        card: buildCardView(removedCard, definition, "discard", false),
+        card: presentationCard,
         mode: request.mode,
         summary,
         resolvedAt: new Date().toISOString()
@@ -8296,7 +8383,7 @@ function resolveRemovedCardPlay(
     actorSeatNumber,
     targetSeatNumbers: effectiveTargetSeatNumbers,
     targetObjectInstanceId: request.targetObjectInstanceId,
-    card: buildCardView(removedCard, definition, "discard", false),
+    card: presentationCard,
     mode: request.mode,
     summary,
     resolvedAt: new Date().toISOString()

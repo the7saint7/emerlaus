@@ -8,6 +8,7 @@ import {
   canLoadMassAttackStaff,
   cardIsLiftPlayable,
   cardNeedsArrow,
+  getEffectiveInteractionTargets,
   getCollectiveAnnulationPrompt,
   getResponseChoiceForCard,
   isObjectTargetable,
@@ -827,7 +828,8 @@ function createCardFace(
   layout: HandCardLayout,
   dimmed: boolean,
   imageVariant: CardImageVariant = "full",
-  onTextureReady?: () => void
+  onTextureReady?: () => void,
+  viergeReplayCard?: CardView | null
 ): Container {
   const cardContainer = new Container();
   cardContainer.position.set(layout.x, layout.y);
@@ -860,6 +862,29 @@ function createCardFace(
   }
 
   cardContainer.addChild(outer, inner, artFrame, artContent);
+  if (layout.card.cardId === "vierge" && viergeReplayCard != null) {
+    const insetWidth = Math.max(34, layout.width * 0.32);
+    const insetHeight = insetWidth * 1.42;
+    const insetX = layout.width / 2 - insetWidth / 2 - 10;
+    const insetY = -layout.height / 2 + insetHeight / 2 + 10;
+    cardContainer.addChild(
+      createRect(insetX - insetWidth / 2 - 2, insetY - insetHeight / 2 - 2, insetWidth + 4, insetHeight + 4, "#eadbb8", 0.96, 8),
+      createRect(insetX - insetWidth / 2, insetY - insetHeight / 2, insetWidth, insetHeight, "#1a1411", 1, 6)
+    );
+    const replayTextureUrl = getCardTextureUrl(viergeReplayCard, "thumb");
+    const replayTexture = getLoadedTexture(replayTextureUrl);
+    if (replayTexture != null) {
+      const replaySprite = new Sprite(replayTexture);
+      const fittedReplay = fitSpriteToBox(replayTexture, insetWidth - 4, insetHeight - 4);
+      replaySprite.anchor.set(0.5);
+      replaySprite.position.set(insetX, insetY);
+      replaySprite.width = fittedReplay.width;
+      replaySprite.height = fittedReplay.height;
+      cardContainer.addChild(replaySprite);
+    } else {
+      requestTextureLoad(replayTextureUrl, onTextureReady ?? (() => {}));
+    }
+  }
   return cardContainer;
 }
 
@@ -871,7 +896,8 @@ function createCenterCardFace(
   height: number,
   rotation = 0,
   imageVariant: CardImageVariant = "thumb",
-  onTextureReady?: () => void
+  onTextureReady?: () => void,
+  viergeReplayCard?: CardView | null
 ): Container {
   const layout: HandCardLayout = {
     card,
@@ -884,7 +910,7 @@ function createCenterCardFace(
     zIndex: 0
   };
 
-  return createCardFace(layout, false, imageVariant, onTextureReady);
+  return createCardFace(layout, false, imageVariant, onTextureReady, viergeReplayCard);
 }
 
 function createFlightCardFace(
@@ -930,7 +956,8 @@ function renderObjectRow(
   selectedCard: CardView | undefined,
   hoverTarget: PixiDragHoverTarget | null,
   batonLoadScale?: number,
-  onTextureReady?: () => void
+  onTextureReady?: () => void,
+  viergeReplayCard?: CardView | null
 ): RenderObjectRowResult {
   const objects = seat.objects ?? [];
   const statuses = seat.statuses ?? [];
@@ -1024,6 +1051,29 @@ function renderObjectRow(
         fontWeight: "700",
         fill: "#d4c7ac"
       }, 0.5, 0.5));
+    }
+
+    if (card.cardId === "vierge" && viergeReplayCard != null) {
+      const insetWidth = Math.max(24, dW * 0.32);
+      const insetHeight = insetWidth * 1.42;
+      const insetX = dX + dW - insetWidth - 6;
+      const insetY = dY + 6;
+      scene.addChild(
+        createRect(insetX - 2, insetY - 2, insetWidth + 4, insetHeight + 4, "#eadbb8", 0.96, 6),
+        createRect(insetX, insetY, insetWidth, insetHeight, "#1a1411", 1, 4)
+      );
+      const replayTextureUrl = getCardTextureUrl(viergeReplayCard, "thumb");
+      const replayTexture = getLoadedTexture(replayTextureUrl);
+      if (replayTexture != null) {
+        const replaySprite = new Sprite(replayTexture);
+        const fittedReplay = fitSpriteToBox(replayTexture, insetWidth - 4, insetHeight - 4);
+        replaySprite.position.set(insetX + (insetWidth - fittedReplay.width) / 2, insetY + (insetHeight - fittedReplay.height) / 2);
+        replaySprite.width = fittedReplay.width;
+        replaySprite.height = fittedReplay.height;
+        scene.addChild(replaySprite);
+      } else {
+        requestTextureLoad(replayTextureUrl, onTextureReady ?? (() => {}));
+      }
     }
 
     if (!isStatus && (card.attachedCardCount ?? 0) > 0) {
@@ -2004,7 +2054,8 @@ function renderTableScene(
   targetHintDismissed: boolean,
   batonLoadScale: number,
   replayNow: number,
-  localHandDealAnimatingUntil: ReadonlyMap<string, number>
+  localHandDealAnimatingUntil: ReadonlyMap<string, number>,
+  viergeReplayCard?: CardView | null
 ): TableInteractionGeometry {
   const now = Date.now();
   const playerSeat = getLocalSeat(match, playerSeatNumber);
@@ -2133,7 +2184,7 @@ function renderTableScene(
       width: seatWidth,
       height: seatHeight
     });
-    const targetable = isSeatTargetable(draggedCard, seat, playerSeatNumber);
+      const targetable = isSeatTargetable(draggedCard, seat, playerSeatNumber, undefined, viergeReplayCard ?? undefined);
     if (targetable) {
       seatTargets.push({
         seatNumber: seat.seatNumber,
@@ -2186,7 +2237,8 @@ function renderTableScene(
       draggedCard,
       interactionState.dragHoverTarget,
       undefined,
-      onTextureReady
+      onTextureReady,
+      viergeReplayCard
     );
     objectTargets.push(...opponentObjectRow.objectTargets);
     inspectTargets.push(...opponentObjectRow.inspectTargets);
@@ -2207,7 +2259,8 @@ function renderTableScene(
       draggedCard,
       interactionState.dragHoverTarget,
       batonLoadScale,
-      onTextureReady
+      onTextureReady,
+      viergeReplayCard
     );
     objectTargets.push(...localObjectRow.objectTargets);
     inspectTargets.push(...localObjectRow.inspectTargets);
@@ -2248,7 +2301,8 @@ function renderTableScene(
       draggedCard,
       interactionState.dragHoverTarget,
       undefined,
-      onTextureReady
+      onTextureReady,
+      viergeReplayCard
     );
     objectTargets.push(...spectatorObjectRow.objectTargets);
     inspectTargets.push(...spectatorObjectRow.inspectTargets);
@@ -2362,7 +2416,8 @@ function renderTableScene(
         165,
         0,
         "thumb",
-        onTextureReady
+        onTextureReady,
+        viergeReplayCard
       ));
       inspectTargets.push({
         card,
@@ -2400,7 +2455,8 @@ function renderTableScene(
         isTop ? 220 : 200,
         isTop ? 0 : -0.08,
         "thumb",
-        onTextureReady
+        onTextureReady,
+        viergeReplayCard
       ));
       inspectTargets.push({
         card,
@@ -2573,7 +2629,7 @@ function renderTableScene(
         continue;
       }
 
-      handContainer.addChild(createCardFace(layout, false, "full", onTextureReady));
+      handContainer.addChild(createCardFace(layout, false, "full", onTextureReady, viergeReplayCard));
     }
 
     if (interactionState.draggingCardInstanceId !== "") {
@@ -2586,7 +2642,7 @@ function renderTableScene(
           rotation: 0,
           scale: 1.14
         };
-        scene.addChild(createCardFace(floatingLayout, false, "full", onTextureReady));
+        scene.addChild(createCardFace(floatingLayout, false, "full", onTextureReady, viergeReplayCard));
       }
     }
 
@@ -2597,7 +2653,7 @@ function renderTableScene(
           ...arrowCardLayout,
           y: arrowCardLayout.y - 28,
           scale: 1.14
-        }, false, "full", onTextureReady));
+        }, false, "full", onTextureReady, viergeReplayCard));
       }
 
       const nearestSeat = seatTargets.find((target) => target.seatNumber === interactionState.arrowDrag?.nearestSeatNumber);
@@ -6071,7 +6127,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const beginHandCardInteraction = (layout: HandCardLayout, point: StagePoint): void => {
     setHoveredCardInstanceId(layout.card.instanceId);
 
-    if (cardNeedsArrow(layout.card)) {
+    if (cardNeedsArrow(layout.card, match.game?.viergeReplayCard)) {
       interactionState.arrowDrag = {
         cardInstanceId: layout.card.instanceId,
         originX: layout.x,
@@ -6116,7 +6172,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return { kind: "response-slot" };
     }
 
-    if (cardIsLiftPlayable(card) && pointInRect(point, currentGeometry.playSlot)) {
+    if (cardIsLiftPlayable(card, match.game?.viergeReplayCard) && pointInRect(point, currentGeometry.playSlot)) {
       return { kind: "play-slot" };
     }
 
@@ -6374,7 +6430,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         targetHintDismissed,
         batonLoadScale,
         replayNow,
-        localHandDealAnimatingUntil
+        localHandDealAnimatingUntil,
+        displayMatch.game?.viergeReplayCard ?? null
       );
     }
 
@@ -7489,10 +7546,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         showBlockedCardMessage(draggedCard);
         return;
       }
+      const effectiveTargets = getEffectiveInteractionTargets(draggedCard, match.game?.viergeReplayCard);
       await performCardPlay({
         cardInstanceId: draggedCard.instanceId,
         mode: "active",
-        targetSeatNumber: draggedCard.targets === "self_or_single_opponent" ? localSeatNumber : undefined
+        targetSeatNumber: effectiveTargets === "self_or_single_opponent" ? localSeatNumber : undefined
       });
       return;
     }

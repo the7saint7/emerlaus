@@ -1,4 +1,5 @@
 import type {
+  CardView,
   CombatPresentationEvent,
   DebugLogEntry,
   DiceRollEvent,
@@ -47,6 +48,7 @@ export interface StoredPendingActionResponderState extends Omit<PendingActionRes
 
 export interface StoredPendingActionState extends Omit<PendingActionState, "card" | "responders"> {
   storedCard: StoredCardInstance;
+  presentationCard?: CardView;
   responders: StoredPendingActionResponderState[];
   createdAt: string;
   sourceZone?: "hand" | "object";
