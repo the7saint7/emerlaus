@@ -1050,7 +1050,7 @@ export const puissanceCardDefinitions = [
         resistanceAccrueAllowed: true,
         annulationAllowed: true,
         annulationCardsRequired: 2,
-        mirrorAllowed: true
+        mirrorAllowed: false
       },
       implementation: {
         status: "manual",
