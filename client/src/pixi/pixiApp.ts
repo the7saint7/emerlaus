@@ -130,6 +130,7 @@ interface HandCardLayout {
   rotation: number;
   scale: number;
   zIndex: number;
+  opacity?: number;
 }
 
 interface SeatTargetGeometry {
@@ -312,11 +313,15 @@ const HAND_DRAG_START_DISTANCE = 16;
 const CURSOR_THROTTLE_MS = 50;
 const GHOST_TIMEOUT_MS = 500;
 const TURN_PASTILLE_MOVE_MS = 540;
+const HAND_DEAL_ANIMATION_MS = 950;
+const HAND_DEAL_START_ROTATION = (-8 * Math.PI) / 180;
+const LOCAL_HAND_CATEGORY_SORT_ORDER = ["A", "O", "CO", "AD", "AM", "SO", "ST", "S", "E", "CA"] as const;
 const DEV_SEAT_VISUAL_EFFECT_IDS: SeatVisualEffectId[] = ["frozen"];
 const MAX_RENDER_RESOLUTION = 1.25;
 const MAX_TEXTURE_CACHE_SIZE = 72;
 const TEXTURE_CACHE_IDLE_MS = 30_000;
 let currentFrameTextureUsage = new Set<string>();
+const localHandCategorySortRankByCode = new Map(LOCAL_HAND_CATEGORY_SORT_ORDER.map((code, index) => [code, index]));
 
 function createRect(x: number, y: number, width: number, height: number, color: string, alpha = 1, radius = 0): Graphics {
   const rect = new Graphics();
@@ -331,6 +336,25 @@ function createRect(x: number, y: number, width: number, height: number, color: 
 
 function createCircle(x: number, y: number, radius: number, color: string, alpha = 1): Graphics {
   return new Graphics().circle(x, y, radius).fill({ color, alpha });
+}
+
+function sortLocalHand(cards: CardView[] | undefined): CardView[] {
+  if (cards == null || cards.length <= 1) {
+    return cards == null ? [] : [...cards];
+  }
+
+  return cards
+    .map((card, index) => ({ card, index }))
+    .sort((left, right) => {
+      const leftRank = localHandCategorySortRankByCode.get(left.card.categoryCode) ?? Number.MAX_SAFE_INTEGER;
+      const rightRank = localHandCategorySortRankByCode.get(right.card.categoryCode) ?? Number.MAX_SAFE_INTEGER;
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+
+      return left.index - right.index;
+    })
+    .map((entry) => entry.card);
 }
 
 function createLabel(
@@ -699,7 +723,9 @@ function buildHandLayouts(
   interactionState: PixiInteractionState,
   focusFromCardInstanceId: string,
   focusToCardInstanceId: string,
-  focusProgress: number
+  focusProgress: number,
+  dealAnimatingUntilByCardInstanceId: ReadonlyMap<string, number>,
+  now: number
 ): HandCardLayout[] {
   const total = hand.length;
   const centerX = STAGE_WIDTH / 2;
@@ -760,16 +786,37 @@ function buildHandLayouts(
     const offsetY = fromModifier.offsetY + (toModifier.offsetY - fromModifier.offsetY) * blend;
     const focusScale = fromModifier.scale + (toModifier.scale - fromModifier.scale) * blend;
     const isFocused = focusedCardInstanceId === card.instanceId;
+    const finalX = centerX + Math.sin(angle) * radius + offsetX;
+    const finalY = baseY + ((1 - Math.cos(angle)) * radius) + offsetY + (dragging ? -18 : 0);
+    const finalRotation = angle * 0.72;
+    const dealAnimatingUntil = dealAnimatingUntilByCardInstanceId.get(card.instanceId);
+    if (dealAnimatingUntil != null) {
+      const progress = Math.max(0, Math.min(1, 1 - ((dealAnimatingUntil - now) / HAND_DEAL_ANIMATION_MS)));
+      const eased = easeOutCubic(progress);
+      const startX = -(width * 0.5) - 220;
+      return {
+        card,
+        x: startX + ((finalX - startX) * eased),
+        y: finalY + ((1 - eased) * 18),
+        width,
+        height,
+        rotation: HAND_DEAL_START_ROTATION + ((finalRotation - HAND_DEAL_START_ROTATION) * eased),
+        scale: dragging ? Math.max(1.25, focusScale) : focusScale,
+        zIndex: isFocused ? 1000 : index,
+        opacity: 0.16 + (0.84 * eased)
+      };
+    }
 
     return {
       card,
-      x: centerX + Math.sin(angle) * radius + offsetX,
-      y: baseY + ((1 - Math.cos(angle)) * radius) + offsetY + (dragging ? -18 : 0),
+      x: finalX,
+      y: finalY,
       width,
       height,
-      rotation: angle * 0.72,
+      rotation: finalRotation,
       scale: dragging ? Math.max(1.25, focusScale) : focusScale,
-      zIndex: isFocused ? 1000 : index
+      zIndex: isFocused ? 1000 : index,
+      opacity: 1
     };
   });
 }
@@ -784,7 +831,7 @@ function createCardFace(
   cardContainer.position.set(layout.x, layout.y);
   cardContainer.rotation = layout.rotation;
   cardContainer.scale.set(layout.scale);
-  cardContainer.alpha = dimmed ? 0.42 : 1;
+  cardContainer.alpha = (dimmed ? 0.42 : 1) * (layout.opacity ?? 1);
 
   const outer = createRect(-layout.width / 2, -layout.height / 2, layout.width, layout.height, "#eadbb8", 1, 16);
   const inner = createRect(-layout.width / 2 + 5, -layout.height / 2 + 5, layout.width - 10, layout.height - 10, "#271914", 1, 12);
@@ -1952,10 +1999,12 @@ function renderTableScene(
   displayedHpBySeat: Record<number, number>,
   targetHintDismissed: boolean,
   batonLoadScale: number,
-  replayNow: number
+  replayNow: number,
+  localHandDealAnimatingUntil: ReadonlyMap<string, number>
 ): TableInteractionGeometry {
   const now = Date.now();
   const localSeat = getLocalSeat(match, localSeatNumber);
+  const sortedLocalHand = sortLocalHand(localSeat?.hand);
   const opponents = getOpponentSeats(match, localSeatNumber);
   const anchors = getOpponentAnchorsForPlayerCount(match.seats.length);
   const currentTurnSeatNumber = displayedTurnSeatNumber ?? undefined;
@@ -2430,11 +2479,13 @@ function renderTableScene(
   }
 
   const handLayouts = buildHandLayouts(
-    localSeat?.hand ?? [],
+    sortedLocalHand,
     interactionState,
     focusFromCardInstanceId,
     focusToCardInstanceId,
-    focusProgress
+    focusProgress,
+    localHandDealAnimatingUntil,
+    now
   );
   const arrowOverDiscard = interactionState.arrowDrag != null
     && pointInRect(
@@ -3837,6 +3888,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     transitionStartedAt: 0,
     transitionDurationMs: TURN_PASTILLE_MOVE_MS
   };
+  const knownLocalHandCardInstanceIds = new Set<string>();
+  const localHandDealAnimatingUntil = new Map<string, number>();
+  let localHandDealInitialized = false;
+  let localHandDealSeatNumber = localSeatNumber;
 
   const syncLocalSeatNumberFromMatch = (nextMatch: MatchState): void => {
     const resolvedSeatNumber = nextMatch.seats.find((seat) => seat.userId === session.currentUser.userId)?.seatNumber;
@@ -3848,6 +3903,54 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     targetHintDismissed = false;
     opponentCursors = {};
     clearInteractionState();
+  };
+
+  const resetLocalHandDealAnimations = (): void => {
+    knownLocalHandCardInstanceIds.clear();
+    localHandDealAnimatingUntil.clear();
+    localHandDealInitialized = false;
+    localHandDealSeatNumber = localSeatNumber;
+  };
+
+  const syncLocalHandDealAnimations = (displayMatch: MatchState): boolean => {
+    const localSeat = getLocalSeat(displayMatch, localSeatNumber);
+    const localHand = localSeat?.hand;
+    const now = Date.now();
+
+    if (displayMatch.status !== "in_progress" || localSeat == null || localHand == null) {
+      resetLocalHandDealAnimations();
+      return false;
+    }
+
+    if (localHandDealSeatNumber !== localSeatNumber) {
+      resetLocalHandDealAnimations();
+    }
+
+    const currentCardInstanceIds = new Set(localHand.map((card) => card.instanceId));
+    if (localHandDealInitialized) {
+      for (const card of localHand) {
+        if (!knownLocalHandCardInstanceIds.has(card.instanceId)) {
+          localHandDealAnimatingUntil.set(card.instanceId, now + HAND_DEAL_ANIMATION_MS);
+        }
+      }
+    }
+    localHandDealInitialized = true;
+
+    for (const knownCardInstanceId of [...knownLocalHandCardInstanceIds]) {
+      if (!currentCardInstanceIds.has(knownCardInstanceId)) {
+        knownLocalHandCardInstanceIds.delete(knownCardInstanceId);
+      }
+    }
+    for (const currentCardInstanceId of currentCardInstanceIds) {
+      knownLocalHandCardInstanceIds.add(currentCardInstanceId);
+    }
+    for (const [cardInstanceId, animatingUntil] of [...localHandDealAnimatingUntil.entries()]) {
+      if (now > animatingUntil || !currentCardInstanceIds.has(cardInstanceId)) {
+        localHandDealAnimatingUntil.delete(cardInstanceId);
+      }
+    }
+
+    return localHandDealAnimatingUntil.size > 0;
   };
 
   const rememberActionCardId = (boxId: string | undefined, cardId: string | undefined): void => {
@@ -4465,7 +4568,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   });
 
   const getLocalHand = (): CardView[] =>
-    getLocalSeat(match, localSeatNumber)?.hand ?? [];
+    sortLocalHand(getLocalSeat(match, localSeatNumber)?.hand);
 
   const getKickTarget = (): PixiKickTarget | null => {
     if (confirmingKickSeatNumber === 0) {
@@ -6013,6 +6116,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           })
         }
       : localizedMatch;
+    const handDealAnimationsActive = syncLocalHandDealAnimations(displayMatch);
     const handFocusBlend = getHandFocusBlendState();
     cleanupScene();
     const presentationLockActive = eventPlaybackActive || hasUnseenReplayableEvents();
@@ -6142,7 +6246,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         displayedHpBySeat,
         targetHintDismissed,
         batonLoadScale,
-        replayNow
+        replayNow,
+        localHandDealAnimatingUntil
       );
     }
 
@@ -6250,7 +6355,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     renderInspectOverlay();
     pruneLoadedTextures();
 
-    if (handFocusTransition != null || combatVisualsActive || turnPastilleAnimating || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
+    if (handFocusTransition != null || handDealAnimationsActive || combatVisualsActive || turnPastilleAnimating || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
       scheduleRedraw();
     }
   };
