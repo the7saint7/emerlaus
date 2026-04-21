@@ -2173,9 +2173,17 @@ function isProtectedFromAttack(match: StoredMatchState, targetSeatNumber: number
   return false;
 }
 
-function damageReductionFromObjects(match: StoredMatchState, seatNumber: number): number {
+function isRobeOriginDamageSource(sourceDefinition: BaseCardDefinition): boolean {
+  return sourceDefinition.id.startsWith("robe-");
+}
+
+function damageReductionFromObjects(match: StoredMatchState, seatNumber: number, sourceDefinition: BaseCardDefinition): number {
   const game = match.internalGame;
   if (game == null) {
+    return 0;
+  }
+
+  if (isRobeOriginDamageSource(sourceDefinition)) {
     return 0;
   }
 
@@ -2210,7 +2218,7 @@ function computeMirrorRobeReflection(
     || sourceSeatNumber == null
     || sourceSeatNumber === targetSeatNumber
     || !isAttackLikeDefinition(sourceDefinition)
-    || sourceDefinition.id.startsWith("robe-")
+    || isRobeOriginDamageSource(sourceDefinition)
   ) {
     return 0;
   }
@@ -2258,7 +2266,7 @@ function triggerCounterattackRobe(
     || sourceSeatNumber == null
     || sourceSeatNumber === targetSeatNumber
     || !isAttackLikeDefinition(sourceDefinition)
-    || sourceDefinition.id.startsWith("robe-")
+    || isRobeOriginDamageSource(sourceDefinition)
   ) {
     return;
   }
@@ -3010,7 +3018,7 @@ function applyDamage(
     return 0;
   }
 
-  const absorbedAmount = damageReductionFromObjects(match, targetSeatNumber);
+  const absorbedAmount = damageReductionFromObjects(match, targetSeatNumber, sourceDefinition);
   const reflectedAmount = computeMirrorRobeReflection(
     match,
     targetSeatNumber,
