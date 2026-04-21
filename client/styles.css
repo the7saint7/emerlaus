@@ -350,6 +350,9 @@ select {
 .pixi-center-actions {
   position: absolute;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   pointer-events: none;
 }
 

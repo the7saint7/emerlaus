@@ -2825,6 +2825,22 @@ function buildOverlayMarkup(
   const spectatorMode = match.status === "in_progress" && localSeat == null;
   const amHost = localSeat?.isHost === true;
   const showPassButton = match.status === "in_progress" && localSeat != null && canPassPendingResponse(match);
+  const localForcedFollowUp = forcedFollowUp?.actorSeatNumber === localSeatNumber ? forcedFollowUp : null;
+  const forcedFollowUpTargetName = localForcedFollowUp == null
+    ? ""
+    : match.seats.find((seat) => seat.seatNumber === localForcedFollowUp.targetSeatNumber)?.displayName
+      ?? t(language, "seat.label", { seatNumber: localForcedFollowUp.targetSeatNumber });
+  const forcedFollowUpPlayableCards = localForcedFollowUp == null || localSeat?.hand == null
+    ? []
+    : localSeat.hand.filter((card) =>
+        localForcedFollowUp.allowedCategories.includes(card.categoryCode)
+        && card.canPlay
+      );
+  const forcedFollowUpPrompt = localForcedFollowUp == null || localForcedFollowUp.consumeMode === true
+    ? ""
+    : language === "fr"
+      ? `${localForcedFollowUp.sourceCardName} : jouez une carte ${localForcedFollowUp.allowedCategories.join("/")} sur ${forcedFollowUpTargetName} ou passez si aucune n'est jouable.`
+      : `${localForcedFollowUp.sourceCardName}: play a ${localForcedFollowUp.allowedCategories.join("/")} card against ${forcedFollowUpTargetName}, or pass if none is playable.`;
   const annulationChoice = pendingAnnulationChoice;
   const sessionDiagnostics = [
     sessionMode === "discord" ? t(language, "lobby.discord") : t(language, "lobby.browser"),
@@ -2981,6 +2997,19 @@ function buildOverlayMarkup(
         </div>
       `
       : ""}
+    ${localForcedFollowUp == null || localForcedFollowUp.consumeMode === true
+      ? ""
+      : `
+        <div class="pixi-center-actions" style="left:${passButtonLeftPx}px; top:${passButtonTopPx}px;">
+          <div class="pixi-frame-pill">${escapeHtml(forcedFollowUpPrompt)}</div>
+          <button
+            type="button"
+            class="pixi-overlay-button"
+            data-action="pass-forced-follow-up"
+            ${forcedFollowUpPlayableCards.length > 0 ? "disabled" : ""}
+          >${t(language, "response.pass")}</button>
+        </div>
+      `}
     ${amHost && kickActionTarget != null
       ? `
         <div class="pixi-seat-action" style="left:${kickActionTarget.leftPx}px; top:${kickActionTarget.topPx}px;">
@@ -5812,8 +5841,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return false;
     }
 
-    if (match.game.forcedFollowUp != null) {
-      // Consume mode uses a modal overlay — cards are not draggable.
+    const forcedFollowUp = match.game.forcedFollowUp;
+    if (
+      forcedFollowUp != null
+      && (forcedFollowUp.consumeMode === true || forcedFollowUp.actorSeatNumber !== localSeatNumber)
+    ) {
       return false;
     }
 
