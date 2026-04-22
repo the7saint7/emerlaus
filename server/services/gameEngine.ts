@@ -3237,6 +3237,196 @@ function swapSeatOccupants(
   );
 }
 
+function remapSeatNumberReference(seatNumber: number | undefined, leftSeatNumber: number, rightSeatNumber: number): number | undefined {
+  if (seatNumber === leftSeatNumber) {
+    return rightSeatNumber;
+  }
+  if (seatNumber === rightSeatNumber) {
+    return leftSeatNumber;
+  }
+  return seatNumber;
+}
+
+function remapSeatNumberList(seatNumbers: number[], leftSeatNumber: number, rightSeatNumber: number): number[] {
+  return seatNumbers.map((seatNumber) => remapSeatNumberReference(seatNumber, leftSeatNumber, rightSeatNumber) ?? seatNumber);
+}
+
+function remapPendingActionSeatReferences(
+  pendingAction: StoredPendingActionState | undefined,
+  leftSeatNumber: number,
+  rightSeatNumber: number
+): void {
+  if (pendingAction == null) {
+    return;
+  }
+
+  pendingAction.actorSeatNumber = remapSeatNumberReference(pendingAction.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? pendingAction.actorSeatNumber;
+  pendingAction.targetSeatNumbers = remapSeatNumberList(pendingAction.targetSeatNumbers, leftSeatNumber, rightSeatNumber);
+  pendingAction.responderSeatNumbers = remapSeatNumberList(pendingAction.responderSeatNumbers, leftSeatNumber, rightSeatNumber);
+  pendingAction.mirrorOriginActorSeatNumber = remapSeatNumberReference(
+    pendingAction.mirrorOriginActorSeatNumber,
+    leftSeatNumber,
+    rightSeatNumber
+  );
+  pendingAction.responders = pendingAction.responders.map((responder) => ({
+    ...responder,
+    seatNumber: remapSeatNumberReference(responder.seatNumber, leftSeatNumber, rightSeatNumber) ?? responder.seatNumber
+  }));
+  if (pendingAction.continuation != null) {
+    pendingAction.continuation.seatNumber = remapSeatNumberReference(
+      pendingAction.continuation.seatNumber,
+      leftSeatNumber,
+      rightSeatNumber
+    ) ?? pendingAction.continuation.seatNumber;
+  }
+}
+
+function swapSeatOrderPreservingPlayerState(
+  match: StoredMatchState,
+  leftSeatNumber: number,
+  rightSeatNumber: number
+): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const leftSeat = getPublicSeat(match, leftSeatNumber);
+  const rightSeat = getPublicSeat(match, rightSeatNumber);
+  const leftStoredSeat = getStoredSeat(game, leftSeatNumber);
+  const rightStoredSeat = getStoredSeat(game, rightSeatNumber);
+
+  swapSeatSessionStats(game, leftSeatNumber, rightSeatNumber);
+
+  const leftPublicSnapshot = {
+    controllerType: leftSeat.controllerType,
+    userId: leftSeat.userId,
+    displayName: leftSeat.displayName,
+    avatarUrl: leftSeat.avatarUrl,
+    connected: leftSeat.connected,
+    isHost: leftSeat.isHost,
+    difficulty: leftSeat.difficulty,
+    disconnectedUserId: leftSeat.disconnectedUserId
+  };
+  const rightPublicSnapshot = {
+    controllerType: rightSeat.controllerType,
+    userId: rightSeat.userId,
+    displayName: rightSeat.displayName,
+    avatarUrl: rightSeat.avatarUrl,
+    connected: rightSeat.connected,
+    isHost: rightSeat.isHost,
+    difficulty: rightSeat.difficulty,
+    disconnectedUserId: rightSeat.disconnectedUserId
+  };
+
+  Object.assign(leftSeat, rightPublicSnapshot);
+  Object.assign(rightSeat, leftPublicSnapshot);
+
+  const leftStoredSnapshot = {
+    hand: [...leftStoredSeat.hand],
+    objects: [...leftStoredSeat.objects],
+    statuses: [...leftStoredSeat.statuses],
+    alive: leftStoredSeat.alive,
+    skipTurnsRemaining: leftStoredSeat.skipTurnsRemaining,
+    pendingExtraPlays: leftStoredSeat.pendingExtraPlays,
+    attackImmunityTurns: leftStoredSeat.attackImmunityTurns,
+    noRiposteTurnsRemaining: leftStoredSeat.noRiposteTurnsRemaining,
+    handInspectionTargetSeatNumber: leftStoredSeat.handInspectionTargetSeatNumber
+  };
+  const rightStoredSnapshot = {
+    hand: [...rightStoredSeat.hand],
+    objects: [...rightStoredSeat.objects],
+    statuses: [...rightStoredSeat.statuses],
+    alive: rightStoredSeat.alive,
+    skipTurnsRemaining: rightStoredSeat.skipTurnsRemaining,
+    pendingExtraPlays: rightStoredSeat.pendingExtraPlays,
+    attackImmunityTurns: rightStoredSeat.attackImmunityTurns,
+    noRiposteTurnsRemaining: rightStoredSeat.noRiposteTurnsRemaining,
+    handInspectionTargetSeatNumber: rightStoredSeat.handInspectionTargetSeatNumber
+  };
+
+  Object.assign(leftStoredSeat, rightStoredSnapshot, { seatNumber: leftSeatNumber });
+  Object.assign(rightStoredSeat, leftStoredSnapshot, { seatNumber: rightSeatNumber });
+
+  for (const seatState of game.seatStates) {
+    seatState.handInspectionTargetSeatNumber = remapSeatNumberReference(
+      seatState.handInspectionTargetSeatNumber,
+      leftSeatNumber,
+      rightSeatNumber
+    );
+    seatState.statuses = seatState.statuses.map((status) => ({
+      ...status,
+      sourceSeatNumber: remapSeatNumberReference(status.sourceSeatNumber, leftSeatNumber, rightSeatNumber) ?? status.sourceSeatNumber
+    }));
+  }
+
+  game.currentTurnSeatNumber = remapSeatNumberReference(game.currentTurnSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.currentTurnSeatNumber;
+  game.winnerSeatNumber = remapSeatNumberReference(game.winnerSeatNumber, leftSeatNumber, rightSeatNumber);
+  if (game.lastPlayedCard != null) {
+    game.lastPlayedCard.actorSeatNumber = remapSeatNumberReference(
+      game.lastPlayedCard.actorSeatNumber,
+      leftSeatNumber,
+      rightSeatNumber
+    ) ?? game.lastPlayedCard.actorSeatNumber;
+    game.lastPlayedCard.targetSeatNumbers = remapSeatNumberList(game.lastPlayedCard.targetSeatNumbers, leftSeatNumber, rightSeatNumber);
+  }
+
+  remapPendingActionSeatReferences(game.pendingAction, leftSeatNumber, rightSeatNumber);
+  remapPendingActionSeatReferences(game.pausedSequentialAction, leftSeatNumber, rightSeatNumber);
+
+  if (game.pendingObjectChoice != null) {
+    game.pendingObjectChoice.chooserSeatNumber = remapSeatNumberReference(game.pendingObjectChoice.chooserSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingObjectChoice.chooserSeatNumber;
+    game.pendingObjectChoice.ownerSeatNumber = remapSeatNumberReference(game.pendingObjectChoice.ownerSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingObjectChoice.ownerSeatNumber;
+    game.pendingObjectChoice.finalizeActorSeatNumber = remapSeatNumberReference(game.pendingObjectChoice.finalizeActorSeatNumber, leftSeatNumber, rightSeatNumber);
+  }
+  if (game.pendingHandInspection != null) {
+    game.pendingHandInspection.viewerSeatNumber = remapSeatNumberReference(game.pendingHandInspection.viewerSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingHandInspection.viewerSeatNumber;
+    game.pendingHandInspection.targetSeatNumber = remapSeatNumberReference(game.pendingHandInspection.targetSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingHandInspection.targetSeatNumber;
+    game.pendingHandInspection.finalizeActorSeatNumber = remapSeatNumberReference(game.pendingHandInspection.finalizeActorSeatNumber, leftSeatNumber, rightSeatNumber);
+  }
+  if (game.pendingPublicHandReveal != null) {
+    game.pendingPublicHandReveal.actorSeatNumber = remapSeatNumberReference(game.pendingPublicHandReveal.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingPublicHandReveal.actorSeatNumber;
+    game.pendingPublicHandReveal.targetSeatNumbers = remapSeatNumberList(game.pendingPublicHandReveal.targetSeatNumbers, leftSeatNumber, rightSeatNumber);
+    game.pendingPublicHandReveal.finalizeActorSeatNumber = remapSeatNumberReference(game.pendingPublicHandReveal.finalizeActorSeatNumber, leftSeatNumber, rightSeatNumber);
+    game.pendingPublicHandReveal.readySeatNumbers = remapSeatNumberList(game.pendingPublicHandReveal.readySeatNumbers, leftSeatNumber, rightSeatNumber);
+  }
+  if (game.pendingBoardResetKeep != null) {
+    game.pendingBoardResetKeep.chooserSeatNumber = remapSeatNumberReference(game.pendingBoardResetKeep.chooserSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingBoardResetKeep.chooserSeatNumber;
+  }
+  if (game.pendingDeathSearch != null) {
+    game.pendingDeathSearch.chooserSeatNumber = remapSeatNumberReference(
+      game.pendingDeathSearch.chooserSeatNumber,
+      leftSeatNumber,
+      rightSeatNumber
+    ) ?? game.pendingDeathSearch.chooserSeatNumber;
+    game.pendingDeathSearch.selectedCorpseSeatNumber = remapSeatNumberReference(game.pendingDeathSearch.selectedCorpseSeatNumber, leftSeatNumber, rightSeatNumber);
+  }
+  if (game.pendingPickpocket != null) {
+    game.pendingPickpocket.chooserSeatNumber = remapSeatNumberReference(game.pendingPickpocket.chooserSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingPickpocket.chooserSeatNumber;
+    game.pendingPickpocket.targetSeatNumber = remapSeatNumberReference(game.pendingPickpocket.targetSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingPickpocket.targetSeatNumber;
+  }
+  if (game.pendingSacrificeChoice != null) {
+    game.pendingSacrificeChoice.actorSeatNumber = remapSeatNumberReference(game.pendingSacrificeChoice.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingSacrificeChoice.actorSeatNumber;
+  }
+  if (game.pendingCurseRelease != null) {
+    game.pendingCurseRelease.seatNumber = remapSeatNumberReference(game.pendingCurseRelease.seatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingCurseRelease.seatNumber;
+  }
+  if (game.forcedFollowUp != null) {
+    game.forcedFollowUp.actorSeatNumber = remapSeatNumberReference(game.forcedFollowUp.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.forcedFollowUp.actorSeatNumber;
+    game.forcedFollowUp.targetSeatNumber = remapSeatNumberReference(game.forcedFollowUp.targetSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.forcedFollowUp.targetSeatNumber;
+    game.forcedFollowUp.turnOwnerSeatNumber = remapSeatNumberReference(game.forcedFollowUp.turnOwnerSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.forcedFollowUp.turnOwnerSeatNumber;
+  }
+  if (game.extraPlayMode != null) {
+    game.extraPlayMode.actorSeatNumber = remapSeatNumberReference(game.extraPlayMode.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.extraPlayMode.actorSeatNumber;
+  }
+  game.sessionStatRuntime.activeObjectOwnerships = game.sessionStatRuntime.activeObjectOwnerships.map((ownership) => ({
+    ...ownership,
+    ownerSeatNumber: remapSeatNumberReference(ownership.ownerSeatNumber, leftSeatNumber, rightSeatNumber) ?? ownership.ownerSeatNumber
+  }));
+
+  appendServerDebugLog(match, "swap", `Seat ${leftSeatNumber} and seat ${rightSeatNumber} swapped seat order while preserving player state`);
+}
+
 function requestObjectOwnerSeatNumber(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -3572,7 +3762,9 @@ function rollResistanceForAction(
     const keptTotal = Math.min(...roll.values);
     publishSeatDiceRoll(match, targetSeatNumber, notation, keptTotal, roll.values, pendingAction.boxId);
     recordLuckOutcome(match, targetSeatNumber, "1D20", keptTotal, false);
-    const fatalCurseStatus = getFatalResistanceCurseStatus(match, targetSeatNumber, keptTotal);
+    const fatalCurseStatus = roll.values
+      .map((value) => getFatalResistanceCurseStatus(match, targetSeatNumber, value))
+      .find((status) => status != null);
     if (fatalCurseStatus != null) {
       detonationTriggered = true;
       resisted = false;
@@ -4872,7 +5064,18 @@ function applyEffect(
       break;
     case "swap_bodies":
       if (targetSeatNumbers[0] != null) {
-        swapSeatOccupants(match, actorSeatNumber, targetSeatNumbers[0], effect);
+        if (
+          definition.id === "changement-vital"
+          && effect.swapSeatOrder
+          && !effect.swapHand
+          && !effect.swapHp
+          && !effect.swapObjects
+          && !effect.swapStatuses
+        ) {
+          swapSeatOrderPreservingPlayerState(match, actorSeatNumber, targetSeatNumbers[0]);
+        } else {
+          swapSeatOccupants(match, actorSeatNumber, targetSeatNumbers[0], effect);
+        }
       }
       break;
     case "board_reset": {
@@ -6318,8 +6521,9 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
   }
 
   const definition = requireDefinition(pendingAction.storedCard.cardId);
-  const targetSeatNumber = responder.seatNumber;
-  const damageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
+  let targetSeatNumber = responder.seatNumber;
+  let currentActorSeatNumber = pendingAction.actorSeatNumber;
+  let damageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? currentActorSeatNumber;
   const shouldDeferCollectiveMirrorHit =
     pendingAction.fromMirror === true
     && game.pausedSequentialAction?.responseMode === "collective"
@@ -6468,7 +6672,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         if (!resisted) {
           const pausedForObjectChoice = applyEffect(
             match,
-            pendingAction.actorSeatNumber,
+            currentActorSeatNumber,
             pendingAction.storedCard,
             definition,
             effect,
@@ -6479,11 +6683,24 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
           if (pausedForObjectChoice) {
             return;
           }
+          if (
+            definition.id === "changement-vital"
+            && effect.type === "swap_bodies"
+            && effect.swapSeatOrder
+          ) {
+            const preSwapActorSeatNumber = currentActorSeatNumber;
+            const preSwapTargetSeatNumber = targetSeatNumber;
+            remapPendingActionSeatReferences(pendingAction, preSwapActorSeatNumber, preSwapTargetSeatNumber);
+            currentActorSeatNumber = pendingAction.actorSeatNumber;
+            targetSeatNumber = remapSeatNumberReference(targetSeatNumber, preSwapActorSeatNumber, preSwapTargetSeatNumber)
+              ?? targetSeatNumber;
+            damageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? currentActorSeatNumber;
+          }
         }
         continue;
       }
 
-      const collectiveDamageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
+      const collectiveDamageRollerSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? currentActorSeatNumber;
       const actorSeat = successfulHitDamageContext?.actorSeat ?? getActorSeatForAction(
         match,
         collectiveDamageRollerSeatNumber,
@@ -6525,27 +6742,27 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         pushPresentationEvent(match, {
           boxId: pendingAction.boxId,
           type: "attack_impact",
-          actorSeatNumber: pendingAction.actorSeatNumber,
+          actorSeatNumber: currentActorSeatNumber,
           targetSeatNumber,
           cardName: definition.name
         });
       }
 
       appendServerDebugLog(match, "resolve", `Applying ${definition.name} ${effect.type} ${amount} to seat ${targetSeatNumber}`);
-      const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, pendingAction.actorSeatNumber);
+      const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, currentActorSeatNumber);
       if (effect.type === "lifesteal" && dealt > 0) {
-        if (dealt > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
+        if (dealt > 0 && getStoredSeat(game, currentActorSeatNumber).alive) {
           const lifestealResult = setSeatHp(
             match,
-            pendingAction.actorSeatNumber,
-            getPublicSeat(match, pendingAction.actorSeatNumber).hp + dealt
+            currentActorSeatNumber,
+            getPublicSeat(match, currentActorSeatNumber).hp + dealt
           );
           if (lifestealResult.delta > 0) {
-            recordHealing(match, pendingAction.actorSeatNumber, pendingAction.actorSeatNumber, lifestealResult.delta);
+            recordHealing(match, currentActorSeatNumber, currentActorSeatNumber, lifestealResult.delta);
             pushPresentationEvent(match, {
               boxId: pendingAction.boxId,
               type: "hp_gain",
-              seatNumber: pendingAction.actorSeatNumber,
+              seatNumber: currentActorSeatNumber,
               cardName: definition.name,
               amount: lifestealResult.delta
             });
@@ -8379,26 +8596,28 @@ function resolveRemovedCardPlay(
   });
 
   const damageMultiplier = forcedFollowUp?.doubleHpLossDamage === true ? 2 : 1;
-  const finalizeActorSeatNumber = forcedFollowUp?.turnOwnerSeatNumber;
   const wasForcedFollowUp = forcedFollowUp != null;
+  let currentActorSeatNumber = actorSeatNumber;
+  let currentTargetSeatNumbers = [...effectiveTargetSeatNumbers];
+  let currentFinalizeActorSeatNumber = forcedFollowUp?.turnOwnerSeatNumber;
   for (const effect of definition.rules.effects) {
     const pausedForObjectChoice = applyEffect(
       match,
-      actorSeatNumber,
+      currentActorSeatNumber,
       removedCard,
       definition,
       effect,
-      effectiveTargetSeatNumbers,
+      currentTargetSeatNumbers,
       request.targetObjectInstanceId,
       boxId,
       damageMultiplier,
-      finalizeActorSeatNumber,
+      currentFinalizeActorSeatNumber,
       "hand"
     );
     if (pausedForObjectChoice) {
       if (options?.skipStoredCardResolution !== true) {
         if (definition.rules.staysInPlay) {
-          movePersistentCard(match, actorSeatNumber, effectiveTargetSeatNumbers, removedCard, definition);
+          movePersistentCard(match, currentActorSeatNumber, currentTargetSeatNumbers, removedCard, definition);
         } else {
           discardPlayedCardToTalon(game, removedCard, definition, request);
         }
@@ -8406,8 +8625,8 @@ function resolveRemovedCardPlay(
 
       appendDealerMessage(match, summary);
       game.lastPlayedCard = {
-        actorSeatNumber,
-        targetSeatNumbers: effectiveTargetSeatNumbers,
+        actorSeatNumber: currentActorSeatNumber,
+        targetSeatNumbers: currentTargetSeatNumbers,
         targetObjectInstanceId: request.targetObjectInstanceId,
         card: presentationCard,
         mode: request.mode,
@@ -8420,14 +8639,31 @@ function resolveRemovedCardPlay(
       refreshSeatSummaries(match);
       return;
     }
+    if (
+      definition.id === "changement-vital"
+      && effect.type === "swap_bodies"
+      && effect.swapSeatOrder
+      && currentTargetSeatNumbers[0] != null
+    ) {
+      const preSwapActorSeatNumber = currentActorSeatNumber;
+      const preSwapTargetSeatNumber = currentTargetSeatNumbers[0];
+      currentTargetSeatNumbers = remapSeatNumberList(currentTargetSeatNumbers, preSwapActorSeatNumber, preSwapTargetSeatNumber);
+      currentActorSeatNumber = remapSeatNumberReference(currentActorSeatNumber, preSwapActorSeatNumber, preSwapTargetSeatNumber)
+        ?? currentActorSeatNumber;
+      currentFinalizeActorSeatNumber = remapSeatNumberReference(
+        currentFinalizeActorSeatNumber,
+        preSwapActorSeatNumber,
+        preSwapTargetSeatNumber
+      );
+    }
   }
 
   let ringOverflow = false;
   if (options?.skipStoredCardResolution !== true) {
     if (definition.rules.staysInPlay) {
-      ringOverflow = movePersistentCard(match, actorSeatNumber, effectiveTargetSeatNumbers, removedCard, definition);
+      ringOverflow = movePersistentCard(match, currentActorSeatNumber, currentTargetSeatNumbers, removedCard, definition);
       if (ringOverflow) {
-        queueRingDiscardChoice(match, actorSeatNumber, removedCard, boxId, finalizeActorSeatNumber ?? actorSeatNumber);
+        queueRingDiscardChoice(match, currentActorSeatNumber, removedCard, boxId, currentFinalizeActorSeatNumber ?? currentActorSeatNumber);
       }
     } else {
       discardPlayedCardToTalon(game, removedCard, definition, request);
@@ -8436,8 +8672,8 @@ function resolveRemovedCardPlay(
 
   appendDealerMessage(match, summary);
   game.lastPlayedCard = {
-    actorSeatNumber,
-    targetSeatNumbers: effectiveTargetSeatNumbers,
+    actorSeatNumber: currentActorSeatNumber,
+    targetSeatNumbers: currentTargetSeatNumbers,
     targetObjectInstanceId: request.targetObjectInstanceId,
     card: presentationCard,
     mode: request.mode,
@@ -8451,7 +8687,7 @@ function resolveRemovedCardPlay(
   if (ringOverflow) {
     return;
   }
-  finalizeResolvedAction(match, finalizeActorSeatNumber ?? actorSeatNumber, boxId);
+  finalizeResolvedAction(match, currentFinalizeActorSeatNumber ?? currentActorSeatNumber, boxId);
 }
 
 function beginPendingRepeatedPlay(match: StoredMatchState, repeatedPlay: NonNullable<StoredGameState["pendingRepeatedPlay"]>): void {
