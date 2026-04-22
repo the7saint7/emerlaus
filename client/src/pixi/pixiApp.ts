@@ -276,6 +276,11 @@ interface PendingActionPlaybackSnapshot {
   responderCardsBySeat: Record<number, CardView[]>;
 }
 
+interface SeatResponseThumbnailState {
+  card: CardView;
+  updatedAt: number;
+}
+
 interface ActiveActionVisualState {
   actorSeatNumber: number;
   targetSeatNumbers: number[];
@@ -759,6 +764,76 @@ function renderSeatVisualOverlay(
     case "frozen":
       renderFrozenSeatOverlay(scene, rect, isLocalSeat, now, onTextureReady);
       return;
+  }
+}
+
+function getSeatResponseThumbnailRect(rect: RectGeometry, isLocalSeat: boolean): RectGeometry {
+  const width = isLocalSeat ? 56 : 48;
+  const height = isLocalSeat ? 78 : 68;
+  const x = Math.min(STAGE_WIDTH - width - 10, rect.x + rect.width + 12);
+  const y = isLocalSeat
+    ? rect.y + 10
+    : rect.y + (rect.height - height) / 2;
+
+  return { x, y, width, height };
+}
+
+function renderSeatResponseThumbnail(
+  scene: Container,
+  rect: RectGeometry,
+  card: CardView,
+  isLocalSeat: boolean,
+  dimmed: boolean,
+  onTextureReady: () => void,
+  viergeReplayCard?: CardView | null
+): void {
+  const thumbRect = getSeatResponseThumbnailRect(rect, isLocalSeat);
+  const alpha = dimmed ? 0.62 : 1;
+  scene.addChild(createRect(thumbRect.x - 3, thumbRect.y - 3, thumbRect.width + 6, thumbRect.height + 6, "#0f1510", 0.46 * alpha, 14));
+  scene.addChild(createRect(thumbRect.x, thumbRect.y, thumbRect.width, thumbRect.height, "#e7d8b4", alpha, 12));
+  scene.addChild(createRect(thumbRect.x + 3, thumbRect.y + 3, thumbRect.width - 6, thumbRect.height - 6, "#201610", alpha, 9));
+
+  const textureUrl = getCardTextureUrl(card, "thumb");
+  const texture = getLoadedTexture(textureUrl);
+  if (texture != null) {
+    const sprite = new Sprite(texture);
+    const fitted = fitSpriteToBox(texture, thumbRect.width - 10, thumbRect.height - 10);
+    sprite.position.set(thumbRect.x + (thumbRect.width - fitted.width) / 2, thumbRect.y + (thumbRect.height - fitted.height) / 2);
+    sprite.width = fitted.width;
+    sprite.height = fitted.height;
+    sprite.alpha = alpha;
+    scene.addChild(sprite);
+  } else {
+    requestTextureLoad(textureUrl, onTextureReady);
+    scene.addChild(createLabel("Loading", thumbRect.x + thumbRect.width / 2, thumbRect.y + thumbRect.height / 2, {
+      fontSize: 8,
+      fontWeight: "700",
+      fill: "#d4c7ac"
+    }, 0.5, 0.5));
+  }
+
+  if (card.cardId === "vierge" && viergeReplayCard != null) {
+    const insetWidth = Math.max(18, thumbRect.width * 0.34);
+    const insetHeight = insetWidth * 1.42;
+    const insetX = thumbRect.x + thumbRect.width - insetWidth - 4;
+    const insetY = thumbRect.y + 4;
+    scene.addChild(
+      createRect(insetX - 1.5, insetY - 1.5, insetWidth + 3, insetHeight + 3, "#eadbb8", 0.96 * alpha, 5),
+      createRect(insetX, insetY, insetWidth, insetHeight, "#1a1411", alpha, 4)
+    );
+    const replayTextureUrl = getCardTextureUrl(viergeReplayCard, "thumb");
+    const replayTexture = getLoadedTexture(replayTextureUrl);
+    if (replayTexture != null) {
+      const replaySprite = new Sprite(replayTexture);
+      const fittedReplay = fitSpriteToBox(replayTexture, insetWidth - 4, insetHeight - 4);
+      replaySprite.position.set(insetX + (insetWidth - fittedReplay.width) / 2, insetY + (insetHeight - fittedReplay.height) / 2);
+      replaySprite.width = fittedReplay.width;
+      replaySprite.height = fittedReplay.height;
+      replaySprite.alpha = alpha;
+      scene.addChild(replaySprite);
+    } else {
+      requestTextureLoad(replayTextureUrl, onTextureReady);
+    }
   }
 }
 
@@ -2095,6 +2170,7 @@ function renderTableScene(
   activeDamageBursts: Record<number, FloatingBurstState>,
   activeHealBursts: Record<number, FloatingBurstState>,
   activeImpactFlashes: Record<number, ImpactFlashState>,
+  seatResponseThumbnailsBySeat: Record<number, SeatResponseThumbnailState>,
   seatResistancePills: Record<number, SeatResistancePillState>,
   devSeatVisualEffectsBySeat: Record<number, SeatVisualEffectId[]>,
   activeCardFlights: CardFlightState[],
@@ -2375,6 +2451,7 @@ function renderTableScene(
   for (const [seatNumber, rect] of seatRects.entries()) {
     const seat = match.seats.find((candidate) => candidate.seatNumber === seatNumber);
     const previewEffects = new Set(devSeatVisualEffectsBySeat[seatNumber] ?? []);
+    const responseThumbnail = seatResponseThumbnailsBySeat[seatNumber];
     if (seatHasFrozenStatus(seat)) {
       previewEffects.add("frozen");
     }
@@ -2383,6 +2460,17 @@ function renderTableScene(
         continue;
       }
       renderSeatVisualOverlay(scene, rect, seatNumber === playerSeatNumber, effectId, replayNow, onTextureReady);
+    }
+    if (responseThumbnail != null) {
+      renderSeatResponseThumbnail(
+        scene,
+        rect,
+        responseThumbnail.card,
+        seatNumber === playerSeatNumber,
+        seat?.isAlive === false,
+        onTextureReady,
+        viergeReplayCard
+      );
     }
 
     const impactFlash = activeImpactFlashes[seatNumber];
@@ -2976,6 +3064,7 @@ function buildOverlayMarkup(
   const spectatorNamesMarkup = match.spectators
     .map((spectator) => escapeHtml(spectator.displayName))
     .join(" Â· ");
+  void spectatorNamesMarkup;
   const spectatorSummaryMarkup = match.spectators.length === 0
     ? ""
     : `
@@ -2984,7 +3073,18 @@ function buildOverlayMarkup(
           ${spectatorMode ? `<span class="pixi-spectator-panel__mode">${escapeHtml(t(language, "spectator.mode"))}</span>` : ""}
           <span class="pixi-spectator-panel__label">${escapeHtml(`${t(language, "spectator.list")} ${match.spectators.length}`)}</span>
         </div>
-        <div class="pixi-spectator-panel__names">${spectatorNamesMarkup}</div>
+        <div class="pixi-spectator-panel__list">
+          ${match.spectators.map((spectator) => `
+            <div class="pixi-spectator-panel__item">
+              <img
+                class="pixi-spectator-panel__avatar"
+                src="${escapeHtml(spectator.avatarUrl)}"
+                alt="${escapeHtml(spectator.displayName)}"
+              />
+              <span class="pixi-spectator-panel__name">${escapeHtml(spectator.displayName)}</span>
+            </div>
+          `).join("")}
+        </div>
       </div>
     `;
   const devDrawOptionsMarkup = getEnabledDevDrawGroups(match)
@@ -4057,6 +4157,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let displayedSeatSnapshotTimelineBySeat: Record<number, Array<{ boxIndex: number; seat: SeatState }>> = {};
   let pendingPostDeathSeatsBySeat: Record<number, SeatState> = {};
   let preUpdateLocalizedSeatsBySeat: Record<number, SeatState> = {};
+  let seatResponseThumbnailsBySeat: Record<number, SeatResponseThumbnailState> = {};
+  let seatResponseThumbnailTurnSeatNumber: number | null = null;
   let seatResistancePills: Record<number, SeatResistancePillState> = {};
   let batonLoadHoverTs: number | null = null;
   let activeImpactFlashes: Record<number, ImpactFlashState> = {};
@@ -4081,6 +4183,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const session = await createDiscordSession();
   let joined = await joinMatch(session.instanceId, session.currentUser);
   let match = joined.match;
+  seatResponseThumbnailTurnSeatNumber = match.game?.currentTurnSeatNumber ?? null;
   let localSeatNumber = joined.localSeatNumber ?? SPECTATOR_SEAT_NUMBER;
   const playerSessionToken = joined.playerSessionToken;
   let targetHintDismissed = false;
@@ -4448,6 +4551,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     activeDamageBursts = {};
     activeHealBursts = {};
     activeImpactFlashes = {};
+    seatResponseThumbnailsBySeat = {};
+    seatResponseThumbnailTurnSeatNumber = match.game?.currentTurnSeatNumber ?? null;
     seatResistancePills = {};
     activeCardFlights = [];
     activePlaybackArrows = [];
@@ -4460,6 +4565,24 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     centerResponseCards = [];
     eventPlaybackActive = false;
     resetReplayClock();
+  };
+
+  const syncSeatResponseThumbnailTurn = (displayedTurnSeatNumber: number | null): void => {
+    if (displayedTurnSeatNumber == null) {
+      seatResponseThumbnailsBySeat = {};
+      seatResponseThumbnailTurnSeatNumber = null;
+      return;
+    }
+
+    if (seatResponseThumbnailTurnSeatNumber == null) {
+      seatResponseThumbnailTurnSeatNumber = displayedTurnSeatNumber;
+      return;
+    }
+
+    if (seatResponseThumbnailTurnSeatNumber !== displayedTurnSeatNumber) {
+      seatResponseThumbnailsBySeat = {};
+      seatResponseThumbnailTurnSeatNumber = displayedTurnSeatNumber;
+    }
   };
 
   const cloneLocalizedSeatSnapshot = (source: Record<number, SeatState>): Record<number, SeatState> =>
@@ -5381,6 +5504,20 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const responderStart = getSeatEdgePointTowardRect(event.seatNumber, responseSlotRect);
       const responseCenter = getRectCenter(responseSlotRect);
       const responseCard = getResponsePlaybackCard(event);
+      if (responseCard != null) {
+        seatResponseThumbnailTurnSeatNumber = activeActionVisual?.actorSeatNumber
+          ?? seatResponseThumbnailTurnSeatNumber
+          ?? match.game?.currentTurnSeatNumber
+          ?? null;
+        seatResponseThumbnailsBySeat = {
+          ...seatResponseThumbnailsBySeat,
+          [event.seatNumber]: {
+            card: responseCard,
+            updatedAt: getReplayNow()
+          }
+        };
+        redraw();
+      }
       if (responderStart != null) {
         const [arrowCompleted, cardCompleted] = await Promise.all([
           addPlaybackArrow(responderStart, rectEdgePoint(responderStart.x, responderStart.y, responseSlotRect), "#8ac8ff", 9, 520, runId),
@@ -6411,6 +6548,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     cleanupScene();
     const presentationLockActive = eventPlaybackActive || hasUnseenReplayableEvents();
     const displayedTurnSeatNumber = resolveDisplayedTurnSeatNumber(presentationLockActive);
+    syncSeatResponseThumbnailTurn(displayedTurnSeatNumber);
     syncTurnPastilleTarget(displayedTurnSeatNumber);
     const turnPastilleAnimating = advanceTurnPastilleAnimation();
     if (leftMessage !== "") {
@@ -6420,6 +6558,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       activeDamageBursts = {};
       activeHealBursts = {};
       activeImpactFlashes = {};
+      seatResponseThumbnailsBySeat = {};
+      seatResponseThumbnailTurnSeatNumber = null;
       seatResistancePills = {};
       activeCardFlights = [];
       activePlaybackArrows = [];
@@ -6457,6 +6597,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       activeDamageBursts = {};
       activeHealBursts = {};
       activeImpactFlashes = {};
+      seatResponseThumbnailsBySeat = {};
+      seatResponseThumbnailTurnSeatNumber = null;
       seatResistancePills = {};
       activeCardFlights = [];
       activePlaybackArrows = [];
@@ -6528,6 +6670,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         activeDamageBursts,
         activeHealBursts,
         activeImpactFlashes,
+        seatResponseThumbnailsBySeat,
         seatResistancePills,
         devSeatVisualEffectsBySeat,
         activeCardFlights,
