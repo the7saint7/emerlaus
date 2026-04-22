@@ -18,7 +18,7 @@ export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?
 
 export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boolean {
   const targets = getEffectiveInteractionTargets(card, viergeReplayCard);
-  return targets === "single_opponent" || targets === "target_object";
+  return targets === "single_opponent" || targets === "target_object" || card.cardId === "depouillement";
 }
 
 export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView): boolean {

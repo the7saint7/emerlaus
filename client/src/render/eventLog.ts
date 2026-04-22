@@ -104,10 +104,12 @@ export function buildEventLogEntries(match: MatchState, language: AppLanguage): 
               ? "combat.response.resistance_accrue"
               : event.responseChoice === "annulation"
                 ? "combat.response.annulation"
-                : "combat.response.mirror";
+                : event.responseChoice === "ordre-demmerlaus"
+                  ? "combat.response.ordre_demmerlaus"
+                  : "combat.response.mirror";
       entries.push({
         id: `response:${event.id}`,
-        content: t(language, key, { playerName }),
+        content: t(language, key, { playerName, cardName: event.cardName ?? "" }),
         createdAt: event.createdAt,
         sortOrder: sortOrder++
       });

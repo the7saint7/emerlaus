@@ -15,7 +15,7 @@ import {
   isSeatTargetable,
   objectCardMatchesSelectedTargeting
 } from "../gameplay/interactionRules";
-import { getCardImageVariantUrl, getImportedCardImageUrl, getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage, type CardImageVariant } from "../i18n";
+import { getCardImageVariantUrl, getImportedCardImageUrl, getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeCardDisabledReason, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage, type CardImageVariant } from "../i18n";
 import { diceController, type DiceStagePlacement } from "../features/dice/diceController";
 import { getSeatDiceColor } from "../features/dice/diceSeatColors";
 import { getOpponentAnchorsForPlayerCount } from "../render/opponentLayout";
@@ -283,6 +283,7 @@ interface SeatResponseThumbnailState {
 
 interface ActiveActionVisualState {
   actorSeatNumber: number;
+  turnSeatNumber: number;
   targetSeatNumbers: number[];
   targetObjectInstanceId?: string;
   card: CardView;
@@ -1821,6 +1822,7 @@ function buildVictoryStatsMarkup(match: MatchState, language: AppLanguage, enabl
           </article>
         `).join("")}
       </div>
+      <p class="victory-celebration__quit-hint">${escapeHtml(t(language, "victory.quitHint"))}</p>
     </section>
   `;
 }
@@ -1888,7 +1890,6 @@ function buildVictoryCelebrationMarkup(match: MatchState, language: AppLanguage,
         `;
       }).join("")}
       ${buildVictoryStatsMarkup(match, language, enabled)}
-      <p class="victory-celebration__quit-hint">${escapeHtml(t(language, "victory.quitHint"))}</p>
     </div>
   `;
 }
@@ -2244,14 +2245,6 @@ function renderTableScene(
   const turnPastilleInsertIndex = scene.children.length;
   if (!spectatorMode && playerSeat != null) {
     scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#101812", 0.56, 34));
-    renderHandCountTabs(
-      scene,
-      handArea.x + handArea.width / 2,
-      handArea.y + 18,
-      getDisplayedHandCount(playerSeat),
-      182,
-      playerSeat.isAlive === false
-    );
     if (playerSeat.seatNumber === currentTurnSeatNumber) {
     scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8900a", 0.24, 34));
     // Inner layer: bright yellow-gold centered, narrower — creates gradient impression
@@ -2619,6 +2612,7 @@ function renderTableScene(
   if (displayedAction != null) {
     const playCenterX = playSlot.x + playSlot.width / 2;
     const playCenterY = playSlot.y + playSlot.height / 2;
+    const animateSeatTargets = displayedAction.targetObjectInstanceId == null;
     const actorCenter = seatCenters.get(displayedAction.actorSeatNumber);
     const actorRect = seatRects.get(displayedAction.actorSeatNumber);
     if (actorCenter != null && actorRect != null) {
@@ -2634,40 +2628,42 @@ function renderTableScene(
       ));
     }
 
-    for (const targetSeatNumber of displayedAction.targetSeatNumbers) {
-      if (targetSeatNumber === displayedAction.actorSeatNumber) {
-        continue;
-      }
+    if (animateSeatTargets) {
+      for (const targetSeatNumber of displayedAction.targetSeatNumbers) {
+        if (targetSeatNumber === displayedAction.actorSeatNumber) {
+          continue;
+        }
 
-      const targetCenter = seatCenters.get(targetSeatNumber);
-      const targetRect = seatRects.get(targetSeatNumber);
-      if (targetCenter == null || targetRect == null) {
-        continue;
-      }
+        const targetCenter = seatCenters.get(targetSeatNumber);
+        const targetRect = seatRects.get(targetSeatNumber);
+        if (targetCenter == null || targetRect == null) {
+          continue;
+        }
 
-      const centerEdgeToTarget = rectEdgePoint(targetCenter.x, targetCenter.y, playSlot);
-      const targetEdge = rectEdgePoint(playCenterX, playCenterY, targetRect);
-      const reflectToSeatNumber = "mirroredTargets" in displayedAction
-        ? displayedAction.mirroredTargets?.[targetSeatNumber]
-        : undefined;
-      const isMirrored = reflectToSeatNumber != null;
+        const centerEdgeToTarget = rectEdgePoint(targetCenter.x, targetCenter.y, playSlot);
+        const targetEdge = rectEdgePoint(playCenterX, playCenterY, targetRect);
+        const reflectToSeatNumber = "mirroredTargets" in displayedAction
+          ? displayedAction.mirroredTargets?.[targetSeatNumber]
+          : undefined;
+        const isMirrored = reflectToSeatNumber != null;
 
-      scene.addChild(createCurvedArrow(
-        centerEdgeToTarget.x,
-        centerEdgeToTarget.y,
-        targetEdge.x,
-        targetEdge.y,
-        isMirrored ? "#f5a030" : "#d23a3a",
-        8
-      ));
+        scene.addChild(createCurvedArrow(
+          centerEdgeToTarget.x,
+          centerEdgeToTarget.y,
+          targetEdge.x,
+          targetEdge.y,
+          isMirrored ? "#f5a030" : "#d23a3a",
+          8
+        ));
 
-      if (isMirrored) {
-        const reflectRect = seatRects.get(reflectToSeatNumber);
-        if (reflectRect != null) {
-          const reflectCenter = getRectCenter(reflectRect);
-          const fromEdge = rectEdgePoint(reflectCenter.x, reflectCenter.y, targetRect);
-          const toEdge = rectEdgePoint(targetCenter.x, targetCenter.y, reflectRect);
-          scene.addChild(createCurvedArrow(fromEdge.x, fromEdge.y, toEdge.x, toEdge.y, "#d23a3a", 8));
+        if (isMirrored) {
+          const reflectRect = seatRects.get(reflectToSeatNumber);
+          if (reflectRect != null) {
+            const reflectCenter = getRectCenter(reflectRect);
+            const fromEdge = rectEdgePoint(reflectCenter.x, reflectCenter.y, targetRect);
+            const toEdge = rectEdgePoint(targetCenter.x, targetCenter.y, reflectRect);
+            scene.addChild(createCurvedArrow(fromEdge.x, fromEdge.y, toEdge.x, toEdge.y, "#d23a3a", 8));
+          }
         }
       }
     }
@@ -4392,7 +4388,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     if (activeActionVisual != null) {
-      return activeActionVisual.actorSeatNumber;
+      return activeActionVisual.turnSeatNumber;
     }
 
     if (presentationLockActive) {
@@ -4672,6 +4668,15 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     return releaseBoxIndexBySeat;
+  };
+
+  const getLastReplayBoxIndex = (replayableEvents: GameEvent[]): number => {
+    const boxOrder = buildReplayBoxOrder(replayableEvents);
+    if (boxOrder.size === 0) {
+      return -1;
+    }
+
+    return Math.max(...boxOrder.values());
   };
 
   const releaseDisplayedSeatsThroughBox = (boxIndex: number): void => {
@@ -5341,6 +5346,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     switch (choice) {
       case "annulation":
         return buildPresentationCard("annulation");
+      case "ordre-demmerlaus":
+        return buildPresentationCard("ordre-demmerlaus");
       case "resistance_accrue":
         return buildPresentationCard("resistance-accrue");
       case "mirror":
@@ -5373,8 +5380,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         }
       };
     } else {
+      const currentTurnSeatNumber =
+        turnPastilleState.transitionToSeatNumber
+        ?? turnPastilleState.displayedSeatNumber
+        ?? match.game?.currentTurnSeatNumber
+        ?? event.actorSeatNumber;
       activeActionVisual = {
         actorSeatNumber: event.actorSeatNumber,
+        turnSeatNumber: currentTurnSeatNumber,
         targetSeatNumbers: [...event.targetSeatNumbers],
         targetObjectInstanceId: event.targetObjectInstanceId,
         card: event.card,
@@ -5425,31 +5438,33 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     const outgoingFlights: Array<Promise<boolean>> = [];
-    for (const targetSeatNumber of event.targetSeatNumbers) {
-      if (targetSeatNumber === event.actorSeatNumber) {
-        continue;
-      }
+    if (event.targetObjectInstanceId == null) {
+      for (const targetSeatNumber of event.targetSeatNumbers) {
+        if (targetSeatNumber === event.actorSeatNumber) {
+          continue;
+        }
 
-      const targetRect = currentGeometry?.seatRects.get(targetSeatNumber);
-      if (targetRect == null) {
-        continue;
-      }
+        const targetRect = currentGeometry?.seatRects.get(targetSeatNumber);
+        if (targetRect == null) {
+          continue;
+        }
 
-      const originPoint = rectEdgePoint(
-        targetRect.x + targetRect.width / 2,
-        targetRect.y + targetRect.height / 2,
-        playSlot
-      );
-      const targetPoint = rectEdgePoint(playCenter.x, playCenter.y, targetRect);
-      outgoingFlights.push(addPlaybackArrow(originPoint, targetPoint, "#d23a3a", 10, 620, runId));
-      outgoingFlights.push(addCardFlight(event.card, playCenter, targetPoint, runId, {
-        durationMs: 620,
-        width: 108,
-        height: 150,
-        arcHeight: 68,
-        rotationFrom: 0.04,
-        rotationTo: -0.06
-      }));
+        const originPoint = rectEdgePoint(
+          targetRect.x + targetRect.width / 2,
+          targetRect.y + targetRect.height / 2,
+          playSlot
+        );
+        const targetPoint = rectEdgePoint(playCenter.x, playCenter.y, targetRect);
+        outgoingFlights.push(addPlaybackArrow(originPoint, targetPoint, "#d23a3a", 10, 620, runId));
+        outgoingFlights.push(addCardFlight(event.card, playCenter, targetPoint, runId, {
+          durationMs: 620,
+          width: 108,
+          height: 150,
+          arcHeight: 68,
+          rotationFrom: 0.04,
+          rotationTo: -0.06
+        }));
+      }
     }
 
     if (event.targetObjectInstanceId != null) {
@@ -5490,9 +5505,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             ? "combat.response.resistance_accrue"
             : event.responseChoice === "annulation"
               ? "combat.response.annulation"
-              : "combat.response.mirror";
+              : event.responseChoice === "ordre-demmerlaus"
+                ? "combat.response.ordre_demmerlaus"
+                : "combat.response.mirror";
     const messagePromise = showCombatFx(
-      t(language, key, { playerName: getSeatDisplayName(event.seatNumber) }),
+      t(language, key, {
+        playerName: getSeatDisplayName(event.seatNumber),
+        cardName: event.cardName ?? ""
+      }),
       "info",
       900,
       runId,
@@ -5746,8 +5766,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       ];
     }
 
-    // Freeze any seat row whose objects/statuses changed in this batch so cards
-    // do not appear or disappear on the table before the owning action replay finishes.
+    // Freeze any seat row whose public row or local hand changed in this batch so cards
+    // do not appear or disappear before the owning action replay finishes.
     for (const [seatNumberStr, preSeat] of Object.entries(preUpdateSeats)) {
       const seatNumber = Number(seatNumberStr);
       const newSeat = match.seats.find((s) => s.seatNumber === seatNumber);
@@ -5755,14 +5775,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       if (seatNumbersWithTimelineSnapshots.has(seatNumber)) {
         continue;
       }
+      const handChanged = seatNumber === localSeatNumber && !cardInstanceListsMatch(preSeat.hand, newSeat.hand);
       const objectsChanged = !cardInstanceListsMatch(preSeat.objects, newSeat.objects);
       const statusesChanged = !cardInstanceListsMatch(preSeat.statuses, newSeat.statuses);
-      if (objectsChanged || statusesChanged) {
+      if (handChanged || objectsChanged || statusesChanged) {
         changedSeatNumbers.add(seatNumber);
         const existing = displayedSeatsBySeat[seatNumber];
         displayedSeatsBySeat[seatNumber] = existing != null
           ? {
               ...existing,
+              hand: handChanged ? preSeat.hand : existing.hand,
               objects: preSeat.objects,
               statuses: preSeat.statuses
             }
@@ -5771,6 +5793,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     displayedSeatReleaseBoxIndexBySeat = buildDisplayedSeatReleaseMap(replayableEvents, changedSeatNumbers);
+    const localReleaseBoxIndex = displayedSeatReleaseBoxIndexBySeat[localSeatNumber];
+    const localDisplaySeat = displayedSeatsBySeat[localSeatNumber];
+    if (localDisplaySeat != null && localReleaseBoxIndex != null) {
+      displayedSeatReleaseBoxIndexBySeat[localSeatNumber] = Math.max(
+        localReleaseBoxIndex,
+        getLastReplayBoxIndex(replayableEvents)
+      );
+    }
   };
 
   const finishReplayBatch = (): void => {
@@ -6329,6 +6359,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
   const beginHandCardInteraction = (layout: HandCardLayout, point: StagePoint): void => {
     setHoveredCardInstanceId(layout.card.instanceId);
+    const arrowCanTargetObjects = layout.card.cardId !== "depouillement";
 
     if (cardNeedsArrow(layout.card, match.game?.viergeReplayCard)) {
       interactionState.arrowDrag = {
@@ -6338,7 +6369,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         pointerX: point.x,
         pointerY: point.y,
         nearestSeatNumber: resolveArrowNearestSeatNumber(point),
-        nearestObjectInstanceId: resolveArrowNearestObjectInstanceId(point)
+        nearestObjectInstanceId: arrowCanTargetObjects ? resolveArrowNearestObjectInstanceId(point) : null
       };
       interactionState.draggingCardInstanceId = "";
       interactionState.dragHoverTarget = null;
@@ -6458,7 +6489,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       syncConsumePreview();
       updateVictoryCelebrationState();
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : t(language, "error.playCard");
+      errorMessage = error instanceof Error
+        ? (localizeCardDisabledReason(error.message, language) ?? error.message)
+        : t(language, "error.playCard");
     } finally {
       clearInteractionState();
       redraw();
@@ -7583,7 +7616,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       interactionState.arrowDrag.pointerX = point.x;
       interactionState.arrowDrag.pointerY = point.y;
       interactionState.arrowDrag.nearestSeatNumber = resolveArrowNearestSeatNumber(point);
-      interactionState.arrowDrag.nearestObjectInstanceId = resolveArrowNearestObjectInstanceId(point);
+      const arrowCard = getLocalHand().find((card) => card.instanceId === interactionState.arrowDrag?.cardInstanceId);
+      interactionState.arrowDrag.nearestObjectInstanceId = arrowCard?.cardId === "depouillement"
+        ? null
+        : resolveArrowNearestObjectInstanceId(point);
       const now = Date.now();
       if (now - cursorSendAt >= CURSOR_THROTTLE_MS) {
         cursorSendAt = now;

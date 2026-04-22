@@ -1010,8 +1010,8 @@ function listTargetableObjectOwners(
   actorSeatNumber: number,
   sourceDefinition?: BaseCardDefinition
 ): number[] {
-  const ignoreAttackImmunity = isOrdreDemmerlausDefinition(sourceDefinition);
-  const includeSelf = isOrdreDemmerlausDefinition(sourceDefinition);
+  const ignoreAttackImmunity = canTargetSeatStatuses(sourceDefinition);
+  const includeSelf = canTargetSeatStatuses(sourceDefinition);
   return sortBySeatNumber(game.seatStates)
     .filter((seat) =>
       (includeSelf || seat.seatNumber !== actorSeatNumber)
@@ -1019,7 +1019,7 @@ function listTargetableObjectOwners(
       && (ignoreAttackImmunity || seat.attackImmunityTurns === 0)
       && (
         seat.objects.some((card) => requireDefinition(card.cardId).category.code === "O")
-        || (isOrdreDemmerlausDefinition(sourceDefinition) && seat.statuses.length > 0)
+        || (canTargetSeatStatuses(sourceDefinition) && seat.statuses.length > 0)
       )
     )
     .map((seat) => seat.seatNumber);
@@ -1052,7 +1052,7 @@ function seatHasEligibleTargetObject(
   return getStoredSeat(game, seatNumber).objects.some((objectCard) =>
     requireDefinition(objectCard.cardId).category.code === "O"
     && objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
-  ) || (isOrdreDemmerlausDefinition(sourceDefinition) && getStoredSeat(game, seatNumber).statuses.length > 0);
+  ) || (canTargetSeatStatuses(sourceDefinition) && getStoredSeat(game, seatNumber).statuses.length > 0);
 }
 
 function evaluateRoll(
@@ -1942,6 +1942,21 @@ function isOrdreDemmerlausDefinition(definition?: BaseCardDefinition): boolean {
   return definition?.id === ORDRE_DEMMERLAUS_CARD_ID;
 }
 
+function canTargetSeatStatuses(definition?: BaseCardDefinition): boolean {
+  return isOrdreDemmerlausDefinition(definition);
+}
+
+function findTargetedPermanentOwner(
+  game: StoredGameState,
+  targetObjectInstanceId: string,
+  sourceDefinition?: BaseCardDefinition
+): StoredSeatState | undefined {
+  return game.seatStates.find((seat) =>
+    seat.objects.some((card) => card.instanceId === targetObjectInstanceId)
+    || (canTargetSeatStatuses(sourceDefinition) && seat.statuses.some((status) => status.instanceId === targetObjectInstanceId))
+  );
+}
+
 function isTemporalStopResponseSuppressed(
   match: StoredMatchState,
   pendingAction: StoredPendingActionState,
@@ -2151,7 +2166,13 @@ function canPlayCardAsPendingResponse(match: StoredMatchState, seatNumber: numbe
   return { canPlay: false, reason: "Only response cards can be used right now" };
 }
 
-function getTargetSeatNumbers(game: StoredGameState, actorSeatNumber: number, request: PlayCardRequest, targets: CardTargetMode): number[] {
+function getTargetSeatNumbers(
+  game: StoredGameState,
+  actorSeatNumber: number,
+  request: PlayCardRequest,
+  targets: CardTargetMode,
+  sourceDefinition?: BaseCardDefinition
+): number[] {
   switch (targets) {
     case "self":
       return [actorSeatNumber];
@@ -2178,8 +2199,21 @@ function getTargetSeatNumbers(game: StoredGameState, actorSeatNumber: number, re
       return [leftSeat];
     }
     case "single_player_or_object":
-      return request.targetSeatNumber != null ? [request.targetSeatNumber] : [];
-    case "target_object":
+      if (request.targetSeatNumber != null) {
+        return [request.targetSeatNumber];
+      }
+      if (request.targetObjectInstanceId != null) {
+        const owner = findTargetedPermanentOwner(game, request.targetObjectInstanceId, sourceDefinition);
+        return owner == null ? [] : [owner.seatNumber];
+      }
+      return [];
+    case "target_object": {
+      if (request.targetObjectInstanceId == null) {
+        return [];
+      }
+      const owner = findTargetedPermanentOwner(game, request.targetObjectInstanceId, sourceDefinition);
+      return owner == null ? [] : [owner.seatNumber];
+    }
     case "none":
     default:
       return [];
@@ -3440,10 +3474,7 @@ function requestObjectOwnerSeatNumber(
   }
 
   if (targetObjectInstanceId != null) {
-    const owner = game.seatStates.find((seat) =>
-      seat.objects.some((card) => card.instanceId === targetObjectInstanceId)
-      || (isOrdreDemmerlausDefinition(sourceDefinition) && seat.statuses.some((status) => status.instanceId === targetObjectInstanceId))
-    );
+    const owner = findTargetedPermanentOwner(game, targetObjectInstanceId, sourceDefinition);
     if (owner == null) {
       throw new Error("Target object not found");
     }
@@ -3460,7 +3491,7 @@ function requestObjectOwnerSeatNumber(
     }
 
     const targetStatus = owner.statuses.find((status) => status.instanceId === targetObjectInstanceId);
-    if (targetStatus != null && isOrdreDemmerlausDefinition(sourceDefinition)) {
+    if (targetStatus != null && canTargetSeatStatuses(sourceDefinition)) {
       return owner.seatNumber;
     }
     throw new Error("That card cannot be targeted as an object");
@@ -4692,10 +4723,7 @@ function describePlay(match: StoredMatchState, actorSeatNumber: number, definiti
 
   if (request.targetObjectInstanceId != null) {
     const game = match.internalGame!;
-    const owner = game.seatStates.find((seat) =>
-      seat.objects.some((card) => card.instanceId === request.targetObjectInstanceId)
-      || (definition.id === ORDRE_DEMMERLAUS_CARD_ID && seat.statuses.some((status) => status.instanceId === request.targetObjectInstanceId))
-    );
+    const owner = findTargetedPermanentOwner(game, request.targetObjectInstanceId, definition);
     if (owner != null) {
       const targetedStatus = owner.statuses.find((status) => status.instanceId === request.targetObjectInstanceId);
       return `${actorName} played ${definition.name} on ${getPublicSeat(match, owner.seatNumber).displayName}'s ${targetedStatus != null ? "effect" : "object"}.`;
@@ -5919,8 +5947,7 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
         `Auto-resolving ${requireDefinition(game.pendingDeathSearch.sourceCard.cardId).name} for bot seat ${deathSearchChooser.seatNumber}`
       );
       try {
-        const botRequest = buildBotPendingDeathSearchRequest(match, game.pendingDeathSearch);
-        resolvePendingDeathSearch(match, deathSearchChooser.userId, botRequest);
+        resolvePendingDeathSearchForBot(match, deathSearchChooser.seatNumber);
       } catch (error) {
         appendServerDebugLog(
           match,
@@ -8169,7 +8196,7 @@ function resolveRemovedCardPlay(
     ? []
     : forcedFollowUp != null
       ? [forcedFollowUp.targetSeatNumber]
-      : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets);
+      : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const effectiveTargetSeatNumbers =
     request.mode === "active" && definition.rules.targets === "all_opponents"
       ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
@@ -8756,7 +8783,7 @@ function validateActionRequestBeforeHandRemoval(
 
   const targetSeatNumbers = forcedFollowUp != null
     ? [forcedFollowUp.targetSeatNumber]
-    : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets);
+    : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const effectiveTargetSeatNumbers =
     definition.rules.targets === "all_opponents"
       ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
@@ -9087,7 +9114,7 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
           requireDefinition(card.cardId).category.code === "O"
           && objectMatchesAllowedSlots(card.cardId, allowedObjectSlots)
         );
-        const targetableStatuses = definition.id === ORDRE_DEMMERLAUS_CARD_ID
+        const targetableStatuses = canTargetSeatStatuses(definition)
           ? ownerState.statuses.map((status) => ({ instanceId: status.instanceId }))
           : [];
         request.targetObjectInstanceId = pickRandom([...targetableObjects, ...targetableStatuses])?.instanceId;

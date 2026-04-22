@@ -354,6 +354,11 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
       pendingAction.responseMode === "collective"
         ? pendingAction.responders.filter((responder) => responder.state === "pending").slice(0, 1)
         : pendingAction.responders.filter((responder) => responder.state === "pending");
+    if (pendingResponders.length === 0) {
+      // Some action flows pause with the pending action still present while a
+      // follow-up state (for example Fouille de mort) takes over. Let the
+      // scheduler fall through to those dedicated handlers.
+    } else {
     const pendingBotResponders = pendingResponders
       .map((responder) => responder.seatNumber)
       .flatMap((seatNumber) => {
@@ -402,7 +407,8 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
 
       botTurnTimers.set(timerKey, timer);
     }
-    return;
+      return;
+    }
   }
 
   const pendingCurseRelease = match.internalGame?.pendingCurseRelease;

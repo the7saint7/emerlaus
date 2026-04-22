@@ -870,7 +870,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
     },
     "rules": {
       "selectionMode": "target",
-      "targets": "single_player_or_object",
+      "targets": "single_opponent",
       "requiresDefenseWindow": true,
       "requiresResistanceCheck": true,
       "staysInPlay": false,
@@ -939,7 +939,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
     },
     "rules": {
       "selectionMode": "target",
-      "targets": "single_opponent",
+        "targets": "target_object",
       "requiresDefenseWindow": true,
       "requiresResistanceCheck": true,
       "staysInPlay": false,
@@ -1012,7 +1012,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
     },
     "rules": {
       "selectionMode": "target",
-      "targets": "single_opponent",
+      "targets": "target_object",
       "requiresDefenseWindow": true,
       "requiresResistanceCheck": false,
       "staysInPlay": false,
