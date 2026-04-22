@@ -442,6 +442,56 @@ function fitText(text: string, maxPx: number, fontSize: number): string {
   return text.slice(0, Math.max(1, maxChars - 1)) + "…";
 }
 
+function getDisplayedHandCount(seat: SeatState): number {
+  return Math.max(0, seat.handCount, seat.hand?.length ?? 0);
+}
+
+function renderHandCountTabs(
+  scene: Container,
+  centerX: number,
+  bottomY: number,
+  handCount: number,
+  maxWidth: number,
+  dimmed = false
+): void {
+  const count = Math.max(0, Math.trunc(handCount));
+  const renderedCount = Math.max(1, count);
+  const tabWidth = count === 0 ? 24 : 24;
+  const tabHeight = count === 0 ? 24 : 24;
+  const radius = 6;
+  const availableWidth = Math.max(tabWidth, maxWidth);
+  const minStep = tabWidth + 4;
+  const step = renderedCount > 1
+    ? Math.max(minStep, (availableWidth - tabWidth) / (renderedCount - 1))
+    : 0;
+  const totalWidth = tabWidth + Math.max(0, renderedCount - 1) * step;
+  const startX = centerX - totalWidth / 2;
+  const baseFill = dimmed ? "#2d3535" : "#204632";
+  const innerFill = dimmed ? "#394444" : "#2d5a42";
+  const borderColor = dimmed ? "#aab7b2" : "#e7d8ab";
+  const lineColor = dimmed ? "#d6e1dc" : "#fff0c3";
+
+  for (let index = 0; index < renderedCount; index += 1) {
+    const x = startX + index * step;
+    const tab = new Graphics();
+    tab.roundRect(x, bottomY - tabHeight, tabWidth, tabHeight, radius);
+    tab.fill({ color: baseFill, alpha: count === 0 ? 0.44 : 0.94 });
+    tab.stroke({ color: borderColor, alpha: count === 0 ? 0.52 : 0.88, width: 1.4 });
+    tab.roundRect(x + 2, bottomY - tabHeight + 2, tabWidth - 4, Math.max(8, tabHeight - 11), radius - 2);
+    tab.fill({ color: innerFill, alpha: count === 0 ? 0.18 : 0.32 });
+    scene.addChild(tab);
+    scene.addChild(createRect(x + 4, bottomY - tabHeight + 6, tabWidth - 8, 1.4, lineColor, count === 0 ? 0.32 : 0.78, 999));
+  }
+
+  if (count === 0) {
+    scene.addChild(createLabel("0", centerX, bottomY - 10, {
+      fontSize: 11,
+      fontWeight: "700",
+      fill: "#f2ead6"
+    }, 0.5, 0.5));
+  }
+}
+
 function cardInstanceListsMatch(left: CardView[] | undefined, right: CardView[] | undefined): boolean {
   const leftIds = (left ?? []).map((card) => card.instanceId);
   const rightIds = (right ?? []).map((card) => card.instanceId);
@@ -1947,6 +1997,7 @@ function renderSeatNode(
   if (!isLocal) {
     const w = 252; const h = 62;
     const lx = x - w / 2; const ly = y - h / 2;
+    renderHandCountTabs(scene, x, ly + 18, getDisplayedHandCount(seat), 146, isDead);
     // Decorative bar — fixed at the 38/50 look regardless of actual HP.
     // Only the HP number on the right is live.
     const decorFill = Math.round(w * (38 / 50));
@@ -2117,6 +2168,14 @@ function renderTableScene(
   const turnPastilleInsertIndex = scene.children.length;
   if (!spectatorMode && playerSeat != null) {
     scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#101812", 0.56, 34));
+    renderHandCountTabs(
+      scene,
+      handArea.x + handArea.width / 2,
+      handArea.y + 18,
+      getDisplayedHandCount(playerSeat),
+      182,
+      playerSeat.isAlive === false
+    );
     if (playerSeat.seatNumber === currentTurnSeatNumber) {
     scene.addChild(createRect(handArea.x, handArea.y, handArea.width, handArea.height, "#c8900a", 0.24, 34));
     // Inner layer: bright yellow-gold centered, narrower — creates gradient impression
