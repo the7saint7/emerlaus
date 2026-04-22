@@ -17,7 +17,8 @@ export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?
 }
 
 export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boolean {
-  return getEffectiveInteractionTargets(card, viergeReplayCard) === "single_opponent";
+  const targets = getEffectiveInteractionTargets(card, viergeReplayCard);
+  return targets === "single_opponent" || targets === "target_object";
 }
 
 export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView): boolean {
@@ -197,11 +198,18 @@ export function isObjectTargetable(
     return false;
   }
 
+  const isOrdreDemmerlaus = selectedCard.cardId === "ordre-demmerlaus";
+
   if (
+    !isOrdreDemmerlaus &&
     ownerSeatNumber !== localSeatNumber
     && ownerObjects != null
     && ownerObjects.some((card) => card.cardId === "sanctuaire-demmerlaus")
   ) {
+    return false;
+  }
+
+  if (objectCard.zone === "status" && !isOrdreDemmerlaus) {
     return false;
   }
 
@@ -217,7 +225,15 @@ export function objectCardMatchesSelectedTargeting(
   localSeatNumber: number,
   ownerObjects?: CardView[]
 ): boolean {
-  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber, ownerObjects) || objectCard.categoryCode !== "O") {
+  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber, ownerObjects)) {
+    return false;
+  }
+
+  if (selectedCard?.cardId === "ordre-demmerlaus") {
+    return true;
+  }
+
+  if (objectCard.categoryCode !== "O") {
     return false;
   }
 

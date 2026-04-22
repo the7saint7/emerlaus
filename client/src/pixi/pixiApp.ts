@@ -113,6 +113,7 @@ interface PixiArrowDragState {
   pointerX: number;
   pointerY: number;
   nearestSeatNumber: number | null;
+  nearestObjectInstanceId: string | null;
 }
 
 interface PixiInteractionState {
@@ -313,6 +314,7 @@ interface CachedTextureEntry {
 const loadedTextureByUrl = new Map<string, CachedTextureEntry>();
 const requestedTextureUrls = new Set<string>();
 const HAND_DRAG_START_DISTANCE = 16;
+const OBJECT_DRAG_SNAP_DISTANCE = 110;
 const CURSOR_THROTTLE_MS = 50;
 const GHOST_TIMEOUT_MS = 500;
 const TURN_PASTILLE_MOVE_MS = 540;
@@ -991,37 +993,35 @@ function renderObjectRow(
     let dH = cardHeight;
     let isAmLoadHover = false;
 
-    if (!isStatus) {
-      const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber, seat.objects);
-      const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
-      isAmLoadHover = hovered && canLoadMassAttackStaff(selectedCard, card, seat.seatNumber, localSeatNumber);
+    const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber, seat.objects);
+    const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
+    isAmLoadHover = !isStatus && hovered && canLoadMassAttackStaff(selectedCard, card, seat.seatNumber, localSeatNumber);
 
-      if (isAmLoadHover && batonLoadScale != null && batonLoadScale > 1) {
-        dW = cardWidth * batonLoadScale;
-        dH = cardHeight * batonLoadScale;
-        const shiftProgress = (batonLoadScale - 1) / 0.45;
-        const shiftX = -Math.round(180 * shiftProgress);
-        dX = cardCenterX - dW / 2 + shiftX;
-        dY = cardCenterY - dH / 2;
-      }
+    if (isAmLoadHover && batonLoadScale != null && batonLoadScale > 1) {
+      dW = cardWidth * batonLoadScale;
+      dH = cardHeight * batonLoadScale;
+      const shiftProgress = (batonLoadScale - 1) / 0.45;
+      const shiftX = -Math.round(180 * shiftProgress);
+      dX = cardCenterX - dW / 2 + shiftX;
+      dY = cardCenterY - dH / 2;
+    }
 
-      if (targetable) {
-        if (isAmLoadHover) {
-          scene.addChild(createRect(dX - 7, dY - 7, dW + 14, dH + 14, "#f5c842", 0.62, 18));
-        } else {
-          scene.addChild(createRect(x - 4, y - 4, cardWidth + 8, cardHeight + 8, "#f0c96d", hovered ? 0.26 : 0.12, 16));
-        }
-        objectTargets.push({
-          seatNumber: seat.seatNumber,
-          objectInstanceId: card.instanceId,
-          x,
-          y,
-          width: cardWidth,
-          height: cardHeight,
-          centerX: x + cardWidth / 2,
-          centerY: y + cardHeight / 2
-        });
+    if (targetable) {
+      if (isAmLoadHover) {
+        scene.addChild(createRect(dX - 7, dY - 7, dW + 14, dH + 14, "#f5c842", 0.62, 18));
+      } else {
+        scene.addChild(createRect(x - 4, y - 4, cardWidth + 8, cardHeight + 8, "#f0c96d", hovered ? 0.26 : 0.12, 16));
       }
+      objectTargets.push({
+        seatNumber: seat.seatNumber,
+        objectInstanceId: card.instanceId,
+        x,
+        y,
+        width: cardWidth,
+        height: cardHeight,
+        centerX: x + cardWidth / 2,
+        centerY: y + cardHeight / 2
+      });
     }
 
     inspectTargets.push({
@@ -1119,7 +1119,8 @@ function createCurvedArrow(
   targetX: number,
   targetY: number,
   color: string,
-  width: number
+  width: number,
+  centerHeadOnTarget = true
 ): Graphics {
   const arrow = new Graphics();
   const borderColor = darkenHexColor(color);
@@ -1144,11 +1145,10 @@ function createCurvedArrow(
   const unitX = Math.cos(angle);
   const unitY = Math.sin(angle);
 
-  // Center the arrowhead on the pointer location instead of placing the tip there.
-  const baseCenterX = targetX - unitX * (headLength / 2);
-  const baseCenterY = targetY - unitY * (headLength / 2);
-  const tipX = targetX + unitX * (headLength / 2);
-  const tipY = targetY + unitY * (headLength / 2);
+  const baseCenterX = centerHeadOnTarget ? targetX - unitX * (headLength / 2) : targetX - unitX * headLength;
+  const baseCenterY = centerHeadOnTarget ? targetY - unitY * (headLength / 2) : targetY - unitY * headLength;
+  const tipX = centerHeadOnTarget ? targetX + unitX * (headLength / 2) : targetX;
+  const tipY = centerHeadOnTarget ? targetY + unitY * (headLength / 2) : targetY;
 
   arrow
     .moveTo(originX, originY)
@@ -2527,7 +2527,7 @@ function renderTableScene(
 
     if (displayedAction.targetObjectInstanceId != null) {
       const objectInspectTarget = inspectTargets.find((target) =>
-        target.group === "object" && target.card.instanceId === displayedAction.targetObjectInstanceId
+        target.card.instanceId === displayedAction.targetObjectInstanceId
       );
       if (objectInspectTarget != null) {
         scene.addChild(createCurvedArrow(
@@ -2635,10 +2635,14 @@ function renderTableScene(
     if (interactionState.draggingCardInstanceId !== "") {
       const dragLayout = handLayouts.find((layout) => layout.card.instanceId === interactionState.draggingCardInstanceId);
       if (dragLayout != null) {
+        const snappedObjectTarget = interactionState.dragHoverTarget?.kind === "object"
+          ? objectTargets.find((target) => target.objectInstanceId === interactionState.dragHoverTarget?.objectInstanceId)
+          : undefined;
+        const snappedObjectCenter = snappedObjectTarget == null ? null : getRectCenter(snappedObjectTarget);
         const floatingLayout: HandCardLayout = {
           ...dragLayout,
-          x: interactionState.dragPointerX,
-          y: interactionState.dragPointerY,
+          x: snappedObjectCenter?.x ?? interactionState.dragPointerX,
+          y: snappedObjectCenter?.y ?? interactionState.dragPointerY,
           rotation: 0,
           scale: 1.14
         };
@@ -2657,15 +2661,18 @@ function renderTableScene(
       }
 
       const nearestSeat = seatTargets.find((target) => target.seatNumber === interactionState.arrowDrag?.nearestSeatNumber);
-      const tipX = nearestSeat?.centerX ?? interactionState.arrowDrag.pointerX;
-      const tipY = nearestSeat?.centerY ?? interactionState.arrowDrag.pointerY;
+      const nearestObject = objectTargets.find((target) => target.objectInstanceId === interactionState.arrowDrag?.nearestObjectInstanceId);
+      const nearestObjectCenter = nearestObject == null ? null : getRectCenter(nearestObject);
+      const tipX = nearestObjectCenter?.x ?? nearestSeat?.centerX ?? interactionState.arrowDrag.pointerX;
+      const tipY = nearestObjectCenter?.y ?? nearestSeat?.centerY ?? interactionState.arrowDrag.pointerY;
       const arrow = createCurvedArrow(
         interactionState.arrowDrag.originX,
         interactionState.arrowDrag.originY,
         tipX,
         tipY,
-        nearestSeat != null ? "#d23a3a" : "#b45d5d",
-        nearestSeat != null ? 12 : 8
+        nearestObject != null || nearestSeat != null ? "#d23a3a" : "#b45d5d",
+        nearestObject != null || nearestSeat != null ? 12 : 8,
+        nearestObject == null
       );
       scene.addChild(arrow);
     }
@@ -5265,7 +5272,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     if (event.targetObjectInstanceId != null) {
       const targetObject = currentGeometry?.inspectTargets.find((target) =>
-        target.group === "object" && target.card.instanceId === event.targetObjectInstanceId
+        target.card.instanceId === event.targetObjectInstanceId
       );
       if (targetObject != null) {
         const objectCenter = getRectCenter(targetObject);
@@ -6134,7 +6141,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         originY: layout.y - 28,
         pointerX: point.x,
         pointerY: point.y,
-        nearestSeatNumber: resolveArrowNearestSeatNumber(point)
+        nearestSeatNumber: resolveArrowNearestSeatNumber(point),
+        nearestObjectInstanceId: resolveArrowNearestObjectInstanceId(point)
       };
       interactionState.draggingCardInstanceId = "";
       interactionState.dragHoverTarget = null;
@@ -6158,6 +6166,29 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           kind: "object",
           seatNumber: objectTarget.seatNumber,
           objectInstanceId: objectTarget.objectInstanceId
+        };
+      }
+    }
+
+    if (
+      card.targets === "target_object"
+      || card.targets === "single_player_or_object"
+    ) {
+      let nearestObjectTarget: ObjectTargetGeometry | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const objectTarget of currentGeometry.objectTargets) {
+        const distance = Math.hypot(point.x - objectTarget.centerX, point.y - objectTarget.centerY);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestObjectTarget = objectTarget;
+        }
+      }
+
+      if (nearestObjectTarget != null && nearestDistance <= OBJECT_DRAG_SNAP_DISTANCE) {
+        return {
+          kind: "object",
+          seatNumber: nearestObjectTarget.seatNumber,
+          objectInstanceId: nearestObjectTarget.objectInstanceId
         };
       }
     }
@@ -6199,6 +6230,24 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     return nearestDistance <= 130 ? nearestSeatNumber : null;
+  };
+
+  const resolveArrowNearestObjectInstanceId = (point: StagePoint): string | null => {
+    if (currentGeometry == null) {
+      return null;
+    }
+
+    let nearestObjectInstanceId: string | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const objectTarget of currentGeometry.objectTargets) {
+      const distance = Math.hypot(point.x - objectTarget.centerX, point.y - objectTarget.centerY);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestObjectInstanceId = objectTarget.objectInstanceId;
+      }
+    }
+
+    return nearestDistance <= OBJECT_DRAG_SNAP_DISTANCE ? nearestObjectInstanceId : null;
   };
 
   const performCardPlay = async (request: Parameters<typeof playCard>[2]): Promise<void> => {
@@ -7332,6 +7381,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       interactionState.arrowDrag.pointerX = point.x;
       interactionState.arrowDrag.pointerY = point.y;
       interactionState.arrowDrag.nearestSeatNumber = resolveArrowNearestSeatNumber(point);
+      interactionState.arrowDrag.nearestObjectInstanceId = resolveArrowNearestObjectInstanceId(point);
       const now = Date.now();
       if (now - cursorSendAt >= CURSOR_THROTTLE_MS) {
         cursorSendAt = now;
@@ -7433,9 +7483,21 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     if (interactionState.arrowDrag != null) {
-      const { cardInstanceId, nearestSeatNumber } = interactionState.arrowDrag;
+      const { cardInstanceId, nearestSeatNumber, nearestObjectInstanceId } = interactionState.arrowDrag;
       const draggedCard = getLocalHand().find((card) => card.instanceId === cardInstanceId);
       broadcastCursorTarget(null);
+      if (nearestObjectInstanceId != null) {
+        if (draggedCard != null && !draggedCard.canPlay) {
+          showBlockedCardMessage(draggedCard);
+          return;
+        }
+        await performCardPlay({
+          cardInstanceId,
+          mode: "active",
+          targetObjectInstanceId: nearestObjectInstanceId
+        });
+        return;
+      }
       if (nearestSeatNumber != null) {
         if (draggedCard != null && !draggedCard.canPlay) {
           showBlockedCardMessage(draggedCard);

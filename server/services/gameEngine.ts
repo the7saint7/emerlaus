@@ -1010,13 +1010,17 @@ function listTargetableObjectOwners(
   actorSeatNumber: number,
   sourceDefinition?: BaseCardDefinition
 ): number[] {
-  const ignoreAttackImmunity = sourceDefinition?.id === ORDRE_DEMMERLAUS_CARD_ID;
+  const ignoreAttackImmunity = isOrdreDemmerlausDefinition(sourceDefinition);
+  const includeSelf = isOrdreDemmerlausDefinition(sourceDefinition);
   return sortBySeatNumber(game.seatStates)
     .filter((seat) =>
-      seat.seatNumber !== actorSeatNumber
+      (includeSelf || seat.seatNumber !== actorSeatNumber)
       && seat.alive
       && (ignoreAttackImmunity || seat.attackImmunityTurns === 0)
-      && seat.objects.some((card) => requireDefinition(card.cardId).category.code === "O")
+      && (
+        seat.objects.some((card) => requireDefinition(card.cardId).category.code === "O")
+        || (isOrdreDemmerlausDefinition(sourceDefinition) && seat.statuses.length > 0)
+      )
     )
     .map((seat) => seat.seatNumber);
 }
@@ -1042,12 +1046,13 @@ function objectMatchesAllowedSlots(cardId: string, allowedSlots?: string[]): boo
 function seatHasEligibleTargetObject(
   game: StoredGameState,
   seatNumber: number,
-  allowedSlots?: string[]
+  allowedSlots?: string[],
+  sourceDefinition?: BaseCardDefinition
 ): boolean {
   return getStoredSeat(game, seatNumber).objects.some((objectCard) =>
     requireDefinition(objectCard.cardId).category.code === "O"
     && objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
-  );
+  ) || (isOrdreDemmerlausDefinition(sourceDefinition) && getStoredSeat(game, seatNumber).statuses.length > 0);
 }
 
 function evaluateRoll(
@@ -1914,13 +1919,13 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
       }
     case "target_object":
       return listTargetableObjectOwners(game, actorSeatNumber, definition).some((seatNumber) =>
-        seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
+        seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots, definition)
       )
         ? { canPlay: true }
         : { canPlay: false, reason: "No target object available" };
     case "single_player_or_object":
       return attackableOpponents.length > 0 || listTargetableObjectOwners(game, actorSeatNumber, definition).some((seatNumber) =>
-        seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
+        seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots, definition)
       )
         ? { canPlay: true }
         : { canPlay: false, reason: "No valid target" };
@@ -1931,6 +1936,10 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
 
 function isTemporalStopTurnActiveForActor(match: StoredMatchState, actorSeatNumber: number): boolean {
   return match.internalGame?.temporalStopActiveSeatNumber === actorSeatNumber;
+}
+
+function isOrdreDemmerlausDefinition(definition?: BaseCardDefinition): boolean {
+  return definition?.id === ORDRE_DEMMERLAUS_CARD_ID;
 }
 
 function isTemporalStopResponseSuppressed(
@@ -2398,6 +2407,31 @@ function removeAllObjectsFromSeat(match: StoredMatchState, ownerSeatNumber: numb
   }
   syncObjectOwnershipStats(match);
   return removed;
+}
+
+function removeTargetPermanentFromSeat(match: StoredMatchState, ownerSeatNumber: number, instanceId: string): StoredCardInstance[] {
+  const game = match.internalGame;
+  if (game == null) {
+    return [];
+  }
+
+  const owner = getStoredSeat(game, ownerSeatNumber);
+  const objectIndex = owner.objects.findIndex((card) => card.instanceId === instanceId);
+  if (objectIndex !== -1) {
+    const removed = owner.objects.splice(objectIndex, 1);
+    appendServerDebugLog(match, "object", `Seat ${ownerSeatNumber} lost object ${requireDefinition(removed[0].cardId).name}`);
+    syncObjectOwnershipStats(match);
+    return removed;
+  }
+
+  const statusIndex = owner.statuses.findIndex((status) => status.instanceId === instanceId);
+  if (statusIndex !== -1) {
+    const [removedStatus] = owner.statuses.splice(statusIndex, 1);
+    appendServerDebugLog(match, "status", `Seat ${ownerSeatNumber} lost status ${requireDefinition(removedStatus.cardId).name}`);
+    return [{ instanceId: removedStatus.instanceId, cardId: removedStatus.cardId }];
+  }
+
+  throw new Error("Target object not found");
 }
 
 function maybePassChanceRoll(
@@ -3216,33 +3250,49 @@ function requestObjectOwnerSeatNumber(
   }
 
   if (targetObjectInstanceId != null) {
-    const owner = game.seatStates.find((seat) => seat.objects.some((card) => card.instanceId === targetObjectInstanceId));
+    const owner = game.seatStates.find((seat) =>
+      seat.objects.some((card) => card.instanceId === targetObjectInstanceId)
+      || (isOrdreDemmerlausDefinition(sourceDefinition) && seat.statuses.some((status) => status.instanceId === targetObjectInstanceId))
+    );
     if (owner == null) {
       throw new Error("Target object not found");
     }
 
     const targetObject = owner.objects.find((card) => card.instanceId === targetObjectInstanceId);
-    if (targetObject == null || requireDefinition(targetObject.cardId).category.code !== "O") {
-      throw new Error("That card cannot be targeted as an object");
-    }
-    if (sourceDefinition != null && !objectMatchesAllowedSlots(targetObject.cardId, getAllowedObjectSlotsForDefinition(sourceDefinition))) {
-      throw new Error("That object cannot be targeted by this card");
+    if (targetObject != null) {
+      if (requireDefinition(targetObject.cardId).category.code !== "O") {
+        throw new Error("That card cannot be targeted as an object");
+      }
+      if (sourceDefinition != null && !objectMatchesAllowedSlots(targetObject.cardId, getAllowedObjectSlotsForDefinition(sourceDefinition))) {
+        throw new Error("That object cannot be targeted by this card");
+      }
+      return owner.seatNumber;
     }
 
-    return owner.seatNumber;
+    const targetStatus = owner.statuses.find((status) => status.instanceId === targetObjectInstanceId);
+    if (targetStatus != null && isOrdreDemmerlausDefinition(sourceDefinition)) {
+      return owner.seatNumber;
+    }
+    throw new Error("That card cannot be targeted as an object");
   }
 
   const targetSeatNumber = targetSeatNumbers[0] ?? listTargetableObjectOwners(game, actorSeatNumber, sourceDefinition).find((seatNumber) =>
-    getStoredSeat(game, seatNumber).objects.some((objectCard) =>
-      objectMatchesAllowedSlots(objectCard.cardId, sourceDefinition == null ? undefined : getAllowedObjectSlotsForDefinition(sourceDefinition))
+    seatHasEligibleTargetObject(
+      game,
+      seatNumber,
+      sourceDefinition == null ? undefined : getAllowedObjectSlotsForDefinition(sourceDefinition),
+      sourceDefinition
     )
   );
   if (targetSeatNumber == null) {
     throw new Error("A target object is required");
   }
 
-  if (sourceDefinition != null && !getStoredSeat(game, targetSeatNumber).objects.some((objectCard) =>
-    objectMatchesAllowedSlots(objectCard.cardId, getAllowedObjectSlotsForDefinition(sourceDefinition))
+  if (sourceDefinition != null && !seatHasEligibleTargetObject(
+    game,
+    targetSeatNumber,
+    getAllowedObjectSlotsForDefinition(sourceDefinition),
+    sourceDefinition
   )) {
     throw new Error("That player has no valid object for this card");
   }
@@ -4450,9 +4500,13 @@ function describePlay(match: StoredMatchState, actorSeatNumber: number, definiti
 
   if (request.targetObjectInstanceId != null) {
     const game = match.internalGame!;
-    const owner = game.seatStates.find((seat) => seat.objects.some((card) => card.instanceId === request.targetObjectInstanceId));
+    const owner = game.seatStates.find((seat) =>
+      seat.objects.some((card) => card.instanceId === request.targetObjectInstanceId)
+      || (definition.id === ORDRE_DEMMERLAUS_CARD_ID && seat.statuses.some((status) => status.instanceId === request.targetObjectInstanceId))
+    );
     if (owner != null) {
-      return `${actorName} played ${definition.name} on ${getPublicSeat(match, owner.seatNumber).displayName}'s object.`;
+      const targetedStatus = owner.statuses.find((status) => status.instanceId === request.targetObjectInstanceId);
+      return `${actorName} played ${definition.name} on ${getPublicSeat(match, owner.seatNumber).displayName}'s ${targetedStatus != null ? "effect" : "object"}.`;
     }
   }
 
@@ -4681,7 +4735,9 @@ function applyEffect(
           return queueObjectChoice(match, actorSeatNumber, ownerSeatNumber, cardInstance, "remove", boxId, objectChoiceFinalizeActorSeatNumber);
         }
 
-        const removed = removeObjectFromSeat(match, ownerSeatNumber, targetObjectInstanceId);
+        const removed = isOrdreDemmerlausDefinition(definition)
+          ? removeTargetPermanentFromSeat(match, ownerSeatNumber, targetObjectInstanceId)
+          : removeObjectFromSeat(match, ownerSeatNumber, targetObjectInstanceId);
         discardInstances(game, removed);
         if (removed[0] != null) {
           appendServerDebugLog(match, "object", `${definition.name} discarded ${requireDefinition(removed[0].cardId).name} from seat ${ownerSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`);
@@ -8783,9 +8839,7 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
         const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
         const ownerSeatNumber = pickRandom(
           listTargetableObjectOwners(game, seatNumber, definition).filter((candidateSeatNumber) =>
-            getStoredSeat(game, candidateSeatNumber).objects.some((objectCard) =>
-              objectMatchesAllowedSlots(objectCard.cardId, allowedObjectSlots)
-            )
+            seatHasEligibleTargetObject(game, candidateSeatNumber, allowedObjectSlots, definition)
           )
         );
         if (ownerSeatNumber == null) {
@@ -8797,7 +8851,10 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
           requireDefinition(card.cardId).category.code === "O"
           && objectMatchesAllowedSlots(card.cardId, allowedObjectSlots)
         );
-        request.targetObjectInstanceId = pickRandom(targetableObjects)?.instanceId;
+        const targetableStatuses = definition.id === ORDRE_DEMMERLAUS_CARD_ID
+          ? ownerState.statuses.map((status) => ({ instanceId: status.instanceId }))
+          : [];
+        request.targetObjectInstanceId = pickRandom([...targetableObjects, ...targetableStatuses])?.instanceId;
         break;
       }
       default:
