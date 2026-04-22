@@ -383,17 +383,21 @@ export interface JoinRequest {
   userId: string;
   displayName: string;
   avatarUrl?: string;
+  discordAccessToken?: string;
+  discordGuildId?: string;
 }
 
 export interface JoinResponse {
   match: MatchState;
   localSeatNumber: number | null;
   playerSessionToken: string;
+  canUseDevCardPicker: boolean;
 }
 
 export interface MatchConfigResponse {
   discordClientId: string;
   enableDevTools: boolean;
+  devCardPickerRoleOverrideEnabled: boolean;
 }
 
 export type BugReportStatus = "open" | "fixed" | "ignored";

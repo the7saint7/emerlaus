@@ -71,7 +71,7 @@ import {
 } from "./services/matchService.js";
 import { persistClientLogSnapshot } from "./services/localLogService.js";
 import { getMatch } from "./store/matchStore.js";
-import { getPlayerSessionUserId } from "./store/playerSessionStore.js";
+import { canPlayerSessionUseDevCardPicker, getPlayerSessionUserId } from "./store/playerSessionStore.js";
 import { addSseConnection, broadcastCursorMove } from "./store/sseStore.js";
 
 const app = express();
@@ -157,7 +157,6 @@ function requireDevToolsEnabled(
 }
 
 app.use("/api/dev", requireDevToolsEnabled);
-app.use(/^\/api\/matches\/[^/]+\/dev(?:\/|$)/, requireDevToolsEnabled);
 
 app.get("/health", (_request, response) => {
   response.json({ ok: true });
@@ -166,7 +165,8 @@ app.get("/health", (_request, response) => {
 app.get("/api/config", (_request, response) => {
   const payload: MatchConfigResponse = {
     discordClientId: config.discordClientId,
-    enableDevTools: config.enableDevTools
+    enableDevTools: config.enableDevTools,
+    devCardPickerRoleOverrideEnabled: config.devCardPickerRoleIds.length > 0
   };
 
   response.json(payload);
@@ -279,6 +279,33 @@ function requireAuthenticatedUserId(request: express.Request): string {
   return userId;
 }
 
+function requireDevCardPickerAccess(
+  request: express.Request,
+  response: express.Response,
+  next: express.NextFunction
+): void {
+  if (config.enableDevTools) {
+    next();
+    return;
+  }
+
+  const token = request.header("x-player-session-token");
+  if (token == null || token.trim() === "") {
+    response.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const instanceId = Array.isArray(request.params.instanceId)
+    ? request.params.instanceId[0]
+    : request.params.instanceId;
+  if (canPlayerSessionUseDevCardPicker(instanceId, token)) {
+    next();
+    return;
+  }
+
+  response.status(404).json({ error: "Not found" });
+}
+
 function requestBaseUrl(request: express.Request): string | null {
   const forwardedProto = request.header("x-forwarded-proto")?.split(",")[0]?.trim();
   const forwardedHost = request.header("x-forwarded-host")?.split(",")[0]?.trim();
@@ -295,10 +322,10 @@ function requestBaseUrl(request: express.Request): string | null {
   return `${protocol}://${host.trim()}`;
 }
 
-app.post("/api/matches/:instanceId/join", (request, response) => {
+app.post("/api/matches/:instanceId/join", async (request, response) => {
   try {
     const body = request.body as JoinRequest;
-    response.json(joinMatch(request.params.instanceId, body));
+    response.json(await joinMatch(request.params.instanceId, body));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to join match"
@@ -354,11 +381,14 @@ app.post("/api/matches/:instanceId/host/kick-player", (request, response) => {
   }
 });
 
-app.post("/api/matches/:instanceId/dev/draw-card", (request, response) => {
+app.post("/api/matches/:instanceId/dev/draw-card", requireDevCardPickerAccess, (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
+    const instanceId = Array.isArray(request.params.instanceId)
+      ? request.params.instanceId[0]
+      : request.params.instanceId;
     const { cardId } = request.body as { cardId: string };
-    response.json(devDrawCard(request.params.instanceId, userId, cardId));
+    response.json(devDrawCard(instanceId, userId, cardId));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to draw card"
@@ -366,11 +396,14 @@ app.post("/api/matches/:instanceId/dev/draw-card", (request, response) => {
   }
 });
 
-app.post("/api/matches/:instanceId/dev/random-dice", (request, response) => {
+app.post("/api/matches/:instanceId/dev/random-dice", requireDevToolsEnabled, (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
+    const instanceId = Array.isArray(request.params.instanceId)
+      ? request.params.instanceId[0]
+      : request.params.instanceId;
     const { seatNumber } = request.body as { seatNumber: number };
-    response.json(devRandomDiceRoll(request.params.instanceId, userId, seatNumber));
+    response.json(devRandomDiceRoll(instanceId, userId, seatNumber));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to roll dice"

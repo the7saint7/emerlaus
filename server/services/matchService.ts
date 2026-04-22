@@ -50,9 +50,11 @@ import {
   selectPendingObject
 } from "./gameEngine.js";
 import type { StoredMatchState } from "./gameEngineTypes.js";
+import { config } from "../config.js";
 import { getMatch, getOrCreateMatch, saveMatch } from "../store/matchStore.js";
 import { issuePlayerSession, revokePlayerSession } from "../store/playerSessionStore.js";
 import { notifyMatchUpdated } from "../store/sseStore.js";
+import { canUseDevCardPickerFromDiscordRole } from "./discordOAuth.js";
 
 const botTurnTimers = new Map<string, NodeJS.Timeout>();
 
@@ -189,9 +191,34 @@ function removeSpectator(match: StoredMatchState, userId: string): void {
   match.spectators = match.spectators.filter((spectator) => spectator.userId !== userId);
 }
 
-export function joinMatch(instanceId: string, request: JoinRequest): JoinResponse {
+async function resolveDevCardPickerAccess(request: JoinRequest): Promise<boolean> {
+  if (config.enableDevTools) {
+    return true;
+  }
+
+  if (config.devCardPickerRoleIds.length === 0) {
+    return false;
+  }
+
+  if (request.discordAccessToken == null || request.discordGuildId == null) {
+    return false;
+  }
+
+  try {
+    return await canUseDevCardPickerFromDiscordRole(request.discordAccessToken, request.discordGuildId);
+  } catch (error) {
+    console.warn(
+      "Unable to resolve Discord role override for dev card picker:",
+      error instanceof Error ? error.message : error
+    );
+    return false;
+  }
+}
+
+export async function joinMatch(instanceId: string, request: JoinRequest): Promise<JoinResponse> {
   const match = getOrCreateMatch(instanceId);
   cleanupReconnectedBotSeats(match);
+  const canUseDevCardPicker = await resolveDevCardPickerAccess(request);
 
   const existingSeat = getSeatByUserId(match, request.userId);
 
@@ -207,7 +234,8 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
     return {
       match: buildPublicMatchState(match, request.userId),
       localSeatNumber: existingSeat.seatNumber,
-      playerSessionToken: issuePlayerSession(instanceId, request.userId)
+      playerSessionToken: issuePlayerSession(instanceId, request.userId, { canUseDevCardPicker }),
+      canUseDevCardPicker
     };
   }
 
@@ -227,7 +255,8 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
     return {
       match: buildPublicMatchState(match, request.userId),
       localSeatNumber: rejoinableSeat.seatNumber,
-      playerSessionToken: issuePlayerSession(instanceId, request.userId)
+      playerSessionToken: issuePlayerSession(instanceId, request.userId, { canUseDevCardPicker }),
+      canUseDevCardPicker
     };
   }
 
@@ -238,7 +267,8 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
     return {
       match: buildPublicMatchState(match, request.userId),
       localSeatNumber: null,
-      playerSessionToken: issuePlayerSession(instanceId, request.userId)
+      playerSessionToken: issuePlayerSession(instanceId, request.userId, { canUseDevCardPicker }),
+      canUseDevCardPicker
     };
   }
 
@@ -271,7 +301,8 @@ export function joinMatch(instanceId: string, request: JoinRequest): JoinRespons
   return {
     match: buildPublicMatchState(match, request.userId),
     localSeatNumber: seatNumber,
-    playerSessionToken: issuePlayerSession(instanceId, request.userId)
+    playerSessionToken: issuePlayerSession(instanceId, request.userId, { canUseDevCardPicker }),
+    canUseDevCardPicker
   };
 }
 

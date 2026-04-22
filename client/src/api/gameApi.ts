@@ -42,13 +42,25 @@ export async function fetchConfig(): Promise<MatchConfigResponse> {
   return parseJson<MatchConfigResponse>(response);
 }
 
-export async function joinMatch(instanceId: string, profile: LocalUserProfile): Promise<JoinResponse> {
+export async function joinMatch(
+  instanceId: string,
+  profile: LocalUserProfile,
+  options: { discordAccessToken?: string | null; guildId?: string | null } = {}
+): Promise<JoinResponse> {
   const response = await fetch(`/api/matches/${instanceId}/join`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(profile)
+    body: JSON.stringify({
+      ...profile,
+      ...(options.discordAccessToken != null && options.discordAccessToken !== ""
+        ? { discordAccessToken: options.discordAccessToken }
+        : {}),
+      ...(options.guildId != null && options.guildId !== ""
+        ? { discordGuildId: options.guildId }
+        : {})
+    })
   });
 
   return parseJson<JoinResponse>(response);

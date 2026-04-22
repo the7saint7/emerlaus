@@ -7,6 +7,7 @@ interface ActivitySession {
   instanceId: string;
   channelId: string | null;
   guildId: string | null;
+  discordAccessToken: string | null;
   currentUser: LocalUserProfile;
   mode: "browser" | "discord";
   enableDevTools: boolean;
@@ -41,14 +42,18 @@ function buildMockBrowserUser(): LocalUserProfile {
 
 async function authenticateWithDiscord(
   sdk: DiscordSDK,
-  discordClientId: string
-): Promise<LocalUserProfile> {
+  discordClientId: string,
+  includeGuildMemberScope: boolean
+): Promise<{ currentUser: LocalUserProfile; accessToken: string }> {
+  const scopes = includeGuildMemberScope
+    ? ["identify", "guilds", "guilds.members.read"] as const
+    : ["identify", "guilds"] as const;
   const authorization = await sdk.commands.authorize({
     client_id: discordClientId,
     response_type: "code",
     state: "",
     prompt: "none",
-    scope: ["identify", "guilds"]
+    scope: [...scopes]
   });
 
   const tokenResponse = await fetch("/api/token", {
@@ -71,11 +76,14 @@ async function authenticateWithDiscord(
   });
 
   return {
-    userId: auth.user.id,
-    displayName: auth.user.global_name ?? auth.user.username,
-    avatarUrl: auth.user.avatar
-      ? `https://cdn.discordapp.com/avatars/${auth.user.id}/${auth.user.avatar}.png?size=128`
-      : buildAvatarDataUrl(auth.user.username)
+    currentUser: {
+      userId: auth.user.id,
+      displayName: auth.user.global_name ?? auth.user.username,
+      avatarUrl: auth.user.avatar
+        ? `https://cdn.discordapp.com/avatars/${auth.user.id}/${auth.user.avatar}.png?size=128`
+        : buildAvatarDataUrl(auth.user.username)
+    },
+    accessToken
   };
 }
 
@@ -89,6 +97,7 @@ export async function createDiscordSession(): Promise<ActivitySession> {
       instanceId,
       channelId: null,
       guildId: null,
+      discordAccessToken: null,
       currentUser: browserUser,
       mode: "browser",
       enableDevTools: config.enableDevTools,
@@ -102,13 +111,24 @@ export async function createDiscordSession(): Promise<ActivitySession> {
   if (discordInstanceId === "") {
     throw new Error("Discord did not provide an Activity instance ID. Refusing to join a shared fallback session.");
   }
-  const currentUser = await authenticateWithDiscord(sdk, config.discordClientId);
+  const wantsGuildMemberScope = config.devCardPickerRoleOverrideEnabled;
+  let authenticated: { currentUser: LocalUserProfile; accessToken: string };
+  try {
+    authenticated = await authenticateWithDiscord(sdk, config.discordClientId, wantsGuildMemberScope);
+  } catch (error) {
+    if (!wantsGuildMemberScope) {
+      throw error;
+    }
+    console.warn("Discord guild-member scope unavailable, continuing without role-based dev card picker override", error);
+    authenticated = await authenticateWithDiscord(sdk, config.discordClientId, false);
+  }
 
   return {
     instanceId: discordInstanceId,
     channelId: sdk.channelId,
     guildId: sdk.guildId,
-    currentUser,
+    discordAccessToken: authenticated.accessToken,
+    currentUser: authenticated.currentUser,
     mode: "discord",
     enableDevTools: config.enableDevTools,
     subscribeToParticipantUpdates(onChange: () => void) {
