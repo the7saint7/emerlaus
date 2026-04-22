@@ -5289,16 +5289,25 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     return true;
   };
 
-  const getResponsePlaybackCard = (event: CombatPresentationEvent): CardView | null => {
+  const getResponsePlaybackCards = (event: CombatPresentationEvent): CardView[] => {
     if (event.seatNumber != null && event.boxId != null) {
       const snapshot = pendingActionPlaybackSnapshots.get(event.boxId);
-      const exactCard = snapshot?.responderCardsBySeat[event.seatNumber]?.at(-1) ?? null;
-      if (exactCard != null) {
-        return exactCard;
+      const exactCards = snapshot?.responderCardsBySeat[event.seatNumber] ?? [];
+      if (exactCards.length > 0) {
+        return exactCards;
       }
     }
 
-    return getResponsePresentationCard(event.responseChoice);
+    const fallbackCard = getResponsePresentationCard(event.responseChoice);
+    if (fallbackCard == null) {
+      return [];
+    }
+
+    const responseCardCount = Math.max(1, event.responseCardCount ?? 1);
+    return Array.from({ length: responseCardCount }, (_, index) => ({
+      ...fallbackCard,
+      instanceId: `${fallbackCard.instanceId}:${event.id}:${index}`
+    }));
   };
 
   const getSeatCenterPoint = (seatNumber: number): StagePoint | null => currentGeometry?.seatCenters.get(seatNumber) ?? null;
@@ -5384,6 +5393,15 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const getPlaybackResponseSlotRect = (): RectGeometry =>
     currentGeometry?.responseSlot
     ?? { x: 544, y: 290, width: 128, height: 214 };
+
+  const getPlaybackDiscardTarget = (): StagePoint | null => {
+    const discardZone = currentGeometry?.discardZone;
+    if (discardZone == null || discardZone.width <= 0 || discardZone.height <= 0) {
+      return null;
+    }
+
+    return getRectCenter(discardZone);
+  };
 
   rememberPendingActionSnapshot(match);
   updateVictoryCelebrationState();
@@ -5528,14 +5546,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           : event.responseChoice === "resistance_accrue"
             ? "combat.response.resistance_accrue"
             : event.responseChoice === "annulation"
-              ? "combat.response.annulation"
+              ? (event.responseCardCount ?? 0) > 1
+                ? "combat.response.annulation_multi"
+                : "combat.response.annulation"
               : event.responseChoice === "ordre-demmerlaus"
                 ? "combat.response.ordre_demmerlaus"
                 : "combat.response.mirror";
     const messagePromise = showCombatFx(
       t(language, key, {
         playerName: getSeatDisplayName(event.seatNumber),
-        cardName: event.cardName ?? ""
+        cardName: event.cardName ?? "",
+        count: event.responseCardCount ?? 1
       }),
       "info",
       900,
@@ -5547,7 +5568,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const responseSlotRect = getPlaybackResponseSlotRect();
       const responderStart = getSeatEdgePointTowardRect(event.seatNumber, responseSlotRect);
       const responseCenter = getRectCenter(responseSlotRect);
-      const responseCard = getResponsePlaybackCard(event);
+      const discardTarget = getPlaybackDiscardTarget() ?? responseCenter;
+      const responseCards = getResponsePlaybackCards(event);
+      const responseCard = responseCards.at(-1) ?? null;
       if (responseCard != null) {
         seatResponseThumbnailTurnSeatNumber = activeActionVisual?.actorSeatNumber
           ?? seatResponseThumbnailTurnSeatNumber
@@ -5562,25 +5585,56 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         };
         redraw();
       }
-      if (responderStart != null) {
-        const [arrowCompleted, cardCompleted] = await Promise.all([
-          addPlaybackArrow(responderStart, rectEdgePoint(responderStart.x, responderStart.y, responseSlotRect), "#8ac8ff", 9, 520, runId),
-          addCardFlight(responseCard, responderStart, responseCenter, runId, {
-            durationMs: 520,
+      if (responderStart != null && responseCards.length > 0) {
+        const spreadCenterCards = responseCards.map((card, index) => {
+          const centeredOffset = index - (responseCards.length - 1) / 2;
+          return {
+            card,
+            responsePoint: {
+              x: responseCenter.x + centeredOffset * 20,
+              y: responseCenter.y - Math.abs(centeredOffset) * 10
+            },
+            discardPoint: {
+              x: discardTarget.x + centeredOffset * 18,
+              y: discardTarget.y - Math.abs(centeredOffset) * 8
+            }
+          };
+        });
+        const cardFlights = spreadCenterCards.map(({ card, responsePoint, discardPoint }, index) => (async () => {
+          if (index > 0) {
+            const delayed = await waitForReplayMs(110 * index, runId);
+            if (!delayed) {
+              return false;
+            }
+          }
+          const reachedCenter = await addCardFlight(card, responderStart, responsePoint, runId, {
+            durationMs: 420,
             width: 98,
             height: 138,
             arcHeight: 64,
             rotationFrom: -0.1,
             rotationTo: 0.02,
             tintColor: "#243a54"
-          })
+          });
+          if (!reachedCenter) {
+            return false;
+          }
+          return addCardFlight(card, responsePoint, discardPoint, runId, {
+            durationMs: 340,
+            width: 94,
+            height: 132,
+            arcHeight: 24,
+            rotationFrom: 0.02,
+            rotationTo: 0.08,
+            tintColor: "#243a54"
+          });
+        })());
+        const [arrowCompleted, ...cardCompleted] = await Promise.all([
+          addPlaybackArrow(responderStart, rectEdgePoint(responderStart.x, responderStart.y, responseSlotRect), "#8ac8ff", 9, 520, runId),
+          ...cardFlights
         ]);
-        if (!arrowCompleted || !cardCompleted) {
+        if (!arrowCompleted || cardCompleted.some((completed) => completed === false)) {
           return false;
-        }
-        if (responseCard != null) {
-          centerResponseCards = [...centerResponseCards, responseCard].slice(-3);
-          redraw();
         }
       }
     }

@@ -230,6 +230,7 @@ type TranslationKey =
   | "combat.response.resist"
   | "combat.response.resistance_accrue"
   | "combat.response.annulation"
+  | "combat.response.annulation_multi"
   | "combat.response.ordre_demmerlaus"
   | "combat.response.mirror"
   | "combat.resistance.prepare"
@@ -502,6 +503,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "combat.response.resist": "{playerName} chooses to resist",
     "combat.response.resistance_accrue": "{playerName} plays Resistance Accrue",
     "combat.response.annulation": "{playerName} plays Annulation",
+    "combat.response.annulation_multi": "{playerName} plays Annulation x{count}",
     "combat.response.ordre_demmerlaus": "{playerName} plays Ordre d'Emmerlaus and cancels {cardName}",
     "combat.response.mirror": "{playerName} reflects with Mirror!",
     "combat.resistance.prepare": "{playerName} prepares a resistance roll{bonus} (threshold {threshold})",
@@ -763,6 +765,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "combat.response.resist": "{playerName} choisit de résister",
     "combat.response.resistance_accrue": "{playerName} joue Résistance accrue",
     "combat.response.annulation": "{playerName} joue Annulation",
+    "combat.response.annulation_multi": "{playerName} joue Annulation x{count}",
     "combat.response.ordre_demmerlaus": "{playerName} joue Ordre d'Emmerlaus et annule {cardName}",
     "combat.response.mirror": "{playerName} reflète avec Miroir!",
     "combat.resistance.prepare": "{playerName} prépare un jet de résistance{bonus} (seuil {threshold})",

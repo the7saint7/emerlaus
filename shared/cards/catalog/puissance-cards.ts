@@ -1145,42 +1145,7 @@ export const puissanceCardDefinitions = [
             type: "damage",
             amount: {
               kind: "dice",
-              notation: "1D4"
-            }
-          },
-          {
-            type: "damage",
-            amount: {
-              kind: "dice",
-              notation: "1D6"
-            }
-          },
-          {
-            type: "damage",
-            amount: {
-              kind: "dice",
-              notation: "1D8"
-            }
-          },
-          {
-            type: "damage",
-            amount: {
-              kind: "dice",
-              notation: "1D10"
-            }
-          },
-          {
-            type: "damage",
-            amount: {
-              kind: "dice",
-              notation: "1D12"
-            }
-          },
-          {
-            type: "damage",
-            amount: {
-              kind: "dice",
-              notation: "1D20"
+              notation: "1D4+1D6+1D8+1D10+1D12+1D20"
             }
           }
         ]
@@ -1197,7 +1162,7 @@ export const puissanceCardDefinitions = [
       },
       implementation: {
         status: "manual",
-        notes: "Resolved as stacked mass-damage effects under one resistance window because the roll parser does not support summed mixed-dice notation in a single effect."
+        notes: "Resolved as one combined mixed-dice mass-damage roll under a single resistance window."
       }
     }
   ),

@@ -648,18 +648,35 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
   return targetSeatNumber;
 }
 
-function rollDiceNotationDetailed(notation: string): { total: number; values: number[] } {
-  const match = notation.trim().toUpperCase().match(/^(\d+)D(\d+)$/);
-  if (match == null) {
+function parseDiceNotationTerms(notation: string): Array<{ rolls: number; sides: number }> {
+  const normalized = notation.trim().toUpperCase().replace(/\s+/g, "");
+  if (normalized.length === 0) {
     throw new Error(`Unsupported roll notation: ${notation}`);
   }
 
-  const rolls = Number(match[1]);
-  const sides = Number(match[2]);
+  return normalized.split("+").map((term) => {
+    const match = term.match(/^(\d+)D(\d+)$/);
+    if (match == null) {
+      throw new Error(`Unsupported roll notation: ${notation}`);
+    }
+
+    const rolls = Number(match[1]);
+    const sides = Number(match[2]);
+    if (!Number.isInteger(rolls) || !Number.isInteger(sides) || rolls <= 0 || sides <= 0) {
+      throw new Error(`Unsupported roll notation: ${notation}`);
+    }
+
+    return { rolls, sides };
+  });
+}
+
+function rollDiceNotationDetailed(notation: string): { total: number; values: number[] } {
   const values: number[] = [];
 
-  for (let index = 0; index < rolls; index += 1) {
-    values.push(Math.floor(Math.random() * sides) + 1);
+  for (const term of parseDiceNotationTerms(notation)) {
+    for (let index = 0; index < term.rolls; index += 1) {
+      values.push(Math.floor(Math.random() * term.sides) + 1);
+    }
   }
 
   return {
@@ -669,17 +686,13 @@ function rollDiceNotationDetailed(notation: string): { total: number; values: nu
 }
 
 function getRollNotationBounds(notation: string): { min: number; max: number } {
-  const match = notation.trim().toUpperCase().match(/^(\d+)D(\d+)$/);
-  if (match == null) {
-    throw new Error(`Unsupported roll notation: ${notation}`);
-  }
-
-  const rolls = Number(match[1]);
-  const sides = Number(match[2]);
-  return {
-    min: rolls,
-    max: rolls * sides
-  };
+  return parseDiceNotationTerms(notation).reduce(
+    (bounds, term) => ({
+      min: bounds.min + term.rolls,
+      max: bounds.max + term.rolls * term.sides
+    }),
+    { min: 0, max: 0 }
+  );
 }
 
 function classifyRollHalf(notation: string, total: number): "upper" | "lower" | "middle" {
@@ -6717,7 +6730,8 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
           ) {
             const preSwapActorSeatNumber = currentActorSeatNumber;
             const preSwapTargetSeatNumber = targetSeatNumber;
-            remapPendingActionSeatReferences(pendingAction, preSwapActorSeatNumber, preSwapTargetSeatNumber);
+            // The seat-order swap already remapped game.pendingAction in-place.
+            // Only the local target reference still needs to follow the original target player.
             currentActorSeatNumber = pendingAction.actorSeatNumber;
             targetSeatNumber = remapSeatNumberReference(targetSeatNumber, preSwapActorSeatNumber, preSwapTargetSeatNumber)
               ?? targetSeatNumber;
@@ -6892,7 +6906,13 @@ function finalizePendingAction(match: StoredMatchState): void {
     return;
   }
 
-  if (!definition.rules.staysInPlay) {
+  const perTargetCanceled =
+    pendingAction.responseMode === "per_target"
+    && pendingAction.responders.some((responder) =>
+      responder.choice === "annulation" || responder.choice === "ordre-demmerlaus"
+    );
+
+  if (perTargetCanceled || !definition.rules.staysInPlay) {
     rememberViergeReplaySourceFromPendingAction(game, pendingAction, definition);
     discardInstances(game, [pendingAction.storedCard]);
   }
@@ -6967,12 +6987,8 @@ function resolvePendingAction(match: StoredMatchState): void {
       : "Annulation";
     discardInstances(game, pendingAction.responders.flatMap((responder) => responder.consumedCards));
     if (pendingAction.sourceZone !== "object") {
-      if (definition.rules.staysInPlay) {
-        movePersistentCard(match, pendingAction.actorSeatNumber, pendingAction.targetSeatNumbers, pendingAction.storedCard, definition, pendingAction.sourceZone ?? "hand");
-      } else {
-        rememberViergeReplaySourceFromPendingAction(game, pendingAction, definition);
-        discardInstances(game, [pendingAction.storedCard]);
-      }
+      rememberViergeReplaySourceFromPendingAction(game, pendingAction, definition);
+      discardInstances(game, [pendingAction.storedCard]);
     }
     if (cancelingSeatNumber != null) {
       appendServerDebugLog(
@@ -7474,15 +7490,6 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
   responder.state = "locked";
   appendServerDebugLog(match, "response", `Seat ${responderSeat.seatNumber} locked response ${request.choice}`);
 
-  pushPresentationEvent(match, {
-    boxId: pendingAction.boxId,
-    type: "response_choice",
-    seatNumber: responderSeat.seatNumber,
-    actorSeatNumber: pendingAction.actorSeatNumber,
-    cardName: requireDefinition(pendingAction.storedCard.cardId).name,
-    responseChoice: request.choice
-  });
-
   if (request.choice === "annulation") {
     const requiredCount = requireDefinition(pendingAction.storedCard.cardId).defenseBand?.annulationCardsRequired ?? 1;
     if (pendingAction.responseMode === "collective") {
@@ -7525,6 +7532,16 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
   }
 
   recordResponseCardsPlayed(match, responderSeat.seatNumber, responder.consumedCards.length);
+
+  pushPresentationEvent(match, {
+    boxId: pendingAction.boxId,
+    type: "response_choice",
+    seatNumber: responderSeat.seatNumber,
+    actorSeatNumber: pendingAction.actorSeatNumber,
+    cardName: requireDefinition(pendingAction.storedCard.cardId).name,
+    responseChoice: request.choice,
+    responseCardCount: responder.consumedCards.length || undefined
+  });
 
   // Mirror starts a chain immediately for both per_target and collective modes
   if (request.choice === "mirror") {
@@ -8253,7 +8270,7 @@ function resolveRemovedCardPlay(
   } else if (
     request.mode === "active"
     && definition.rules.targets !== "all_opponents"
-    && targetSeatNumbers.some((seatNumber) => isProtectedFromAttack(match, seatNumber, definition))
+    && targetSeatNumbers.some((seatNumber) => seatNumber !== actorSeatNumber && isProtectedFromAttack(match, seatNumber, definition))
   ) {
     invalidReason = "That target is protected and cannot be attacked right now";
   } else if (
@@ -8825,7 +8842,7 @@ function validateActionRequestBeforeHandRemoval(
 
   if (
     definition.rules.targets !== "all_opponents"
-    && targetSeatNumbers.some((seatNumber) => isProtectedFromAttack(match, seatNumber, definition))
+    && targetSeatNumbers.some((seatNumber) => seatNumber !== actorSeatNumber && isProtectedFromAttack(match, seatNumber, definition))
   ) {
     throw new Error("That target is protected and cannot be attacked right now");
   }
@@ -9150,8 +9167,25 @@ export function buildBotPendingResponse(match: StoredMatchState, seatNumber: num
 
   const pendingAction = match.internalGame?.pendingAction;
   const availableChoices = new Set(options.map((option) => option.choice));
+  let canUseMeaningfulCollectiveAnnulation = true;
+  if (
+    pendingAction != null
+    && pendingAction.responseMode === "collective"
+    && availableChoices.has("annulation")
+  ) {
+    const definition = requireDefinition(pendingAction.storedCard.cardId);
+    const annulationRequired = Math.max(1, definition.defenseBand?.annulationCardsRequired ?? 1);
+    const alreadyCommitted = pendingAction.responders
+      .filter((responder) => responder.choice === "annulation")
+      .reduce((count, responder) => count + responder.consumedCards.length, 0);
+    const remainingOtherPendingResponders = pendingAction.responders.some((responder) =>
+      responder.seatNumber !== seatNumber && responder.state === "pending"
+    );
+    const availableAnnulations = getStoredSeat(match.internalGame!, seatNumber).hand.filter((card) => card.cardId === "annulation").length;
+    canUseMeaningfulCollectiveAnnulation = remainingOtherPendingResponders || alreadyCommitted + availableAnnulations >= annulationRequired;
+  }
   const preferredChoice =
-    availableChoices.has("annulation") ? "annulation"
+    canUseMeaningfulCollectiveAnnulation && availableChoices.has("annulation") ? "annulation"
     : availableChoices.has("ordre-demmerlaus") ? "ordre-demmerlaus"
     : availableChoices.has("mirror") ? "mirror"
     : availableChoices.has("resistance_accrue") ? "resistance_accrue"
@@ -9160,7 +9194,7 @@ export function buildBotPendingResponse(match: StoredMatchState, seatNumber: num
   appendServerDebugLog(
     match,
     "bot_response",
-    `Seat ${seatNumber} bot options=${options.map((option) => option.choice).join(",")} chose=${preferredChoice}`
+    `Seat ${seatNumber} bot options=${options.map((option) => option.choice).join(",")} chose=${preferredChoice}${!canUseMeaningfulCollectiveAnnulation && availableChoices.has("annulation") ? " (skipped futile collective Annulation)" : ""}`
   );
 
   return { choice: preferredChoice };

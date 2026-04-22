@@ -29,6 +29,17 @@ interface ActiveRollOverlay {
 
 interface FaceRotation { x: number; y: number; z: number }
 
+interface ParsedDieTerm {
+  qty: number;
+  sides: number;
+  isD100: boolean;
+}
+
+interface AnimatedDieTarget {
+  sides: number;
+  value: number;
+}
+
 const SUPPORTED_SIDES = new Set([4, 6, 8, 10, 12, 20]);
 
 // Face rotations from deltacalculator.com — calibrated for their geometry and
@@ -122,23 +133,34 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function parseNotation(raw: string): { qty: number; sides: number; isD100: boolean } | null {
-  if (/^1?d100$/i.test(raw)) {
-    return { qty: 2, sides: 10, isD100: true };
-  }
-
-  const match = raw.match(/^(\d+)d(\d+)$/i);
-  if (!match) {
+function parseNotation(raw: string): ParsedDieTerm[] | null {
+  const normalized = raw.trim().toLowerCase().replace(/\s+/g, "");
+  if (normalized.length === 0) {
     return null;
   }
 
-  const qty = Number(match[1]);
-  const sides = Number(match[2]);
-  if (!Number.isInteger(qty) || !Number.isInteger(sides) || !SUPPORTED_SIDES.has(sides)) {
-    return null;
+  const parsedTerms: ParsedDieTerm[] = [];
+  for (const term of normalized.split("+")) {
+    if (/^1?d100$/i.test(term)) {
+      parsedTerms.push({ qty: 1, sides: 100, isD100: true });
+      continue;
+    }
+
+    const match = term.match(/^(\d+)d(\d+)$/i);
+    if (!match) {
+      return null;
+    }
+
+    const qty = Number(match[1]);
+    const sides = Number(match[2]);
+    if (!Number.isInteger(qty) || !Number.isInteger(sides) || !SUPPORTED_SIDES.has(sides)) {
+      return null;
+    }
+
+    parsedTerms.push({ qty, sides, isD100: false });
   }
 
-  return { qty, sides, isD100: false };
+  return parsedTerms;
 }
 
 // For D100: total 1-100 → [tens die face (1-10), units die face (1-10)]
@@ -253,9 +275,9 @@ class DiceController {
     const hideFadeMs = scaleDuration(HIDE_FADE_MS, timeScale);
     const minStaggerMs = scaleDuration(60, timeScale);
     const maxStaggerMs = scaleDuration(MAX_STAGGER_MS, timeScale);
-    const parsed = parseNotation(normalized);
+    const parsedTerms = parseNotation(normalized);
 
-    if (!parsed) {
+    if (!parsedTerms) {
       return {
         notation: normalized,
         total,
@@ -266,9 +288,28 @@ class DiceController {
       };
     }
 
-    const faceTargets: number[] = parsed.isD100
-      ? d100Faces(total)
-      : Array.from({ length: parsed.qty }, (_, i) => values[i] ?? 1);
+    const faceTargets: AnimatedDieTarget[] = [];
+    let valueIndex = 0;
+    for (const term of parsedTerms) {
+      if (term.isD100) {
+        const d100Total = values[valueIndex] ?? 1;
+        valueIndex += 1;
+        const [tens, units] = d100Faces(d100Total);
+        faceTargets.push(
+          { sides: 10, value: tens },
+          { sides: 10, value: units }
+        );
+        continue;
+      }
+
+      for (let index = 0; index < term.qty; index += 1) {
+        faceTargets.push({
+          sides: term.sides,
+          value: values[valueIndex] ?? 1
+        });
+        valueIndex += 1;
+      }
+    }
 
     const idSuffix = crypto.randomUUID();
     const overlay = buildOverlay(idSuffix);
@@ -290,7 +331,7 @@ class DiceController {
         dieArea.style.transform = `scale(${scale.toFixed(3)})`;
       }
 
-      const shellEls = faceTargets.map(() => createDieEl(parsed.sides, color));
+      const shellEls = faceTargets.map((target) => createDieEl(target.sides, color));
       for (const el of shellEls) {
         dieArea.appendChild(el);
       }
@@ -303,8 +344,8 @@ class DiceController {
         const stagger = i === 0 ? 0 : randomInt(minStaggerMs, maxStaggerMs);
         await delay(stagger);
 
-        const faceIndex = faceTargets[i] - 1;
-        const rotTable = diceFaceRotations[parsed.sides];
+        const faceIndex = faceTargets[i].value - 1;
+        const rotTable = diceFaceRotations[faceTargets[i].sides];
         const solid = shellEl.querySelector<HTMLElement>(".die-solid");
 
         if (solid && rotTable?.[faceIndex]) {
@@ -334,7 +375,7 @@ class DiceController {
       total,
       values,
       animatedTotal: total,
-      animatedValues: faceTargets,
+      animatedValues: faceTargets.map((target) => target.value),
       rawPayload: "{}"
     };
   }

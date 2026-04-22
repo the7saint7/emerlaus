@@ -154,6 +154,7 @@ export interface CombatPresentationEvent {
   targetSeatNumber?: number;
   cardName?: string;
   responseChoice?: ResponseChoiceType;
+  responseCardCount?: number;
   bonus?: number;
   threshold?: number;
   success?: boolean;
