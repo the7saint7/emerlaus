@@ -465,13 +465,48 @@ export const puissanceCardDefinitions = [
       notes: "Single-target fixed dice damage."
     }
   }),
-  makeSuccessfulHitFreezeAttackCard({
-    id: "engelure",
-    name: "Engelure",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D8 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
-    file: "Engelure.png",
-    damageNotation: "1D8"
-  }),
+  makeCard({
+      id: "engelure",
+      name: "Engelure",
+      enName: "Frostbite",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D8 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
+      enDescription: "The wizard subtracts life points from the opponent of their choice.\nDamage: 1D8 per power level\nAdditionally, if the attack is successful, the wizard rolls 1D12. If they roll 1, the opponent skips their next turn and cannot retaliate for one full turn.",
+      code: "AD",
+      file: "Engelure.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D8",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard AD damage plus a successful-hit 1D12 trigger; on 1, the target loses their next turn and cannot riposte for one full turn."
+      }
+    }
+  ),
   makeCard({
       id: "flechette-glacee",
       name: "Fléchette glacée",
@@ -490,9 +525,10 @@ export const puissanceCardDefinitions = [
           {
             type: "damage",
             amount: {
-              kind: "dice",
+              kind: "dice_per_power",
               notation: "1D4",
-              scaleBy: "multiply_power"
+              powerSource: "self",
+              powerBonus: 0
             }
           }
         ]
@@ -531,9 +567,10 @@ export const puissanceCardDefinitions = [
           {
             type: "damage",
             amount: {
-              kind: "dice",
+              kind: "dice_per_power",
               notation: "1D12",
-              scaleBy: "multiply_power"
+              powerSource: "self",
+              powerBonus: 0
             }
           }
         ]
@@ -554,27 +591,132 @@ export const puissanceCardDefinitions = [
       }
     }
   ),
-  makeSuccessfulHitFreezeAttackCard({
-    id: "refroidissement",
-    name: "Refroidissement",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D6 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
-    file: "Refroidissement.png",
-    damageNotation: "1D6"
-  }),
-  makeSuccessfulHitFreezeAttackCard({
-    id: "sculpture-de-glace",
-    name: "Sculpture de glace",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D20 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
-    file: "Sculpture_de_glace.png",
-    damageNotation: "1D20"
-  }),
-  makeSuccessfulHitFreezeAttackCard({
-    id: "zero-absolu",
-    name: "Zéro absolu",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D10 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
-    file: "Zero_absolu.png",
-    damageNotation: "1D10"
-  }),
+  makeCard({
+      id: "refroidissement",
+      name: "Refroidissement",
+      enName: "Chilling",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D6 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
+      enDescription: "The Wizard subtracts life points from the opponent of their choice.\nDamage: 1D6 per power level\nAdditionally, if the attack is successful, the Wizard rolls 1D12. If they roll 1, the opponent skips their next turn and has no right of retaliation for a full turn.",
+      code: "AD",
+      file: "Refroidissement.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D6",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard AD damage plus a successful-hit 1D12 trigger; on 1, the target loses their next turn and cannot riposte for one full turn."
+      }
+    }
+  ),
+  makeCard({
+      id: "sculpture-de-glace",
+      name: "Sculpture de glace",
+      enName: "Ice Sculpture",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D20 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
+      enDescription: "The Wizard subtracts Life points from the Opponent of their choice.\nDamage: 1D20 per power level\nAdditionally, if the attack is successful, the Wizard rolls 1D12. If it's 1, the Opponent skips their next turn and has no right of retaliation for a full turn.",
+      code: "AD",
+      file: "Sculpture_de_glace.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D20",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard AD damage plus a successful-hit 1D12 trigger; on 1, the target loses their next turn and cannot riposte for one full turn."
+      }
+    }
+  ),
+  makeCard({
+      id: "zero-absolu",
+      name: "Zéro absolu",
+      enName: "Absolute Zero",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix.\nDégâts : 1D10 par niveau de puissance\nDe plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, l'adversaire passe son prochain tour et n'a aucun droit de riposte pour un tour complet.",
+      enDescription: "The wizard subtracts Life points from the opponent of their choice.\nDamage: 1D10 per power level\nAdditionally, if the attack is successful, the wizard rolls 1D12. If they roll a 1, the opponent skips their next turn and has no right of retaliation for a full turn.",
+      code: "AD",
+      file: "Zero_absolu.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D10",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard AD damage plus a successful-hit 1D12 trigger; on 1, the target loses their next turn and cannot riposte for one full turn."
+      }
+    }
+  ),
   makeTimedPotionCard({
     id: "potion-de-force",
     name: "Potion de force",
@@ -742,9 +884,10 @@ export const puissanceCardDefinitions = [
           {
             type: "damage",
             amount: {
-              kind: "dice",
+              kind: "dice_per_power",
               notation: "1D4",
-              scaleBy: "multiply_power"
+              powerSource: "self",
+              powerBonus: 0
             }
           }
         ]

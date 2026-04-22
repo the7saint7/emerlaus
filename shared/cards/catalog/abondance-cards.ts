@@ -182,77 +182,134 @@ export const abondanceCardDefinitions = [
     }
   }),
   makeCard({
-    id: "eclair-diabolique",
-    name: "Éclair diabolique",
-    enName: "Diabolic Lightning",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D6 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, il utilisera alors le niveau de puissance total de tous les joueurs pour effectuer des dégâts.",
-    enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D6 per power level. In addition, if the attack succeeds, the wizard rolls 1D12. On a result of 1, they use the total power level of all players to deal damage.",
-    code: "AD",
-    file: "Eclair_diabolique.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        { type: "damage", amount: { kind: "dice", notation: "1D6", scaleBy: "multiply_power" } }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D12. On a 1, the attack uses the total power level of all alive players for damage."
+      id: "eclair-diabolique",
+      name: "Éclair diabolique",
+      enName: "Diabolic Lightning",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D6 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D12. S'il obtient 1, il utilisera alors le niveau de puissance total de tous les joueurs pour effectuer des dégâts.",
+      enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D6 per power level. In addition, if the attack succeeds, the wizard rolls 1D12. On a result of 1, they use the total power level of all players to deal damage.",
+      code: "AD",
+      file: "Eclair_diabolique.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D6",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D12. On a 1, the attack uses the total power level of all alive players for damage."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "eclair-empoisonnant",
-    name: "Éclair empoisonnant",
-    enName: "Poison Lightning",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D6 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
-    enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D6 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
-    code: "AD",
-    file: "Eclair_empoisonnant.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        { type: "damage", amount: { kind: "dice", notation: "1D6", scaleBy: "multiply_power" } }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      id: "eclair-empoisonnant",
+      name: "Éclair empoisonnant",
+      enName: "Poison Lightning",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D6 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
+      enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D6 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
+      code: "AD",
+      file: "Eclair_empoisonnant.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D6",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "eclatement-empoisonne",
-    name: "Éclatement empoisonné",
-    enName: "Poison Burst",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D12 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
-    enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D12 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
-    code: "AD",
-    file: "Eclatement_empoisonne.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        { type: "damage", amount: { kind: "dice", notation: "1D12", scaleBy: "multiply_power" } }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      id: "eclatement-empoisonne",
+      name: "Éclatement empoisonné",
+      enName: "Poison Burst",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D12 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
+      enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D12 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
+      code: "AD",
+      file: "Eclatement_empoisonne.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D12",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      }
     }
-  }),
+  ),
   makeCard({
       id: "espoir-mortel",
       name: "Espoir mortel",
@@ -304,9 +361,10 @@ export const abondanceCardDefinitions = [
           {
             type: "damage",
             amount: {
-              kind: "dice",
+              kind: "dice_per_power",
               notation: "1D10",
-              scaleBy: "multiply_power"
+              powerSource: "self",
+              powerBonus: 0
             }
           }
         ]
@@ -341,18 +399,19 @@ export const abondanceCardDefinitions = [
         targets: "single_opponent",
         requiresDefenseWindow: true,
         requiresResistanceCheck: false,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "damage",
-          amount: {
-            kind: "dice",
-            notation: "1D4",
-            scaleBy: "multiply_power"
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D4",
+              powerSource: "self",
+              powerBonus: 0
+            }
           }
-        }
-      ]
-    },
+        ]
+      },
       defenseBand: {
         resistance: {
           color: "red",
@@ -363,85 +422,142 @@ export const abondanceCardDefinitions = [
         annulationCardsRequired: 1,
         mirrorAllowed: true
       },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      }
     }
-  }
   ),
   makeCard({
-    id: "rayon-empoisonne",
-    name: "Rayon empoisonné",
-    enName: "Poison Ray",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D10 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
-    enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D10 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
-    code: "AD",
-    file: "Rayon_empoisonne.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        { type: "damage", amount: { kind: "dice", notation: "1D10", scaleBy: "multiply_power" } }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      id: "rayon-empoisonne",
+      name: "Rayon empoisonné",
+      enName: "Poison Ray",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D10 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
+      enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D10 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
+      code: "AD",
+      file: "Rayon_empoisonne.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D10",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "sphere-de-poison",
-    name: "Sphère de poison",
-    enName: "Poison Sphere",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D8 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
-    enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D8 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
-    code: "AD",
-    file: "Sphere_de_poison.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        { type: "damage", amount: { kind: "dice", notation: "1D8", scaleBy: "multiply_power" } }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      id: "sphere-de-poison",
+      name: "Sphère de poison",
+      enName: "Poison Sphere",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D8 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
+      enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D8 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
+      code: "AD",
+      file: "Sphere_de_poison.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D8",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      }
     }
-  }),
+  ),
   makeCard({
-    id: "venin-de-vipere",
-    name: "Venin de vipère",
-    enName: "Viper Venom",
-    description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D20 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
-    enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D20 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
-    code: "AD",
-    file: "Venin_de_vipere.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        { type: "damage", amount: { kind: "dice", notation: "1D20", scaleBy: "multiply_power" } }
-      ]
-    },
-    implementation: {
-      status: "manual",
-      handler: "successful-hit-damage-modifier",
-      notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      id: "venin-de-vipere",
+      name: "Venin de vipère",
+      enName: "Viper Venom",
+      description: "Le magicien soustrait des points de vie à l'adversaire de son choix. Dégâts : 1D20 par niveau de puissance De plus, si l'attaque est réussie, le magicien lance 1D10. S'il obtient 1, il fait le double des dégâts.",
+      enDescription: "The wizard removes HP from an opponent of their choice. Damage: 1D20 per power level. In addition, if the attack succeeds, the wizard rolls 1D10. On a result of 1, the attack deals double damage.",
+      code: "AD",
+      file: "Venin_de_vipere.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D20",
+              powerSource: "self",
+              powerBonus: 0
+            }
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        handler: "successful-hit-damage-modifier",
+        notes: "After a successful hit, rolls 1D10. On a 1, the attack deals double damage."
+      }
     }
-  }),
+  ),
   makeCard({
       id: "espoir-diabolique",
       name: "Espoir diabolique",

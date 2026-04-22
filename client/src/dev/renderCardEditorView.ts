@@ -81,6 +81,59 @@ function getFormula(effect: CardEffect | null): RollExpression {
   return { kind: "dice", notation: "1D6" };
 }
 
+function exampleDicePoolNotation(notation: string, effectivePower: number): string {
+  const diceMatch = notation.trim().toUpperCase().match(/^(\d+)D(\d+)$/);
+  if (diceMatch == null) {
+    return notation.trim().toUpperCase();
+  }
+
+  return `${Number(diceMatch[1]) * effectivePower}D${Number(diceMatch[2])}`;
+}
+
+function describeFormulaBehavior(formula: RollExpression): string | null {
+  switch (formula.kind) {
+    case "dice": {
+      const notation = formula.notation.trim().toUpperCase();
+      if (formula.scaleBy === "power") {
+        return `Roll ${notation} once, then add self power${(formula.bonusPerPower ?? 1) !== 1 ? ` x ${formula.bonusPerPower ?? 1}` : ""}.`;
+      }
+
+      if (formula.scaleBy === "target_power") {
+        return `Roll ${notation} once, then add target power${(formula.bonusPerPower ?? 1) !== 1 ? ` x ${formula.bonusPerPower ?? 1}` : ""}.`;
+      }
+
+      if (formula.scaleBy === "multiply_power") {
+        return `Roll ${notation} once, then multiply the final total by self power${(formula.powerBonus ?? 0) !== 0 ? ` ${formula.powerBonus! > 0 ? "+" : "-"} ${Math.abs(formula.powerBonus ?? 0)}` : ""}.`;
+      }
+
+      if (formula.scaleBy === "multiply_target_power") {
+        return `Roll ${notation} once, then multiply the final total by target power${(formula.powerBonus ?? 0) !== 0 ? ` ${formula.powerBonus! > 0 ? "+" : "-"} ${Math.abs(formula.powerBonus ?? 0)}` : ""}.`;
+      }
+
+      return `Roll ${notation} once.`;
+    }
+    case "dice_per_power": {
+      const notation = formula.notation.trim().toUpperCase();
+      const powerLabel = formula.powerSource === "target" ? "target" : "self";
+      const bonus = formula.powerBonus ?? 0;
+      const bonusText = bonus === 0
+        ? ""
+        : ` ${bonus > 0 ? "+" : "-"} ${Math.abs(bonus)}`;
+      const sampleEffectivePower = Math.max(0, 3 + bonus);
+      const sampleNotation = exampleDicePoolNotation(notation, sampleEffectivePower);
+      return `Use ${powerLabel} power${bonusText} as the number of ${notation} dice, and roll them all together in one combined throw. Example: power 3${bonus === 0 ? "" : ` with bonus ${bonus > 0 ? "+" : "-"}${Math.abs(bonus)}`} becomes ${sampleNotation}.`;
+    }
+    case "fixed":
+      return "Use a fixed amount with optional power scaling.";
+    case "current_hp_fraction":
+      return "Use a fraction of the target's current HP.";
+    case "sacrifice_amount":
+      return "Use the HP amount sacrificed by the player.";
+    case "total_active_players_times":
+      return "Multiply the configured amount by the number of active players.";
+  }
+}
+
 function renderFormulaFields(card: BaseCardDefinition): string {
   const effect = findPrimaryFormulaEffect(card);
   const formula = getFormula(effect);
@@ -99,6 +152,7 @@ function renderFormulaFields(card: BaseCardDefinition): string {
   const healTarget = effect?.type === "heal" ? effect.target : "self";
   const lifestealPowerSource = effect?.type === "lifesteal" ? effect.powerSource : "self";
   const halfDamage = effect?.type === "damage" ? effect.grantsHalfDamageOnResistance === true : false;
+  const formulaBehavior = describeFormulaBehavior(formula);
   const fields: string[] = [];
 
   fields.push(`
@@ -126,8 +180,8 @@ function renderFormulaFields(card: BaseCardDefinition): string {
     <div class="mapper-field">
       <label for="formula-kind">Formula</label>
       <select id="formula-kind" data-card-editor-field="formula.kind">
-        <option value="dice" ${selected(formula.kind, "dice")}>Dice once</option>
-        <option value="dice_per_power" ${selected(formula.kind, "dice_per_power")}>Dice per power</option>
+        <option value="dice" ${selected(formula.kind, "dice")}>Dice roll</option>
+        <option value="dice_per_power" ${selected(formula.kind, "dice_per_power")}>Dice pool per power level</option>
         <option value="fixed" ${selected(formula.kind, "fixed")}>Fixed amount</option>
         <option value="current_hp_fraction" ${selected(formula.kind, "current_hp_fraction")}>Current HP fraction</option>
         <option value="sacrifice_amount" ${selected(formula.kind, "sacrifice_amount")}>Sacrifice amount</option>
@@ -135,6 +189,14 @@ function renderFormulaFields(card: BaseCardDefinition): string {
       </select>
     </div>
   `);
+
+  if (formulaBehavior != null) {
+    fields.push(`
+      <p class="mapper-help mapper-help--wide">
+        ${escapeHtml(formulaBehavior)}
+      </p>
+    `);
+  }
 
   if (formula.kind === "dice") {
     fields.push(`
@@ -144,13 +206,13 @@ function renderFormulaFields(card: BaseCardDefinition): string {
       </div>
 
       <div class="mapper-field">
-        <label for="formula-scale">Optional Scaling Mode</label>
+        <label for="formula-scale">Power Interaction</label>
         <select id="formula-scale" data-card-editor-field="formula.scaleBy">
           <option value="none" ${selected(scaleBy, "none")}>None</option>
-          <option value="power" ${selected(scaleBy, "power")}>+ self power</option>
-          <option value="target_power" ${selected(scaleBy, "target_power")}>+ target power</option>
-          <option value="multiply_power" ${selected(scaleBy, "multiply_power")}>x self power</option>
-          <option value="multiply_target_power" ${selected(scaleBy, "multiply_target_power")}>x target power</option>
+          <option value="power" ${selected(scaleBy, "power")}>Add self power after the roll</option>
+          <option value="target_power" ${selected(scaleBy, "target_power")}>Add target power after the roll</option>
+          <option value="multiply_power" ${selected(scaleBy, "multiply_power")}>Multiply the final roll by self power</option>
+          <option value="multiply_target_power" ${selected(scaleBy, "multiply_target_power")}>Multiply the final roll by target power</option>
         </select>
       </div>
     `);
@@ -180,8 +242,8 @@ function renderFormulaFields(card: BaseCardDefinition): string {
       <div class="mapper-field">
         <label for="formula-power-source">Power Source</label>
         <select id="formula-power-source" data-card-editor-field="formula.powerSource">
-          <option value="self" ${selected(powerSource, "self")}>Self power</option>
-          <option value="target" ${selected(powerSource, "target")}>Target power</option>
+          <option value="self" ${selected(powerSource, "self")}>Self power decides the number of dice</option>
+          <option value="target" ${selected(powerSource, "target")}>Target power decides the number of dice</option>
         </select>
       </div>
 
@@ -189,6 +251,10 @@ function renderFormulaFields(card: BaseCardDefinition): string {
         <label for="formula-power-bonus">Power Bonus</label>
         <input id="formula-power-bonus" type="number" value="${powerBonus}" data-card-editor-field="formula.powerBonus" />
       </div>
+
+      <p class="mapper-help mapper-help--wide">
+        This mode rolls all power-based dice in a single throw. Example: 1D4 with power 3 becomes one 3D4 roll, not three separate 1D4 rolls.
+      </p>
     `);
   } else if (formula.kind === "fixed") {
     fields.push(`
@@ -198,13 +264,13 @@ function renderFormulaFields(card: BaseCardDefinition): string {
       </div>
 
       <div class="mapper-field">
-        <label for="formula-scale">Optional Scaling Mode</label>
+        <label for="formula-scale">Power Interaction</label>
         <select id="formula-scale" data-card-editor-field="formula.scaleBy">
           <option value="none" ${selected(scaleBy, "none")}>None</option>
-          <option value="power" ${selected(scaleBy, "power")}>+ self power</option>
-          <option value="target_power" ${selected(scaleBy, "target_power")}>+ target power</option>
-          <option value="multiply_power" ${selected(scaleBy, "multiply_power")}>x self power</option>
-          <option value="multiply_target_power" ${selected(scaleBy, "multiply_target_power")}>x target power</option>
+          <option value="power" ${selected(scaleBy, "power")}>Add self power</option>
+          <option value="target_power" ${selected(scaleBy, "target_power")}>Add target power</option>
+          <option value="multiply_power" ${selected(scaleBy, "multiply_power")}>Multiply by self power</option>
+          <option value="multiply_target_power" ${selected(scaleBy, "multiply_target_power")}>Multiply by target power</option>
         </select>
       </div>
     `);

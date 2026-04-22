@@ -1374,6 +1374,28 @@ function getTurnPastilleAnchor(
   };
 }
 
+function getSeatHpBurstAnchor(
+  seatNumber: number,
+  localSeatNumber: number,
+  rect: RectGeometry
+): StagePoint {
+  if (seatNumber === localSeatNumber) {
+    const hpBadgeWidth = 112;
+    const hpBadgeHeight = 38;
+    const hpBadgeInsetRight = 18;
+    const hpBadgeInsetTop = 14;
+    return {
+      x: rect.x + rect.width - hpBadgeInsetRight - hpBadgeWidth / 2,
+      y: rect.y + hpBadgeInsetTop + hpBadgeHeight / 2
+    };
+  }
+
+  return {
+    x: rect.x + rect.width - 16,
+    y: rect.y + rect.height / 2
+  };
+}
+
 function getTurnPastilleRenderState(
   now: number,
   localSeatNumber: number,
@@ -2490,9 +2512,10 @@ function renderTableScene(
     const damageBurst = activeDamageBursts[seatNumber];
     if (damageBurst != null) {
       const progress = Math.max(0, Math.min(1, (replayNow - damageBurst.startedAt) / damageBurst.durationMs));
+      const burstAnchor = getSeatHpBurstAnchor(seatNumber, playerSeatNumber, rect);
       const lift = (seatNumber === playerSeatNumber ? 58 : 42) * (1 - Math.pow(1 - progress, 2));
-      const burstX = seatNumber === playerSeatNumber ? rect.x + rect.width - 65 : rect.x + rect.width / 2;
-      const burstY = seatNumber === playerSeatNumber ? rect.y + 14 - 6 - lift : rect.y - 8 - lift;
+      const burstX = burstAnchor.x;
+      const burstY = burstAnchor.y - 4 - lift;
       const burst = createLabel(`-${damageBurst.amount} ${t(language, "stat.hp")}`, burstX, burstY, {
         fontSize: seatNumber === playerSeatNumber ? 30 : 22,
         fontWeight: "700",
@@ -2507,10 +2530,11 @@ function renderTableScene(
     const healBurst = activeHealBursts[seatNumber];
     if (healBurst != null) {
       const progress = Math.max(0, Math.min(1, (replayNow - healBurst.startedAt) / healBurst.durationMs));
+      const burstAnchor = getSeatHpBurstAnchor(seatNumber, playerSeatNumber, rect);
       const lift = (seatNumber === playerSeatNumber ? 46 : 34) * (1 - Math.pow(1 - progress, 2));
       const driftX = Math.sin(progress * Math.PI) * 8;
-      const burstX = seatNumber === playerSeatNumber ? rect.x + rect.width - 65 + driftX : rect.x + rect.width / 2 + driftX;
-      const burstY = seatNumber === playerSeatNumber ? rect.y + 14 - 6 - lift : rect.y - 6 - lift;
+      const burstX = burstAnchor.x + driftX;
+      const burstY = burstAnchor.y - 4 - lift;
       const burst = createLabel(`+${healBurst.amount} ${t(language, "stat.hp")}`, burstX, burstY, {
         fontSize: seatNumber === playerSeatNumber ? 30 : 22,
         fontWeight: "700",

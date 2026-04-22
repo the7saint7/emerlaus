@@ -939,7 +939,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
     },
     "rules": {
       "selectionMode": "target",
-        "targets": "target_object",
+      "targets": "target_object",
       "requiresDefenseWindow": true,
       "requiresResistanceCheck": true,
       "staysInPlay": false,
@@ -1281,9 +1281,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D20",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -1491,9 +1492,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         },
         {
@@ -1571,9 +1573,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -1641,9 +1644,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D4",
-            "scaleBy": "multiply_power",
+            "powerSource": "self",
             "powerBonus": 1
           }
         }
@@ -1717,9 +1720,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D6",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -1792,9 +1796,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -1926,9 +1931,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D20",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -2132,9 +2138,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "lifesteal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_target_power"
+            "powerSource": "target",
+            "powerBonus": 0
           },
           "powerSource": "target"
         }
@@ -2203,9 +2210,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D6",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -2274,9 +2282,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         },
         {
@@ -2355,9 +2364,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         },
         {
@@ -2440,9 +2450,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D4",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -2510,9 +2521,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -2581,9 +2593,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D4",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         },
         {
@@ -2661,9 +2674,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D4",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -2731,9 +2745,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D6",
-            "scaleBy": "multiply_power",
+            "powerSource": "self",
             "powerBonus": 1
           }
         }
@@ -2873,9 +2887,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D20",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         },
         {
@@ -2953,9 +2968,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power",
+            "powerSource": "self",
             "powerBonus": 1
           }
         }
@@ -3333,9 +3348,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         },
         {
@@ -3413,9 +3429,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -3483,9 +3500,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power",
+            "powerSource": "self",
             "powerBonus": 1
           }
         }
@@ -3554,9 +3571,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_power",
+            "powerSource": "self",
             "powerBonus": 1
           }
         }
@@ -3625,9 +3642,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "lifesteal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "powerSource": "self"
         }
@@ -3696,9 +3714,9 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D20",
-            "scaleBy": "multiply_power",
+            "powerSource": "self",
             "powerBonus": 1
           }
         }
@@ -3772,9 +3790,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -3847,9 +3866,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           }
         }
       ]
@@ -3917,9 +3937,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "lifesteal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_target_power"
+            "powerSource": "target",
+            "powerBonus": 0
           },
           "powerSource": "target"
         }
@@ -4129,9 +4150,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D6",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "grantsHalfDamageOnResistance": true
         }
@@ -4200,9 +4222,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D20",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "grantsHalfDamageOnResistance": true
         }
@@ -4271,9 +4294,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "grantsHalfDamageOnResistance": true
         }
@@ -4342,9 +4366,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "grantsHalfDamageOnResistance": true
         }
@@ -4481,9 +4506,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "grantsHalfDamageOnResistance": true
         }
@@ -4908,9 +4934,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "heal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D4",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "target": "self"
         }
@@ -5050,9 +5077,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "heal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D10",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "target": "self"
         }
@@ -5121,9 +5149,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "heal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "target": "self"
         }
@@ -5595,9 +5624,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "lifesteal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "powerSource": "self"
         }
@@ -5884,9 +5914,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "damage",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D12",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "grantsHalfDamageOnResistance": true
         }

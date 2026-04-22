@@ -166,16 +166,63 @@ function updateFormulaKind(card: BaseCardDefinition, kind: RollExpression["kind"
   const current = formulaFromEffect(primaryFormulaEffect(card));
   const notation = "notation" in current ? current.notation : "1D6";
   const amount = "amount" in current && typeof current.amount === "number" ? current.amount : 0;
+  const inferredPowerSource = (
+    "scaleBy" in current
+    && (current.scaleBy === "target_power" || current.scaleBy === "multiply_target_power")
+  )
+    ? "target"
+    : ("powerSource" in current && current.powerSource === "target" ? "target" : "self");
+  const inferredPowerBonus = (
+    "powerBonus" in current
+    && typeof current.powerBonus === "number"
+  )
+    ? current.powerBonus
+    : 0;
 
   switch (kind) {
     case "dice":
-      updatePrimaryFormula(card, { kind, notation });
+      updatePrimaryFormula(card, {
+        kind,
+        notation,
+        scaleBy: current.kind === "dice_per_power"
+          ? (current.powerSource === "target" ? "multiply_target_power" : "multiply_power")
+          : current.kind === "dice"
+            ? current.scaleBy
+            : undefined,
+        powerBonus: current.kind === "dice_per_power"
+          ? current.powerBonus ?? 0
+          : current.kind === "dice"
+            ? current.powerBonus
+            : undefined,
+        bonusPerPower: current.kind === "dice" ? current.bonusPerPower : undefined
+      });
       break;
     case "dice_per_power":
-      updatePrimaryFormula(card, { kind, notation, powerSource: "self", powerBonus: 0 });
+      updatePrimaryFormula(card, {
+        kind,
+        notation,
+        powerSource: inferredPowerSource,
+        powerBonus: inferredPowerBonus
+      });
       break;
     case "fixed":
-      updatePrimaryFormula(card, { kind, amount });
+      updatePrimaryFormula(card, {
+        kind,
+        amount,
+        scaleBy: current.kind === "fixed" || current.kind === "dice"
+          ? current.scaleBy
+          : current.kind === "dice_per_power"
+            ? (current.powerSource === "target" ? "multiply_target_power" : "multiply_power")
+            : undefined,
+        powerBonus: current.kind === "fixed" || current.kind === "dice"
+          ? current.powerBonus
+          : current.kind === "dice_per_power"
+            ? current.powerBonus ?? 0
+            : undefined,
+        bonusPerPower: current.kind === "fixed" || current.kind === "dice"
+          ? current.bonusPerPower
+          : undefined
+      });
       break;
     case "current_hp_fraction":
       updatePrimaryFormula(card, { kind, numerator: 1, denominator: 2 });
