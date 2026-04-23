@@ -3474,6 +3474,71 @@ function buildOverlayMarkup(
             ?? t(language, "seat.label", { seatNumber: pendingObjectChoice.chooserSeatNumber });
           const ownerName = match.seats.find((s) => s.seatNumber === pendingObjectChoice.ownerSeatNumber)?.displayName
             ?? t(language, "seat.label", { seatNumber: pendingObjectChoice.ownerSeatNumber });
+          if (pendingObjectChoice.mode === "mass_attack_staff_turn") {
+            const staffCard = pendingObjectChoice.objectOptions[0];
+            const amOptions = pendingObjectChoice.objectOptions.filter((card) => card.categoryCode === "AM");
+            const title = isLocalChooser
+              ? t(language, "objectChoice.massAttackStaffTitle")
+              : t(language, "objectChoice.chooserWaiting", { chooserName });
+            const body = isLocalChooser
+              ? t(language, "objectChoice.massAttackStaffBody")
+              : t(language, "objectChoice.massAttackStaffWaitingBody", { chooserName, ownerName });
+            return `
+              <div class="pixi-modal-backdrop">
+                <article class="telepathy-panel telepathy-panel--compact" data-pixi-modal-card="true" style="max-width:1240px; width:min(1240px, calc(100vw - 72px));">
+                  <div class="telepathy-panel__header">
+                    <div>
+                      <p class="eyebrow">${escapeHtml(pendingObjectChoice.cardName)}</p>
+                      <h2>${escapeHtml(title)}</h2>
+                      <p>${escapeHtml(body)}</p>
+                    </div>
+                  </div>
+                  <div style="display:flex; gap:1.25rem; align-items:center;">
+                    <section style="width:170px; flex:0 0 170px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.7rem;">
+                      ${staffCard == null ? "" : `
+                        <img
+                          src="${getCardTextureUrl(staffCard, "full")}"
+                          alt="${escapeHtml(staffCard.name)}"
+                          style="display:block; width:118px; max-width:100%; border-radius:14px; box-shadow:0 14px 30px rgba(0,0,0,0.28);"
+                        />
+                        <button
+                          type="button"
+                          class="action-button"
+                          data-action="select-pending-object"
+                          data-object-instance-id="${staffCard.instanceId}"
+                          ${!isLocalChooser || staffCard.canPlay === false ? "disabled" : ""}
+                        >${escapeHtml(t(language, "objectChoice.massAttackStaffFire"))}</button>
+                        ${staffCard.canPlay === false && staffCard.disabledReason != null
+                          ? `<p class="telepathy-empty" style="margin:0; text-align:center;">${escapeHtml(t(language, "objectChoice.massAttackStaffCannotFire"))}</p>`
+                          : ""}
+                      `}
+                    </section>
+                    <div style="width:2px; align-self:stretch; flex:0 0 2px; background:linear-gradient(to bottom, rgba(255,255,255,0.08), rgba(255,255,255,0.32), rgba(255,255,255,0.08)); border-radius:999px; box-shadow:0 0 0 1px rgba(255,255,255,0.04);"></div>
+                    <section style="min-width:0; flex:1; display:flex; flex-direction:column; justify-content:center;">
+                      <div style="display:flex; gap:0.7rem; align-items:flex-start; flex-wrap:nowrap; overflow:visible;">
+                        ${amOptions.map((card) => `
+                          <button
+                            type="button"
+                            class="telepathy-card"
+                            data-action="select-pending-object"
+                            data-object-instance-id="${card.instanceId}"
+                            ${isLocalChooser ? "" : "disabled"}
+                            title="${escapeHtml(`${card.name}\n\n${card.description}`)}"
+                            style="width:118px; min-width:118px; padding:0; background:transparent; border:none; box-shadow:none;"
+                          >
+                            <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" style="display:block; width:118px; border-radius:14px; box-shadow:0 14px 30px rgba(0,0,0,0.28);" />
+                          </button>
+                        `).join("")}
+                      </div>
+                      ${amOptions.length === 0
+                        ? `<p class="telepathy-empty" style="margin:0;">${escapeHtml(t(language, "objectChoice.massAttackStaffCannotFire"))}</p>`
+                        : ""}
+                    </section>
+                  </div>
+                </article>
+              </div>
+            `;
+          }
           const title = isLocalChooser
             ? (pendingObjectChoice.prompt.toLowerCase().includes("steal")
                 ? t(language, "objectChoice.stealTitle")

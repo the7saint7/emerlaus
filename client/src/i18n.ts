@@ -119,6 +119,12 @@ type TranslationKey =
   | "objectChoice.removeTitle"
   | "objectChoice.stealTitle"
   | "objectChoice.discardRingTitle"
+  | "objectChoice.massAttackStaffTitle"
+  | "objectChoice.massAttackStaffBody"
+  | "objectChoice.massAttackStaffWaitingBody"
+  | "objectChoice.massAttackStaffFire"
+  | "objectChoice.massAttackStaffCannotFire"
+  | "objectChoice.massAttackStaffLoad"
   | "objectChoice.chooserWaiting"
   | "objectChoice.waitingBody"
   | "telepathy.inProgress"
@@ -393,6 +399,12 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "objectChoice.removeTitle": "Choose an object to remove",
     "objectChoice.stealTitle": "Choose an object to steal",
     "objectChoice.discardRingTitle": "Choose a ring to discard",
+    "objectChoice.massAttackStaffTitle": "Choose the staff action",
+    "objectChoice.massAttackStaffBody": "Fire Bâton d’attaque massive now, or load one AM card onto it and keep your normal turn.",
+    "objectChoice.massAttackStaffWaitingBody": "Waiting for {chooserName} to choose whether to fire or load {ownerName}'s staff.",
+    "objectChoice.massAttackStaffFire": "Fire the staff",
+    "objectChoice.massAttackStaffCannotFire": "No valid targets to fire at right now.",
+    "objectChoice.massAttackStaffLoad": "Load an AM card",
     "objectChoice.chooserWaiting": "{chooserName} is choosing an object",
     "objectChoice.waitingBody": "Waiting for {chooserName} to choose one of {ownerName}'s objects.",
     "telepathy.inProgress": "Telepathy in progress",
@@ -656,6 +668,12 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "objectChoice.removeTitle": "Choisissez un objet à retirer",
     "objectChoice.stealTitle": "Choisissez un objet à voler",
     "objectChoice.discardRingTitle": "Choisissez un anneau à défausser",
+    "objectChoice.massAttackStaffTitle": "Choisissez l'action du bâton",
+    "objectChoice.massAttackStaffBody": "Utilisez Bâton d’attaque massive maintenant, ou chargez-y une carte AM et conservez votre tour normal.",
+    "objectChoice.massAttackStaffWaitingBody": "En attente que {chooserName} choisisse d'utiliser ou de charger le bâton de {ownerName}.",
+    "objectChoice.massAttackStaffFire": "Utiliser le bâton",
+    "objectChoice.massAttackStaffCannotFire": "Aucune cible valide pour utiliser le bâton en ce moment.",
+    "objectChoice.massAttackStaffLoad": "Charger une carte AM",
     "objectChoice.chooserWaiting": "{chooserName} choisit un objet",
     "objectChoice.waitingBody": "En attente que {chooserName} choisisse un des objets de {ownerName}.",
     "telepathy.inProgress": "Télépathie en cours",

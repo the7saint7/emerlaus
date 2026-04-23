@@ -225,6 +225,7 @@ export interface PendingObjectChoiceState {
   ownerSeatNumber: number;
   cardName: string;
   prompt: string;
+  mode?: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "mass_attack_staff_turn";
   objectOptions: CardView[];
 }
 

@@ -1660,6 +1660,10 @@ function getMassAttackStaffLoadedCount(card: StoredCardInstance): number {
   return card.attachedCards?.length ?? 0;
 }
 
+function getMassAttackStaffLoadableCards(seat: StoredSeatState): StoredCardInstance[] {
+  return seat.hand.filter((card) => requireDefinition(card.cardId).category.code === "AM");
+}
+
 function rollMassAttackStaffDamage(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -1670,6 +1674,54 @@ function rollMassAttackStaffDamage(
   const roll = rollDiceNotationDetailed(notation);
   publishSeatDiceRoll(match, actorSeatNumber, notation, roll.total, roll.values, boxId);
   return roll.total;
+}
+
+function getMassAttackStaffTargetSeatNumbers(
+  match: StoredMatchState,
+  seatNumber: number,
+  staffCard: StoredCardInstance
+): number[] {
+  const game = match.internalGame;
+  if (game == null) {
+    return [];
+  }
+
+  const definition = requireDefinition(staffCard.cardId);
+  return nextLivingOpponentSeatNumbers(game, seatNumber)
+    .filter((targetSeatNumber) => !isProtectedFromAttack(match, targetSeatNumber, definition, seatNumber));
+}
+
+function beginMassAttackStaffFire(
+  match: StoredMatchState,
+  seatNumber: number,
+  staffCard: StoredCardInstance,
+  skipAfterAction: boolean
+): boolean {
+  const targetSeatNumbers = getMassAttackStaffTargetSeatNumbers(match, seatNumber, staffCard);
+  if (targetSeatNumbers.length === 0) {
+    appendServerDebugLog(match, "object", `Seat ${seatNumber}'s ${requireDefinition(staffCard.cardId).name} found no valid targets at start of turn`);
+    return false;
+  }
+
+  const definition = requireDefinition(staffCard.cardId);
+  beginObjectPendingAction(
+    match,
+    seatNumber,
+    staffCard,
+    definition,
+    targetSeatNumbers,
+    `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} fires at everyone.`,
+    {
+      mode: skipAfterAction ? "advance_turn_without_play" : "resume_turn",
+      seatNumber
+    }
+  );
+  appendServerDebugLog(
+    match,
+    "object",
+    `Seat ${seatNumber}'s ${definition.name} fired with ${getMassAttackStaffLoadedCount(staffCard)} stored AM card(s)`
+  );
+  return true;
 }
 
 function isAbundanceTurn(match: StoredMatchState, seatNumber: number): boolean {
@@ -5222,31 +5274,24 @@ function maybeQueueMassAttackStaffTurnAction(
     return false;
   }
 
-  const definition = requireDefinition(staffCard.cardId);
-  const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, seatNumber)
-    .filter((targetSeatNumber) => !isProtectedFromAttack(match, targetSeatNumber, definition, seatNumber));
-  if (targetSeatNumbers.length === 0) {
-    appendServerDebugLog(match, "object", `Seat ${seatNumber}'s ${definition.name} found no valid targets at start of turn`);
-    return false;
+  const loadableCards = getMassAttackStaffLoadableCards(seatState);
+  if (loadableCards.length === 0) {
+    return beginMassAttackStaffFire(match, seatNumber, staffCard, skipAfterAction);
   }
 
-  beginObjectPendingAction(
-    match,
-    seatNumber,
-    staffCard,
-    definition,
-    targetSeatNumbers,
-    `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} fires at everyone.`,
-    {
-      mode: skipAfterAction ? "advance_turn_without_play" : "resume_turn",
-      seatNumber
-    }
-  );
+  game.pendingObjectChoice = {
+    chooserSeatNumber: seatNumber,
+    ownerSeatNumber: seatNumber,
+    sourceCard: staffCard,
+    mode: "mass_attack_staff_turn",
+    continuationMode: skipAfterAction ? "advance_turn_without_play" : "resume_turn"
+  };
   appendServerDebugLog(
     match,
     "object",
-    `Seat ${seatNumber}'s ${definition.name} fired with ${getMassAttackStaffLoadedCount(staffCard)} stored AM card(s)`
+    `Seat ${seatNumber} must choose whether to fire ${requireDefinition(staffCard.cardId).name} or load one of ${loadableCards.length} AM card(s)`
   );
+  refreshSeatSummaries(match);
   return true;
 }
 
@@ -5665,6 +5710,30 @@ function buildPendingObjectChoicePublicState(match: StoredMatchState): GameState
 
   const owner = getStoredSeat(game, pendingObjectChoice.ownerSeatNumber);
   const sourceDefinition = requireDefinition(pendingObjectChoice.sourceCard.cardId);
+  if (pendingObjectChoice.mode === "mass_attack_staff_turn") {
+    const targetSeatNumbers = getMassAttackStaffTargetSeatNumbers(match, pendingObjectChoice.chooserSeatNumber, pendingObjectChoice.sourceCard);
+    return {
+      boxId: pendingObjectChoice.boxId,
+      chooserSeatNumber: pendingObjectChoice.chooserSeatNumber,
+      ownerSeatNumber: pendingObjectChoice.ownerSeatNumber,
+      cardName: sourceDefinition.name,
+      prompt: "Choose whether to fire the staff or load an AM card onto it.",
+      mode: pendingObjectChoice.mode,
+      objectOptions: [
+        buildCardView(
+          pendingObjectChoice.sourceCard,
+          sourceDefinition,
+          "object",
+          targetSeatNumbers.length > 0,
+          targetSeatNumbers.length > 0 ? undefined : "No valid targets to fire at right now"
+        ),
+        ...getMassAttackStaffLoadableCards(owner).map((card) =>
+          buildCardView(card, requireDefinition(card.cardId), "hand", true)
+        )
+      ]
+    };
+  }
+
   const isRingDiscard = pendingObjectChoice.mode === "discard_ring";
   const isPowerRingConsume = pendingObjectChoice.mode === "consume_power_ring";
   const allowedSlots = isRingDiscard
@@ -5685,6 +5754,7 @@ function buildPendingObjectChoicePublicState(match: StoredMatchState): GameState
     ownerSeatNumber: pendingObjectChoice.ownerSeatNumber,
     cardName: sourceDefinition.name,
     prompt,
+    mode: pendingObjectChoice.mode,
     objectOptions: owner.objects
       .filter((objectCard) =>
         objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
@@ -7615,6 +7685,42 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
   }
 }
 
+function resolvePendingTurnContinuation(
+  match: StoredMatchState,
+  seatNumber: number,
+  sourceCardId: string,
+  continuationMode: "resume_turn" | "advance_turn_without_play" | undefined
+): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  if (continuationMode === "advance_turn_without_play") {
+    appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName} loses a turn.`);
+    appendServerDebugLog(
+      match,
+      "turn",
+      `Seat ${seatNumber} skipped the rest of the turn after ${requireDefinition(sourceCardId).name}`
+    );
+    resolveAbundanceTurnEnd(match, seatNumber);
+    resolveTimedPotionTurnEnd(match, seatNumber);
+    resolveTotalPowerOverrideTurnEnd(match, seatNumber);
+    startNextTurn(match, seatNumber);
+    refreshSeatSummaries(match);
+    return;
+  }
+
+  game.pendingCurseRelease = undefined;
+  maybeQueueCurseRelease(match, seatNumber);
+  appendServerDebugLog(
+    match,
+    "turn",
+    `Seat ${seatNumber} resumes their turn after ${requireDefinition(sourceCardId).name}`
+  );
+  refreshSeatSummaries(match);
+}
+
 export function selectPendingObject(match: StoredMatchState, userId: string, objectInstanceId: string): void {
   const game = match.internalGame;
   const pendingObjectChoice = game?.pendingObjectChoice;
@@ -7628,6 +7734,61 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
   }
 
   const owner = getStoredSeat(game, pendingObjectChoice.ownerSeatNumber);
+  if (pendingObjectChoice.mode === "mass_attack_staff_turn") {
+    const staffCard = getSeatMassAttackStaff(owner, pendingObjectChoice.sourceCard.instanceId);
+    if (staffCard == null) {
+      throw new Error("Bâton d’attaque massive is no longer equipped");
+    }
+
+    if (objectInstanceId === pendingObjectChoice.sourceCard.instanceId) {
+      if (getMassAttackStaffTargetSeatNumbers(match, chooserSeat.seatNumber, staffCard).length === 0) {
+        throw new Error("Bâton d’attaque massive cannot fire right now");
+      }
+      game.pendingObjectChoice = undefined;
+      beginMassAttackStaffFire(
+        match,
+        chooserSeat.seatNumber,
+        staffCard,
+        pendingObjectChoice.continuationMode === "advance_turn_without_play"
+      );
+      return;
+    }
+
+    const selectedHandCard = owner.hand.find((card) => card.instanceId === objectInstanceId);
+    if (selectedHandCard == null || requireDefinition(selectedHandCard.cardId).category.code !== "AM") {
+      throw new Error("Choose an AM card to load onto Bâton d’attaque massive");
+    }
+
+    const removedCard = moveCardFromHand(owner.hand, selectedHandCard.instanceId);
+    const removedDefinition = requireDefinition(removedCard.cardId);
+    staffCard.attachedCards = [...(staffCard.attachedCards ?? []), removedCard];
+    recordCardsPlayed(match, chooserSeat.seatNumber, "active");
+    const summary = `${chooserSeat.displayName} loaded ${removedDefinition.name} onto ${requireDefinition(staffCard.cardId).name}.`;
+    appendDealerMessage(match, summary);
+    appendServerDebugLog(
+      match,
+      "object",
+      `Seat ${chooserSeat.seatNumber} loaded ${removedDefinition.name} onto ${requireDefinition(staffCard.cardId).name} from the turn-start choice (${getMassAttackStaffLoadedCount(staffCard)} stored AM)`
+    );
+    game.lastPlayedCard = {
+      actorSeatNumber: chooserSeat.seatNumber,
+      targetSeatNumbers: [],
+      targetObjectInstanceId: staffCard.instanceId,
+      card: buildCardView(removedCard, removedDefinition, "discard", false),
+      mode: "active",
+      summary,
+      resolvedAt: new Date().toISOString()
+    };
+    game.pendingObjectChoice = undefined;
+    resolvePendingTurnContinuation(
+      match,
+      chooserSeat.seatNumber,
+      pendingObjectChoice.sourceCard.cardId,
+      pendingObjectChoice.continuationMode
+    );
+    return;
+  }
+
   if (!owner.objects.some((object) => object.instanceId === objectInstanceId)) {
     throw new Error("Target object not found for this player");
   }
@@ -8993,10 +9154,22 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     throw new Error("Play an AD card for Colère du magicien or pass the forced follow-up");
   }
 
+  if (
+    request.mode === "active"
+    && forcedFollowUp == null
+    && request.targetObjectInstanceId != null
+    && getSeatMassAttackStaff(actorState, request.targetObjectInstanceId) != null
+  ) {
+    throw new Error("Use Bâton d’attaque massive at the start of your turn to choose between firing it or loading one AM card");
+  }
+
   const targetOwnedMassAttackStaff =
     request.mode === "active" && forcedFollowUp == null && request.targetObjectInstanceId != null
       ? getSeatMassAttackStaff(actorState, request.targetObjectInstanceId)
       : undefined;
+  if (targetOwnedMassAttackStaff != null && false) {
+    throw new Error("Use Bâton d’attaque massive at the start of your turn to choose between firing it or loading one AM card");
+  }
   if (targetOwnedMassAttackStaff != null) {
     if (extraPlayMode?.sourceCardId === "masse-double" || extraPlayMode?.sourceCardId === "puissance-totale") {
       throw new Error(`${requireDefinition(extraPlayMode.sourceCardId).name} requires immediately playing its follow-up card, not loading the staff`);

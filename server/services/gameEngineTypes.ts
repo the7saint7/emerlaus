@@ -120,7 +120,8 @@ export interface StoredGameState {
     chooserSeatNumber: number;
     ownerSeatNumber: number;
     sourceCard: StoredCardInstance;
-    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring";
+    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "mass_attack_staff_turn";
+    continuationMode?: "resume_turn" | "advance_turn_without_play";
     finalizeActorSeatNumber?: number;
   };
   pendingHandInspection?: {

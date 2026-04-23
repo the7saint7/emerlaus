@@ -181,10 +181,11 @@ export function canLoadMassAttackStaff(
   ownerSeatNumber: number,
   localSeatNumber: number
 ): boolean {
-  return selectedCard != null
-    && selectedCard.categoryCode === "AM"
-    && ownerSeatNumber === localSeatNumber
-    && objectCard.cardId === "baton-dattaque-massive";
+  void selectedCard;
+  void objectCard;
+  void ownerSeatNumber;
+  void localSeatNumber;
+  return false;
 }
 
 export function isObjectTargetable(

@@ -356,7 +356,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
   if (pendingObjectChoice != null) {
     const chooserSeat = match.seats.find((seat) => seat.seatNumber === pendingObjectChoice.chooserSeatNumber);
     const ownerState = match.internalGame?.seatStates.find((seat) => seat.seatNumber === pendingObjectChoice.ownerSeatNumber);
-    if (chooserSeat?.controllerType === "bot" && ownerState != null && ownerState.objects[0] != null) {
+    if (chooserSeat?.controllerType === "bot" && ownerState != null) {
       const timerKey = `${instanceId}:object:${chooserSeat.seatNumber}`;
       if (!botTurnTimers.has(timerKey)) {
         const timer = setTimeout(() => {
@@ -365,11 +365,35 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
           const latestChoice = latestMatch?.internalGame?.pendingObjectChoice;
           const latestChooser = latestMatch?.seats.find((seat) => seat.seatNumber === latestChoice?.chooserSeatNumber);
           const latestOwner = latestMatch?.internalGame?.seatStates.find((seat) => seat.seatNumber === latestChoice?.ownerSeatNumber);
-          const object = latestOwner == null ? undefined : latestOwner.objects[Math.floor(Math.random() * latestOwner.objects.length)];
-          if (latestMatch != null && latestChooser?.controllerType === "bot" && object != null) {
-            selectPendingObject(latestMatch, latestChooser.userId, object.instanceId);
-            saveMatch(latestMatch);
-            notifyMatchUpdated(instanceId);
+          if (latestMatch != null && latestChoice != null && latestChooser?.controllerType === "bot" && latestOwner != null) {
+            try {
+              if (latestChoice.mode === "mass_attack_staff_turn") {
+                const staff = latestOwner.objects.find((card) => card.instanceId === latestChoice.sourceCard.instanceId);
+                const amCards = latestOwner.hand.filter((card) => baseCardDefinitionById[card.cardId]?.category.code === "AM");
+                const shouldLoad = amCards.length > 0 && (staff?.attachedCards?.length ?? 0) < 2 && Math.random() < 0.45;
+                const choiceId = shouldLoad
+                  ? amCards[Math.floor(Math.random() * amCards.length)]?.instanceId
+                  : latestChoice.sourceCard.instanceId;
+                if (choiceId != null) {
+                  selectPendingObject(latestMatch, latestChooser.userId, choiceId);
+                  saveMatch(latestMatch);
+                  notifyMatchUpdated(instanceId);
+                }
+              } else {
+                const object = latestOwner.objects[Math.floor(Math.random() * latestOwner.objects.length)];
+                if (object != null) {
+                  selectPendingObject(latestMatch, latestChooser.userId, object.instanceId);
+                  saveMatch(latestMatch);
+                  notifyMatchUpdated(instanceId);
+                }
+              }
+            } catch (error) {
+              appendServerDebugLog(
+                latestMatch,
+                "bot_ai",
+                `Seat ${latestChooser.seatNumber} object choice failed: ${error instanceof Error ? error.message : "Unknown error"}`
+              );
+            }
           }
           scheduleBotTurnIfNeeded(instanceId);
         }, 500 + Math.floor(Math.random() * 500));
