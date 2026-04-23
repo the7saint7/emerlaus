@@ -190,8 +190,12 @@ type TranslationKey =
   | "boardReset.body"
   | "boardReset.waitingBody"
   | "boardReset.keepAction"
+  | "boardReset.confirmKeep"
   | "boardReset.blocked"
   | "boardReset.empty"
+  | "boardReset.sourceHand"
+  | "boardReset.sourceObject"
+  | "boardReset.sourceStatus"
   | "deathSearch.title"
   | "deathSearch.inProgress"
   | "deathSearch.chooseCorpseBody"
@@ -467,11 +471,15 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugInbox.deleteConfirm": "Delete this bug report and its saved logs?",
     "boardReset.title": "Choose {count} card{plural} to keep",
     "boardReset.inProgress": "Intervention divine in progress",
-    "boardReset.body": "Select the {selectionLabel} that {stayVerb} in your hand before the rest of the board is cleared and reshuffled.",
+    "boardReset.body": "Pick the card you keep before the rest of the board is cleared and reshuffled.",
     "boardReset.waitingBody": "Waiting for {chooserName} to choose which card to keep.",
     "boardReset.keepAction": "Keep This Card",
+    "boardReset.confirmKeep": "Keep {cardName}?",
     "boardReset.blocked": "No other actions can continue until the keeper card is chosen.",
-    "boardReset.empty": "There are no cards left in hand to keep.",
+    "boardReset.empty": "There are no cards available to keep.",
+    "boardReset.sourceHand": "Hand",
+    "boardReset.sourceObject": "Object",
+    "boardReset.sourceStatus": "Effect",
     "deathSearch.title": "Search The Dead",
     "deathSearch.inProgress": "Death search in progress",
     "deathSearch.chooseCorpseBody": "Choose which corpse to search.",
@@ -736,11 +744,15 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugInbox.deleteConfirm": "Supprimer ce signalement et ses logs sauvegardes ?",
     "boardReset.title": "Choisissez {count} carte{plural} à garder",
     "boardReset.inProgress": "Intervention divine en cours",
-    "boardReset.body": "Sélectionnez {selectionLabel} qui {stayVerb} dans votre main avant que le reste du plateau soit vidé et brassé à nouveau.",
+    "boardReset.body": "Choisissez la carte à garder avant que le reste du plateau soit vidé et brassé à nouveau.",
     "boardReset.waitingBody": "En attente que {chooserName} choisisse la carte à garder.",
     "boardReset.keepAction": "Garder cette carte",
+    "boardReset.confirmKeep": "Voulez-vous garder {cardName} ?",
     "boardReset.blocked": "Aucune autre action ne peut continuer tant que la carte à garder n'est pas choisie.",
-    "boardReset.empty": "Il ne reste aucune carte en main à garder.",
+    "boardReset.empty": "Aucune carte n'est disponible à garder.",
+    "boardReset.sourceHand": "Main",
+    "boardReset.sourceObject": "Objet",
+    "boardReset.sourceStatus": "Effet",
     "deathSearch.title": "Fouille de mort",
     "deathSearch.inProgress": "Fouille de mort en cours",
     "deathSearch.chooseCorpseBody": "Choisissez quel cadavre fouiller.",

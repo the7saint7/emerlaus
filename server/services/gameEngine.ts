@@ -1603,7 +1603,9 @@ function resolveFollowUpCategoryHeal(
   boxId?: string
 ): number {
   if (sourceDefinition.id === "ca-points-de-vie") {
-    return 25;
+    // CA > Points de vie already grants its 25 HP through the card's own heal effect.
+    // The consumed CA card is only the additional cost, not a second heal trigger.
+    return 0;
   }
 
   if (sourceDefinition.id !== "ad-points-de-vie") {
@@ -2767,8 +2769,7 @@ function queueBoardResetKeepChoice(
     return false;
   }
 
-  const chooserState = getStoredSeat(game, chooserSeatNumber);
-  if (chooserState.hand.length === 0) {
+  if (getBoardResetKeepableCards(match, chooserSeatNumber).length === 0) {
     return false;
   }
 
@@ -2790,6 +2791,26 @@ function queueBoardResetKeepChoice(
   );
   refreshSeatSummaries(match);
   return true;
+}
+
+function getBoardResetKeepableCards(
+  match: StoredMatchState,
+  seatNumber: number
+): Array<
+  | { zone: "hand" | "object"; instance: StoredCardInstance }
+  | { zone: "status"; instance: StoredSeatStatus }
+> {
+  const game = match.internalGame;
+  if (game == null) {
+    return [];
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  return [
+    ...seatState.hand.map((instance) => ({ zone: "hand" as const, instance })),
+    ...seatState.objects.map((instance) => ({ zone: "object" as const, instance })),
+    ...seatState.statuses.map((instance) => ({ zone: "status" as const, instance }))
+  ];
 }
 
 function buildPendingPickpocketPool(
@@ -3055,21 +3076,37 @@ function executeBoardReset(
   const actorSeat = getPublicSeat(match, actorSeatNumber);
   const actorState = getStoredSeat(game, actorSeatNumber);
   const keptCardIdSet = new Set(keptCardInstanceIds.slice(0, effect.keeperCards));
-  const keptCards = actorState.hand.filter((card) => keptCardIdSet.has(card.instanceId)).slice(0, effect.keeperCards);
-  const keptCardsForHand = [...keptCards];
-  const keptCardNames = keptCards.map((card) => requireDefinition(card.cardId).name);
+  const keptCards = getBoardResetKeepableCards(match, actorSeatNumber)
+    .filter((card) => keptCardIdSet.has(card.instance.instanceId))
+    .slice(0, effect.keeperCards);
+  const keptHandCards = keptCards.map((card) => ({
+    instanceId: card.instance.instanceId,
+    cardId: card.instance.cardId
+  }));
+  const keptCardNames = keptCards.map((card) => requireDefinition(card.instance.cardId).name);
+  const keptObjectAttachedCards = keptCards
+    .filter((card): card is { zone: "object"; instance: StoredCardInstance } => card.zone === "object")
+    .flatMap((card) => flattenStoredCardInstances(card.instance.attachedCards ?? []));
   const recycled: StoredCardInstance[] = [];
 
   for (const seatState of game.seatStates) {
     if (seatState.seatNumber === actorSeatNumber) {
       recycled.push(...seatState.hand.filter((card) => !keptCardIdSet.has(card.instanceId)));
-      seatState.hand = keptCardsForHand;
+      recycled.push(...keptObjectAttachedCards);
+      seatState.hand = [...keptHandCards];
+      recycled.push(...seatState.objects.filter((card) => !keptCardIdSet.has(card.instanceId)));
+      seatState.objects = [];
+      recycled.push(
+        ...seatState.statuses
+          .filter((status) => !keptCardIdSet.has(status.instanceId))
+          .map((status) => ({ instanceId: status.instanceId, cardId: status.cardId }))
+      );
+      seatState.statuses = [];
     } else {
       recycled.push(...seatState.hand.splice(0));
+      recycled.push(...seatState.objects.splice(0));
+      recycled.push(...seatState.statuses.splice(0).map((status) => ({ instanceId: status.instanceId, cardId: status.cardId })));
     }
-
-    recycled.push(...seatState.objects.splice(0));
-    recycled.push(...seatState.statuses.splice(0).map((status) => ({ instanceId: status.instanceId, cardId: status.cardId })));
     seatState.skipTurnsRemaining = 0;
     seatState.attackImmunityTurns = 0;
     seatState.noRiposteTurnsRemaining = 0;
@@ -5192,7 +5229,7 @@ function applyEffect(
       }
       break;
     case "board_reset": {
-      const keepableCards = actorState.hand.slice();
+      const keepableCards = getBoardResetKeepableCards(match, actorSeatNumber);
       if (effect.keeperCards > 0 && keepableCards.length > 0) {
         if (queueBoardResetKeepChoice(match, actorSeatNumber, cardInstance, definition.rules.effects.indexOf(effect), boxId)) {
           return true;
@@ -5204,7 +5241,7 @@ function applyEffect(
           actorSeatNumber,
           cardInstance,
           effect,
-          botKeptCard == null ? [] : [botKeptCard.instanceId],
+          botKeptCard == null ? [] : [botKeptCard.instance.instanceId],
           boxId
         );
         break;
@@ -5820,7 +5857,6 @@ function buildPendingBoardResetKeepPublicState(
     return undefined;
   }
 
-  const chooserState = getStoredSeat(game, pendingBoardResetKeep.chooserSeatNumber);
   const isLocalChooser = viewerSeatNumber === pendingBoardResetKeep.chooserSeatNumber;
   const effect = requireDefinition(pendingBoardResetKeep.sourceCard.cardId).rules.effects[pendingBoardResetKeep.effectIndex];
   return {
@@ -5829,8 +5865,8 @@ function buildPendingBoardResetKeepPublicState(
     keepCardCount: effect?.type === "board_reset" ? effect.keeperCards : 1,
     cardOptions: !isLocalChooser
       ? []
-      : chooserState.hand.map((card) =>
-        buildCardView(card, requireDefinition(card.cardId), "hand", false)
+      : getBoardResetKeepableCards(match, pendingBoardResetKeep.chooserSeatNumber).map((card) =>
+        buildCardView(card.instance, requireDefinition(card.instance.cardId), card.zone, false)
       )
   };
 }
@@ -8040,9 +8076,10 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
     throw new Error("This seat cannot choose the card to keep");
   }
 
-  const chooserState = getStoredSeat(game, chooserSeat.seatNumber);
-  if (!chooserState.hand.some((card) => card.instanceId === cardInstanceId)) {
-    throw new Error("Selected card is not in hand");
+  const selectedCard = getBoardResetKeepableCards(match, chooserSeat.seatNumber)
+    .find((card) => card.instance.instanceId === cardInstanceId);
+  if (selectedCard == null) {
+    throw new Error("Selected card cannot be kept");
   }
 
   const definition = requireDefinition(pendingBoardResetKeep.sourceCard.cardId);
@@ -8054,7 +8091,7 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
   appendServerDebugLog(
     match,
     "board_reset",
-    `Seat ${chooserSeat.seatNumber} kept ${requireDefinition(chooserState.hand.find((card) => card.instanceId === cardInstanceId)!.cardId).name} for ${definition.name}`
+    `Seat ${chooserSeat.seatNumber} kept ${requireDefinition(selectedCard.instance.cardId).name} for ${definition.name}`
   );
 
   game.pendingBoardResetKeep = undefined;

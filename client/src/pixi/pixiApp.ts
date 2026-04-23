@@ -3782,18 +3782,17 @@ function buildOverlayMarkup(
       : (() => {
           const isLocalChooser = pendingBoardResetKeep.chooserSeatNumber === localSeatNumber;
           const chooserSeat = match.seats.find((s) => s.seatNumber === pendingBoardResetKeep.chooserSeatNumber);
-          const cardOptions = isLocalChooser ? pendingBoardResetKeep.cardOptions : [];
-          const previewCard = cardOptions.find((c) => c.instanceId === boardResetKeepPreviewCardInstanceId) ?? cardOptions[0];
+          const cardOptions = !isLocalChooser || chooserSeat == null
+            ? []
+            : [
+                ...(chooserSeat.hand ?? []),
+                ...(chooserSeat.objects ?? []),
+                ...(chooserSeat.statuses ?? [])
+              ];
           const count = pendingBoardResetKeep.keepCardCount;
-          const selectionLabel = count === 1
-            ? (language === "fr" ? "la seule carte" : "the one card")
-            : language === "fr" ? `${count} cartes` : `${count} cards`;
-          const stayVerb = count === 1
-            ? (language === "fr" ? "reste" : "stays")
-            : language === "fr" ? "restent" : "stay";
           return `
             <div class="pixi-modal-backdrop">
-              <article class="telepathy-panel" data-pixi-modal-card="true">
+              <article class="telepathy-panel board-reset-panel" data-pixi-modal-card="true">
                 <div class="telepathy-panel__header">
                   <div>
                     <p class="eyebrow">${escapeHtml(pendingBoardResetKeep.cardName)}</p>
@@ -3801,45 +3800,40 @@ function buildOverlayMarkup(
                       ? t(language, "boardReset.title", { count, plural: count === 1 ? "" : "s" })
                       : t(language, "boardReset.inProgress"))}</h2>
                     <p>${escapeHtml(isLocalChooser
-                      ? t(language, "boardReset.body", { selectionLabel, stayVerb })
+                      ? t(language, "boardReset.body")
                       : t(language, "boardReset.waitingBody", { chooserName: chooserSeat?.displayName ?? "" }))}</p>
                   </div>
-                  ${isLocalChooser ? `<button type="button" class="action-button action-button--secondary" data-action="confirm-board-reset-keep" ${previewCard == null ? "disabled" : ""}>${escapeHtml(t(language, "boardReset.keepAction"))}</button>` : ""}
                 </div>
-                <div class="telepathy-grid">
-                  ${!isLocalChooser
-                    ? `<p class="telepathy-empty">${escapeHtml(t(language, "boardReset.blocked"))}</p>`
-                    : cardOptions.length === 0
-                    ? `<p class="telepathy-empty">${escapeHtml(t(language, "boardReset.empty"))}</p>`
-                    : `
-                      <div class="telepathy-preview">
-                        ${previewCard == null ? "" : `
-                          <img class="telepathy-preview__image" src="${getCardTextureUrl(previewCard, "full")}" alt="${escapeHtml(previewCard.name)}" />
-                          <div class="telepathy-preview__meta">
-                            <strong>${escapeHtml(previewCard.name)}</strong>
-                            <span>[${escapeHtml(previewCard.categoryCode)}] ${escapeHtml(previewCard.categoryLabel)}</span>
-                            <p>${escapeHtml(previewCard.description).replaceAll("\n", "<br />")}</p>
-                          </div>
-                        `}
-                      </div>
-                      <div class="telepathy-list">
-                        ${cardOptions.map((card) => `
+                ${!isLocalChooser
+                  ? `<p class="telepathy-empty">${escapeHtml(t(language, "boardReset.blocked"))}</p>`
+                  : cardOptions.length === 0
+                  ? `<p class="telepathy-empty">${escapeHtml(t(language, "boardReset.empty"))}</p>`
+                  : `
+                    <div class="board-reset-card-grid">
+                      ${cardOptions.map((card) => {
+                        const sourceLabel =
+                          card.zone === "object"
+                            ? t(language, "boardReset.sourceObject")
+                            : card.zone === "status"
+                              ? t(language, "boardReset.sourceStatus")
+                              : t(language, "boardReset.sourceHand");
+                        const tooltip = `${card.name}\n[${card.categoryCode}] ${card.categoryLabel}\n${card.description}`;
+                        return `
                           <button
                             type="button"
-                            class="telepathy-card ${previewCard?.instanceId === card.instanceId ? "telepathy-card--active" : ""}"
+                            class="board-reset-card-option"
                             data-action="preview-board-reset-card"
                             data-card-instance-id="${card.instanceId}"
+                            data-card-name="${escapeHtml(card.name)}"
+                            title="${escapeHtml(tooltip)}"
                           >
+                            <span class="board-reset-card-option__badge">${escapeHtml(sourceLabel)}</span>
                             <img src="${getCardTextureUrl(card, "thumb")}" alt="${escapeHtml(card.name)}" />
-                            <div class="telepathy-card__meta">
-                              <strong>${escapeHtml(card.name)}</strong>
-                              <span>[${escapeHtml(card.categoryCode)}] ${escapeHtml(card.categoryLabel)}</span>
-                            </div>
                           </button>
-                        `).join("")}
-                      </div>
-                    `}
-                </div>
+                        `;
+                      }).join("")}
+                    </div>
+                  `}
               </article>
             </div>
           `;
@@ -5226,8 +5220,20 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return;
     }
 
-    if (boardResetKeepPreviewCardInstanceId === "" || !keep.cardOptions.some((c) => c.instanceId === boardResetKeepPreviewCardInstanceId)) {
-      boardResetKeepPreviewCardInstanceId = keep.cardOptions[0]?.instanceId ?? "";
+    const localSeatState = match.seats.find((seat) => seat.seatNumber === localSeatNumber);
+    const localKeepableCards = localSeatState == null
+      ? []
+      : [
+          ...(localSeatState.hand ?? []),
+          ...(localSeatState.objects ?? []),
+          ...(localSeatState.statuses ?? [])
+        ];
+
+    if (
+      boardResetKeepPreviewCardInstanceId === ""
+      || !localKeepableCards.some((c) => c.instanceId === boardResetKeepPreviewCardInstanceId)
+    ) {
+      boardResetKeepPreviewCardInstanceId = localKeepableCards[0]?.instanceId ?? "";
     }
   };
 
@@ -6683,17 +6689,25 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     return nearestDistance <= OBJECT_DRAG_SNAP_DISTANCE ? nearestObjectInstanceId : null;
   };
 
+  const applyImmediateMatchUpdate = (nextMatch: MatchState): void => {
+    preUpdateLocalizedSeatsBySeat = Object.fromEntries(
+      localizeMatchState(match, language).seats.map((seat) => [seat.seatNumber, seat])
+    );
+    rememberPendingActionSnapshot(nextMatch);
+    match = nextMatch;
+    syncLocalSeatNumberFromMatch(nextMatch);
+    updateVictoryCelebrationState();
+    replayCombatPresentationEvents();
+  };
+
   const performCardPlay = async (request: Parameters<typeof playCard>[2]): Promise<void> => {
     try {
       rememberPendingActionSnapshot(match);
       const nextMatch = await playCard(session.instanceId, playerSessionToken, request);
-      rememberPendingActionSnapshot(nextMatch);
-      match = nextMatch;
-      syncLocalSeatNumberFromMatch(nextMatch);
+      applyImmediateMatchUpdate(nextMatch);
       errorMessage = "";
       confirmingDiscardCardInstanceId = "";
       syncConsumePreview();
-      updateVictoryCelebrationState();
     } catch (error) {
       errorMessage = error instanceof Error
         ? (localizeCardDisabledReason(error.message, language) ?? error.message)
@@ -6710,12 +6724,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     try {
       rememberPendingActionSnapshot(match);
       const nextMatch = await respondToPendingAction(session.instanceId, playerSessionToken, request);
-      rememberPendingActionSnapshot(nextMatch);
-      match = nextMatch;
-      syncLocalSeatNumberFromMatch(nextMatch);
+      applyImmediateMatchUpdate(nextMatch);
       errorMessage = "";
       pendingAnnulationChoice = null;
-      updateVictoryCelebrationState();
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : t(language, "error.playCard");
     } finally {
@@ -7146,7 +7157,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='add-bot']").forEach((btn) => {
       btn.addEventListener("click", async () => {
         try {
-          match = await requestAddBot(session.instanceId, playerSessionToken);
+          applyImmediateMatchUpdate(await requestAddBot(session.instanceId, playerSessionToken));
           errorMessage = "";
         } catch (error) {
           errorMessage = error instanceof Error ? error.message : t(language, "error.addBot");
@@ -7157,7 +7168,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='start-match']")?.addEventListener("click", async () => {
       try {
-        match = await requestStartMatch(session.instanceId, playerSessionToken);
+        applyImmediateMatchUpdate(await requestStartMatch(session.instanceId, playerSessionToken));
         errorMessage = "";
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : t(language, "error.startMatch");
@@ -7364,7 +7375,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       overlayInteractionLocked = false;
       select.value = "";
       try {
-        match = await devDrawCard(session.instanceId, playerSessionToken, cardId);
+        applyImmediateMatchUpdate(await devDrawCard(session.instanceId, playerSessionToken, cardId));
         errorMessage = "";
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : t(language, "error.drawCard");
@@ -7412,9 +7423,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
 
       try {
-        match = await requestKickPlayer(session.instanceId, playerSessionToken, {
+        applyImmediateMatchUpdate(await requestKickPlayer(session.instanceId, playerSessionToken, {
           seatNumber: confirmingKickSeatNumber
-        });
+        }));
         errorMessage = "";
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : t(language, "error.kickPlayer");
@@ -7434,7 +7445,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
         button.disabled = true;
         try {
-          match = await selectPendingObject(session.instanceId, playerSessionToken, { objectInstanceId });
+          applyImmediateMatchUpdate(await selectPendingObject(session.instanceId, playerSessionToken, { objectInstanceId }));
           errorMessage = "";
         } catch (error) {
           errorMessage = error instanceof Error ? error.message : t(language, "error.selectObject");
@@ -7445,7 +7456,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='dismiss-telepathy']")?.addEventListener("click", async () => {
       try {
-        match = await acknowledgePendingHandInspection(session.instanceId, playerSessionToken, {});
+        applyImmediateMatchUpdate(await acknowledgePendingHandInspection(session.instanceId, playerSessionToken, {}));
         errorMessage = "";
         telepathyPreviewCardInstanceId = "";
       } catch (error) {
@@ -7456,7 +7467,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='ack-public-hand-reveal']")?.addEventListener("click", async () => {
       try {
-        match = await acknowledgePendingPublicHandReveal(session.instanceId, playerSessionToken, {});
+        applyImmediateMatchUpdate(await acknowledgePendingPublicHandReveal(session.instanceId, playerSessionToken, {}));
         errorMessage = "";
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : t(language, "error.closePublicHandReveal");
@@ -7518,7 +7529,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='pass-forced-follow-up']")?.addEventListener("click", async () => {
       try {
-        match = await passForcedFollowUp(session.instanceId, playerSessionToken);
+        applyImmediateMatchUpdate(await passForcedFollowUp(session.instanceId, playerSessionToken));
         errorMessage = "";
         consumePreviewCardInstanceId = "";
       } catch (error) {
@@ -7528,32 +7539,24 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     });
 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-board-reset-card']").forEach((button) => {
-      button.addEventListener("click", () => {
-        const id = button.dataset.cardInstanceId ?? "";
-        if (id !== "" && id !== boardResetKeepPreviewCardInstanceId) {
-          boardResetKeepPreviewCardInstanceId = id;
-          const savedScrollTop = frameElement.querySelector<HTMLElement>(".telepathy-list")?.scrollTop ?? 0;
-          redraw();
-          const listEl = frameElement.querySelector<HTMLElement>(".telepathy-list");
-          if (listEl != null) listEl.scrollTop = savedScrollTop;
+      button.addEventListener("click", async () => {
+        const cardInstanceId = button.dataset.cardInstanceId ?? "";
+        const cardName = button.dataset.cardName ?? "";
+        if (cardInstanceId === "") {
+          return;
         }
+        if (!window.confirm(t(language, "boardReset.confirmKeep", { cardName }))) {
+          return;
+        }
+        try {
+          applyImmediateMatchUpdate(await resolvePendingBoardResetKeep(session.instanceId, playerSessionToken, { cardInstanceId }));
+          errorMessage = "";
+          boardResetKeepPreviewCardInstanceId = "";
+        } catch (error) {
+          errorMessage = error instanceof Error ? error.message : t(language, "error.keepCard");
+        }
+        redraw();
       });
-    });
-
-    frameElement.querySelector<HTMLButtonElement>("[data-action='confirm-board-reset-keep']")?.addEventListener("click", async () => {
-      const cardInstanceId = boardResetKeepPreviewCardInstanceId;
-      if (cardInstanceId === "") {
-        return;
-      }
-
-      try {
-        match = await resolvePendingBoardResetKeep(session.instanceId, playerSessionToken, { cardInstanceId });
-        errorMessage = "";
-        boardResetKeepPreviewCardInstanceId = "";
-      } catch (error) {
-        errorMessage = error instanceof Error ? error.message : t(language, "error.keepCard");
-      }
-      redraw();
     });
 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='choose-death-search-corpse']").forEach((button) => {
@@ -7562,7 +7565,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         if (corpseSeatNumber <= 0) return;
         button.disabled = true;
         try {
-          match = await resolvePendingDeathSearch(session.instanceId, playerSessionToken, { corpseSeatNumber });
+          applyImmediateMatchUpdate(await resolvePendingDeathSearch(session.instanceId, playerSessionToken, { corpseSeatNumber }));
           errorMessage = "";
           syncDeathSearchState();
         } catch (error) {
@@ -7592,7 +7595,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const keepCardInstanceIds = deathSearchSelectedCardInstanceIds;
       if (keepCardInstanceIds.length === 0) return;
       try {
-        match = await resolvePendingDeathSearch(session.instanceId, playerSessionToken, { keepCardInstanceIds });
+        applyImmediateMatchUpdate(await resolvePendingDeathSearch(session.instanceId, playerSessionToken, { keepCardInstanceIds }));
         errorMessage = "";
         deathSearchPreviewCardInstanceId = "";
         deathSearchSelectedCardInstanceIds = [];
@@ -7604,7 +7607,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='decline-death-search']")?.addEventListener("click", async () => {
       try {
-        match = await resolvePendingDeathSearch(session.instanceId, playerSessionToken, { decline: true });
+        applyImmediateMatchUpdate(await resolvePendingDeathSearch(session.instanceId, playerSessionToken, { decline: true }));
         errorMessage = "";
         deathSearchPreviewCardInstanceId = "";
         deathSearchSelectedCardInstanceIds = [];
@@ -7634,7 +7637,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const takeCardInstanceIds = pickpocketSelectedCardInstanceIds;
       if (takeCardInstanceIds.length === 0) return;
       try {
-        match = await resolvePendingPickpocket(session.instanceId, playerSessionToken, { takeCardInstanceIds });
+        applyImmediateMatchUpdate(await resolvePendingPickpocket(session.instanceId, playerSessionToken, { takeCardInstanceIds }));
         errorMessage = "";
         pickpocketPreviewCardInstanceId = "";
         pickpocketSelectedCardInstanceIds = [];
@@ -7675,7 +7678,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         return;
       }
       try {
-        match = await resolvePendingSacrificeChoice(session.instanceId, playerSessionToken, { amount: parsed });
+        applyImmediateMatchUpdate(await resolvePendingSacrificeChoice(session.instanceId, playerSessionToken, { amount: parsed }));
         errorMessage = "";
         sacrificeAmountInput = "";
       } catch (error) {
@@ -7746,10 +7749,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         }
 
         try {
-          match = await requestUpdateExpansion(session.instanceId, playerSessionToken, {
+          applyImmediateMatchUpdate(await requestUpdateExpansion(session.instanceId, playerSessionToken, {
             expansion,
             enabled: !match.enabledExpansions[expansion]
-          });
+          }));
           errorMessage = "";
         } catch (error) {
           errorMessage = error instanceof Error ? error.message : t(language, "error.updateExpansion");
@@ -7801,7 +7804,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
       select.value = "";
       try {
-        match = await devDrawCard(session.instanceId, playerSessionToken, cardId);
+        applyImmediateMatchUpdate(await devDrawCard(session.instanceId, playerSessionToken, cardId));
         errorMessage = "";
       } catch (err) {
         errorMessage = err instanceof Error ? err.message : t(language, "error.drawCard");
