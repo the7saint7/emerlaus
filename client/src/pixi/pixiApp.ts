@@ -35,6 +35,7 @@ const SPECTATOR_SEAT_NUMBER = 0;
 const SPECTATOR_LAYOUT_SEAT_NUMBER = 1;
 const POLL_INTERVAL_MS = 2500;
 const FROZEN_SEAT_FX_URL = "/assets/effects/frozen-seat-fx.png";
+const SLEEP_STATUS_CARD_IDS = new Set<string>(["sommeil"]);
 const FROZEN_STATUS_CARD_IDS = new Set<string>([
   "engelure",
   "flechette-glacee",
@@ -211,6 +212,7 @@ interface PendingAnnulationChoiceState {
 interface PixiKickTarget {
   seatNumber: number;
   displayName: string;
+  removesBotFromLobby: boolean;
 }
 
 interface PixiSeatKickActionTarget extends PixiKickTarget {
@@ -724,6 +726,10 @@ function seatHasFrozenStatus(seat: SeatState | undefined): boolean {
   return (seat?.statuses ?? []).some((statusCard) => FROZEN_STATUS_CARD_IDS.has(statusCard.cardId));
 }
 
+function seatHasSleepStatus(seat: SeatState | undefined): boolean {
+  return (seat?.statuses ?? []).some((statusCard) => SLEEP_STATUS_CARD_IDS.has(statusCard.cardId));
+}
+
 function renderFrozenSeatOverlay(
   scene: Container,
   rect: RectGeometry,
@@ -744,6 +750,35 @@ function renderFrozenSeatOverlay(
   sprite.width = rect.width + pad * 2;
   sprite.height = rect.height + pad * 2;
   scene.addChild(sprite);
+}
+
+function renderSleepSeatOverlay(
+  scene: Container,
+  rect: RectGeometry,
+  isLocalSeat: boolean,
+  now: number
+): void {
+  const anchorX = rect.x + rect.width - (isLocalSeat ? 44 : 26);
+  const anchorY = rect.y + (isLocalSeat ? 34 : 16);
+  const bubble = createCircle(anchorX - (isLocalSeat ? 6 : 4), anchorY + (isLocalSeat ? 4 : 2), isLocalSeat ? 17 : 12, "#10281c", 0.88);
+  scene.addChild(bubble);
+
+  const glyphs = ["Z", "z", "z"] as const;
+  for (let index = 0; index < glyphs.length; index += 1) {
+    const progress = ((now + index * 260) % 1800) / 1800;
+    const driftY = progress * (isLocalSeat ? 34 : 24);
+    const driftX = index * (isLocalSeat ? 11 : 8) + Math.sin(progress * Math.PI) * (isLocalSeat ? 4 : 3);
+    const glyph = createLabel(glyphs[index], anchorX + driftX, anchorY - driftY, {
+      fontSize: isLocalSeat ? 22 - index * 2 : 16 - index,
+      fontWeight: "700",
+      fill: "#d9f6e5",
+      stroke: { color: "#183829", width: 3 }
+    }, 0.5, 0.5);
+    glyph.alpha = 0.3 + (1 - progress) * 0.65;
+    glyph.rotation = -0.16 + index * 0.08;
+    glyph.scale.set(0.92 + progress * 0.26);
+    scene.addChild(glyph);
+  }
 }
 
 function getSeatVisualEffectLabel(effectId: SeatVisualEffectId, language: AppLanguage): string {
@@ -2488,6 +2523,10 @@ function renderTableScene(
       );
     }
 
+    if (seatHasSleepStatus(seat)) {
+      renderSleepSeatOverlay(scene, rect, seatNumber === playerSeatNumber, replayNow);
+    }
+
     const impactFlash = activeImpactFlashes[seatNumber];
     if (impactFlash != null) {
       const progress = Math.max(0, Math.min(1, (replayNow - impactFlash.startedAt) / impactFlash.durationMs));
@@ -2992,6 +3031,7 @@ interface LobbyOverlayLayout {
   startMatchWidthPx: number;
   startMatchHeightPx: number;
   addBotButtons: Array<{ leftPx: number; topPx: number; widthPx: number; heightPx: number }>;
+  botKickButtons: Array<{ seatNumber: number; leftPx: number; topPx: number; widthPx: number; heightPx: number }>;
   expansionButtons: Array<{ key: string; leftPx: number; topPx: number; widthPx: number; heightPx: number; available: boolean; enabled: boolean }>;
 }
 
@@ -3217,6 +3257,18 @@ function buildOverlayMarkup(
           ${amHost ? "" : "disabled"}
         ></button>
       `).join("")}
+      ${lobbyLayout.botKickButtons.map((btn) => `
+        <button
+          type="button"
+          class="pixi-overlay-button pixi-overlay-button--danger"
+          style="position:absolute; left:${btn.leftPx}px; top:${btn.topPx}px; width:${btn.widthPx}px; height:${btn.heightPx}px; padding:0 10px; z-index:2;"
+          data-action="kick-seat"
+          data-seat-number="${btn.seatNumber}"
+          ${amHost ? "" : "disabled"}
+        >
+          ${t(language, "table.kickPlayer")}
+        </button>
+      `).join("")}
       ${lobbyLayout.expansionButtons.map((btn) => `
         <button
           class="pixi-lobby-cell-btn"
@@ -3343,7 +3395,11 @@ function buildOverlayMarkup(
         <div class="pixi-modal-backdrop">
           <section class="modal-card pixi-annulation-choice__card" data-pixi-modal-card="true">
             <h2>${escapeHtml(t(language, "kick.confirm.title"))}</h2>
-            <p>${escapeHtml(t(language, "kick.confirm.body", { playerName: kickTarget.displayName }))}</p>
+            <p>${escapeHtml(t(
+              language,
+              kickTarget.removesBotFromLobby ? "kick.confirm.removeBotBody" : "kick.confirm.body",
+              { playerName: kickTarget.displayName }
+            ))}</p>
             <div class="modal-actions pixi-annulation-choice__actions">
               <button type="button" class="pixi-overlay-button" data-action="kick-cancel">${t(language, "defense.no")}</button>
               <button type="button" class="pixi-overlay-button pixi-overlay-button--danger" data-action="kick-confirm">${t(language, "defense.yes")}</button>
@@ -4978,7 +5034,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     return {
       seatNumber: seat.seatNumber,
-      displayName: seat.displayName
+      displayName: seat.displayName,
+      removesBotFromLobby: match.status === "lobby" && seat.controllerType === "bot"
     };
   };
 
@@ -5000,6 +5057,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     return {
       seatNumber: seat.seatNumber,
       displayName: seat.displayName,
+      removesBotFromLobby: false,
       leftPx: (rect.x + rect.width / 2) * currentMetrics.scale,
       topPx: (rect.y + rect.height + 8) * currentMetrics.scale
     };
@@ -6658,6 +6716,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           })
         }
       : localizedMatch;
+    const sleepOverlayActive = displayMatch.seats.some((seat) => seatHasSleepStatus(seat));
     const displayLayoutSeatNumber = getLayoutSeatNumber(displayMatch);
     const handDealAnimationsActive = syncLocalHandDealAnimations(displayMatch);
     const handFocusBlend = getHandFocusBlendState();
@@ -6834,6 +6893,20 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             heightPx: LOBBY_CARD_H
           };
         });
+      const botKickButtons = localizedMatch.seats
+        .filter((seat) => seat.controllerType === "bot" && seat.seatNumber !== 1)
+        .map((seat) => {
+          const i = seat.seatNumber - 2;
+          const col = i % LOBBY_COLUMNS;
+          const row = 1 + Math.floor(i / LOBBY_COLUMNS);
+          return {
+            seatNumber: seat.seatNumber,
+            leftPx: LOBBY_START_X + col * (LOBBY_CARD_W + LOBBY_CARD_GAP) + LOBBY_CARD_W - 118,
+            topPx: LOBBY_START_Y + row * (LOBBY_CARD_H + LOBBY_CARD_GAP) + 12,
+            widthPx: 104,
+            heightPx: 32
+          };
+        });
       const expansionButtons = EXPANSION_DECKS.map((deck, index) => {
         const rowY = LOBBY_EXP_Y + LOBBY_EXP_HEADER_H + index * (LOBBY_EXP_ROW_H + LOBBY_EXP_ROW_GAP);
         return {
@@ -6852,6 +6925,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         startMatchWidthPx: 2 * LOBBY_CARD_W + LOBBY_CARD_GAP,
         startMatchHeightPx: LOBBY_CARD_H,
         addBotButtons,
+        botKickButtons,
         expansionButtons
       };
     })() : null;
@@ -6906,7 +6980,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     renderInspectOverlay();
     pruneLoadedTextures();
 
-    if (handFocusTransition != null || handDealAnimationsActive || combatVisualsActive || turnPastilleAnimating || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)) {
+    if (
+      handFocusTransition != null
+      || handDealAnimationsActive
+      || combatVisualsActive
+      || turnPastilleAnimating
+      || sleepOverlayActive
+      || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)
+    ) {
       scheduleRedraw();
     }
   };

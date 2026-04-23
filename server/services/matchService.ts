@@ -794,6 +794,12 @@ export function kickPlayer(instanceId: string, userId: string, request: KickPlay
     throw new Error("The host cannot kick their own seat");
   }
 
+  if (match.status === "lobby" && targetSeat.controllerType === "bot") {
+    match.seats = match.seats.filter((seat) => seat.seatNumber !== targetSeat.seatNumber);
+    saveMatch(match);
+    return buildPublicMatchState(match, userId);
+  }
+
   if (targetSeat.controllerType !== "human") {
     throw new Error("Only human players can be kicked");
   }

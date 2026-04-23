@@ -30,6 +30,7 @@ type TranslationKey =
   | "leave.confirm.action"
   | "kick.confirm.title"
   | "kick.confirm.body"
+  | "kick.confirm.removeBotBody"
   | "discard.confirm.title"
   | "discard.confirm.body"
   | "eventLog.title"
@@ -295,6 +296,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "leave.confirm.action": "Leave Match",
     "kick.confirm.title": "Kick player?",
     "kick.confirm.body": "{playerName} will be replaced by a bot.",
+    "kick.confirm.removeBotBody": "{playerName} will be removed from the lobby.",
     "discard.confirm.title": "Discard this card?",
     "discard.confirm.body": "This will discard the card without using its effect.",
     "eventLog.title": "Event Log",
@@ -557,6 +559,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "leave.confirm.action": "Quitter la partie",
     "kick.confirm.title": "Expulser le joueur?",
     "kick.confirm.body": "{playerName} sera remplacé par un bot.",
+    "kick.confirm.removeBotBody": "{playerName} sera retiré du lobby.",
     "discard.confirm.title": "Défausser cette carte?",
     "discard.confirm.body": "Cette action défaussera la carte sans utiliser son effet.",
     "eventLog.title": "Journal",

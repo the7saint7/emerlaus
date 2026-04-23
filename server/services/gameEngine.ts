@@ -625,7 +625,7 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
   const requiresTargetObject = singleOpponentTargetRequiresEligibleObject(definition);
   const opponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber)
-    .filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
+    .filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber));
   const eligibleOpponents = requiresTargetObject
     ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
     : opponents;
@@ -1673,13 +1673,17 @@ function rollMassAttackStaffDamage(
 }
 
 function isAbundanceTurn(match: StoredMatchState, seatNumber: number): boolean {
-  return (
-    match.internalGame?.currentTurnSeatNumber === seatNumber
-    && match.internalGame.forcedPlayCategories != null
-    && match.internalGame.forcedPlayCategories !== "any"
-    && match.internalGame.forcedPlayCategories.length === ABUNDANCE_ALLOWED_CATEGORIES.length
-    && ABUNDANCE_ALLOWED_CATEGORIES.every((category) => match.internalGame?.forcedPlayCategories?.includes(category))
-  );
+  const game = match.internalGame;
+  if (game?.currentTurnSeatNumber !== seatNumber) {
+    return false;
+  }
+
+  const seatState = game.seatStates.find((seat) => seat.seatNumber === seatNumber);
+  return seatState?.statuses.some((status) =>
+    status.cardId === "abondance"
+    && status.activatesNextTurn !== true
+    && (status.remainingTurnTriggers ?? 0) > 0
+  ) ?? false;
 }
 
 function getActiveExtraPlayMode(match: StoredMatchState, actorSeatNumber: number) {
@@ -1807,14 +1811,6 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     return { canPlay: false, reason: "Vierge requires an eligible non-CA/non-O card in the talon" };
   }
 
-  if (
-    game.forcedPlayCategories != null
-    && game.forcedPlayCategories !== "any"
-    && !game.forcedPlayCategories.includes(definition.category.code)
-  ) {
-    return { canPlay: false, reason: "Only A, AD, and AM cards can be actively played this turn" };
-  }
-
   const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
   if (
     extraPlayMode != null
@@ -1832,7 +1828,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
   const requiresTargetObject = singleOpponentTargetRequiresEligibleObject(definition);
   const livingOpponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
-  const attackableOpponents = livingOpponents.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition));
+  const attackableOpponents = livingOpponents.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber));
   const attackableOpponentsWithObjects = attackableOpponents.filter((seatNumber) => getStoredSeat(game, seatNumber).objects.length > 0);
   const opponentsWithEligibleObjects = livingOpponents.filter((seatNumber) =>
     seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
@@ -1924,7 +1920,7 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
           return { canPlay: false, reason: "No left opponent available" };
         }
 
-        if (isProtectedFromAttack(match, leftOpponentSeatNumber, definition)) {
+        if (isProtectedFromAttack(match, leftOpponentSeatNumber, definition, actorSeatNumber)) {
           return { canPlay: false, reason: "The left opponent is protected right now" };
         }
 
@@ -2233,9 +2229,18 @@ function getTargetSeatNumbers(
   }
 }
 
-function isProtectedFromAttack(match: StoredMatchState, targetSeatNumber: number, sourceDefinition: BaseCardDefinition): boolean {
+function isProtectedFromAttack(
+  match: StoredMatchState,
+  targetSeatNumber: number,
+  sourceDefinition: BaseCardDefinition,
+  sourceSeatNumber?: number
+): boolean {
   const game = match.internalGame;
   if (game == null) {
+    return false;
+  }
+
+  if (sourceSeatNumber != null && sourceSeatNumber === targetSeatNumber) {
     return false;
   }
 
@@ -2317,7 +2322,7 @@ function computeMirrorRobeReflection(
   }
 
   const mirrorRobeDefinition = requireDefinition("robe-miroir");
-  if (isProtectedFromAttack(match, sourceSeatNumber, mirrorRobeDefinition)) {
+  if (isProtectedFromAttack(match, sourceSeatNumber, mirrorRobeDefinition, targetSeatNumber)) {
     return 0;
   }
 
@@ -2368,7 +2373,7 @@ function triggerCounterattackRobe(
   }
 
   const counterattackDefinition = requireDefinition("robe-de-contre-attaque");
-  if (isProtectedFromAttack(match, sourceSeatNumber, counterattackDefinition)) {
+  if (isProtectedFromAttack(match, sourceSeatNumber, counterattackDefinition, targetSeatNumber)) {
     return;
   }
 
@@ -3145,7 +3150,7 @@ function applyDamage(
   sourceSeatNumber?: number
 ): number {
   const targetSeat = getPublicSeat(match, targetSeatNumber);
-  if (isProtectedFromAttack(match, targetSeatNumber, sourceDefinition)) {
+  if (isProtectedFromAttack(match, targetSeatNumber, sourceDefinition, sourceSeatNumber)) {
     appendServerDebugLog(match, "damage", `${sourceDefinition.name} dealt 0 to seat ${targetSeatNumber} because the target is protected`);
     return 0;
   }
@@ -3540,6 +3545,14 @@ function determineResponseMode(definition: BaseCardDefinition): PendingActionSta
     : "per_target";
 }
 
+function shouldOpenResponseWindow(definition: BaseCardDefinition): boolean {
+  return (
+    definition.rules.requiresDefenseWindow
+    || definition.rules.requiresResistanceCheck
+    || definition.defenseBand?.annulationAllowed === true
+  );
+}
+
 function isSelfTargetedSinglePlayerSpell(
   definition: BaseCardDefinition,
   actorSeatNumber: number,
@@ -3563,7 +3576,7 @@ function getResponderSeatNumbers(
   definition: BaseCardDefinition,
   targetSeatNumbers: number[]
 ): number[] {
-  if (!definition.rules.requiresDefenseWindow && !definition.rules.requiresResistanceCheck) {
+  if (!shouldOpenResponseWindow(definition)) {
     return [];
   }
 
@@ -3679,6 +3692,16 @@ function getExtraResistanceRollCount(
   return getStoredSeat(game, targetSeatNumber).objects.reduce((count, objectInstance) => (
     EXTRA_RESISTANCE_ROLL_OBJECT_CARD_IDS.has(objectInstance.cardId) ? count + 1 : count
   ), 0);
+}
+
+function getFullTurnNoRiposteDuration(definition: BaseCardDefinition): number {
+  const alsoSkipsTurn = definition.rules.effects.some((effect) =>
+    effect.type === "skip_turn" && effect.durationTurns > 0
+  );
+
+  // If the effect also skips the target's next turn, the no-riposte window must
+  // survive that skipped turn so opponents still get the intended follow-up round.
+  return alsoSkipsTurn ? 2 : 1;
 }
 
 function getFatalResistanceCurseStatus(match: StoredMatchState, seatNumber: number, rollTotal: number): StoredSeatStatus | undefined {
@@ -4001,7 +4024,7 @@ function resolveSuccessfulHitFreezeRoll(
 
   const targetState = getStoredSeat(game, targetSeatNumber);
   targetState.skipTurnsRemaining += 1;
-  targetState.noRiposteTurnsRemaining = Math.max(targetState.noRiposteTurnsRemaining, 1);
+  targetState.noRiposteTurnsRemaining = Math.max(targetState.noRiposteTurnsRemaining, 2);
   if (!targetState.statuses.some((status) => status.cardId === definition.id)) {
     targetState.statuses.push({
       instanceId: randomUUID(),
@@ -4033,7 +4056,7 @@ function resolveRouletteRusse(
   }
 
   const eligibleSeatNumbers = aliveSeatNumbers(game).filter((seatNumber) =>
-    seatNumber === actorSeatNumber || !isProtectedFromAttack(match, seatNumber, definition)
+    seatNumber === actorSeatNumber || !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber)
   );
   const chosenSeatNumber = pickRandom(eligibleSeatNumbers);
   if (chosenSeatNumber == null) {
@@ -4158,7 +4181,7 @@ function resolvePersistentOwnerTurnMassDamageTick(
 
   const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, ownerSeatNumber);
   const affectedTargetSeatNumbers = targetSeatNumbers.filter((targetSeatNumber) =>
-    !isProtectedFromAttack(match, targetSeatNumber, definition)
+    !isProtectedFromAttack(match, targetSeatNumber, definition, ownerSeatNumber)
   );
   const timedPotionDamageMultiplier = getTimedPotionDamageMultiplier(match, ownerSeatNumber);
 
@@ -4543,7 +4566,6 @@ function resolveAbundanceTurnStart(match: StoredMatchState, seatNumber: number):
     return;
   }
 
-  game.forcedPlayCategories = undefined;
   const seatState = getStoredSeat(game, seatNumber);
   const abundanceStatuses = seatState.statuses.filter((status) => status.cardId === "abondance");
   if (abundanceStatuses.length === 0) {
@@ -4561,7 +4583,6 @@ function resolveAbundanceTurnStart(match: StoredMatchState, seatNumber: number):
     return;
   }
 
-  game.forcedPlayCategories = [...ABUNDANCE_ALLOWED_CATEGORIES];
   appendServerDebugLog(
     match,
     "status",
@@ -4657,8 +4678,6 @@ function resolveAbundanceTurnEnd(match: StoredMatchState, seatNumber: number): v
     appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s Abondance ends.`);
     appendServerDebugLog(match, "status", `Seat ${seatNumber}'s Abondance expired at end of turn`);
   }
-
-  game.forcedPlayCategories = undefined;
 }
 
 function resolveTimedPotionTurnEnd(match: StoredMatchState, seatNumber: number): void {
@@ -5025,9 +5044,10 @@ function applyEffect(
       break;
     case "disable_riposte":
       if (effect.duration === "full_turn") {
+        const noRiposteDuration = getFullTurnNoRiposteDuration(definition);
         for (const targetSeatNumber of targetSeatNumbers) {
           const targetState = getStoredSeat(game, targetSeatNumber);
-          targetState.noRiposteTurnsRemaining = Math.max(targetState.noRiposteTurnsRemaining, 1);
+          targetState.noRiposteTurnsRemaining = Math.max(targetState.noRiposteTurnsRemaining, noRiposteDuration);
           if (!targetState.statuses.some((status) => status.cardId === cardInstance.cardId)) {
             targetState.statuses.push({
               instanceId: randomUUID(),
@@ -5204,7 +5224,7 @@ function maybeQueueMassAttackStaffTurnAction(
 
   const definition = requireDefinition(staffCard.cardId);
   const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, seatNumber)
-    .filter((targetSeatNumber) => !isProtectedFromAttack(match, targetSeatNumber, definition));
+    .filter((targetSeatNumber) => !isProtectedFromAttack(match, targetSeatNumber, definition, seatNumber));
   if (targetSeatNumbers.length === 0) {
     appendServerDebugLog(match, "object", `Seat ${seatNumber}'s ${definition.name} found no valid targets at start of turn`);
     return false;
@@ -7130,12 +7150,15 @@ function resolvePendingAction(match: StoredMatchState): void {
         continue;
       }
 
+      // In collective mode, a failed Annulation attempt falls back to the default defense:
+      // consume the card(s), then still allow the normal resistance roll.
+      const resistanceChoice = responder.choice === "annulation" ? "pass" : responder.choice;
       const outcome = rollResistanceForAction(
         match,
         pendingAction,
         definition,
         targetSeatNumber,
-        responder.choice,
+        resistanceChoice,
         getBaseResistanceRollCount(definition),
         getExtraResistanceRollCount(match, definition, targetSeatNumber)
       );
@@ -8216,7 +8239,7 @@ function resolveRemovedCardPlay(
       : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const effectiveTargetSeatNumbers =
     request.mode === "active" && definition.rules.targets === "all_opponents"
-      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
+      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber))
       : targetSeatNumbers;
 
   let invalidReason: string | undefined;
@@ -8270,7 +8293,7 @@ function resolveRemovedCardPlay(
   } else if (
     request.mode === "active"
     && definition.rules.targets !== "all_opponents"
-    && targetSeatNumbers.some((seatNumber) => seatNumber !== actorSeatNumber && isProtectedFromAttack(match, seatNumber, definition))
+    && targetSeatNumbers.some((seatNumber) => seatNumber !== actorSeatNumber && isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber))
   ) {
     invalidReason = "That target is protected and cannot be attacked right now";
   } else if (
@@ -8607,7 +8630,7 @@ function resolveRemovedCardPlay(
   const responderSeatNumbers = getResponderSeatNumbers(game, actorSeatNumber, definition, effectiveTargetSeatNumbers);
   if (
     forcedFollowUp == null &&
-    (definition.rules.requiresDefenseWindow || definition.rules.requiresResistanceCheck || definition.defenseBand?.annulationAllowed === true) &&
+    shouldOpenResponseWindow(definition) &&
     responderSeatNumbers.length > 0 &&
     definition.defenseBand != null
   ) {
@@ -8803,7 +8826,7 @@ function validateActionRequestBeforeHandRemoval(
     : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const effectiveTargetSeatNumbers =
     definition.rules.targets === "all_opponents"
-      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition))
+      ? targetSeatNumbers.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber))
       : targetSeatNumbers;
 
   if (
@@ -8842,7 +8865,7 @@ function validateActionRequestBeforeHandRemoval(
 
   if (
     definition.rules.targets !== "all_opponents"
-    && targetSeatNumbers.some((seatNumber) => seatNumber !== actorSeatNumber && isProtectedFromAttack(match, seatNumber, definition))
+    && targetSeatNumbers.some((seatNumber) => seatNumber !== actorSeatNumber && isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber))
   ) {
     throw new Error("That target is protected and cannot be attacked right now");
   }
