@@ -7818,12 +7818,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
       resolvedAt: new Date().toISOString()
     };
     game.pendingObjectChoice = undefined;
-    resolvePendingTurnContinuation(
-      match,
-      chooserSeat.seatNumber,
-      pendingObjectChoice.sourceCard.cardId,
-      pendingObjectChoice.continuationMode
-    );
+    finalizeResolvedAction(match, chooserSeat.seatNumber);
     return;
   }
 
