@@ -20,6 +20,11 @@ export interface StoredCardInstance {
   attachedCards?: StoredCardInstance[];
 }
 
+export interface StoredBotPriorityCard {
+  cardInstanceId: string;
+  preferredTargetSeatNumber?: number;
+}
+
 export interface StoredSeatStatus {
   instanceId: string;
   cardId: string;
@@ -103,6 +108,7 @@ export interface StoredGameState {
     request: PlayCardRequest;
   };
   seatStates: StoredSeatState[];
+  botPriorityCardsBySeat?: Record<number, StoredBotPriorityCard[]>;
   currentTurnSeatNumber: number;
   turnNumber: number;
   minimumHandSize: number;

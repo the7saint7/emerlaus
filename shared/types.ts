@@ -461,6 +461,11 @@ export interface KickPlayerRequest {
   seatNumber: number;
 }
 
+export interface DevDrawCardRequest {
+  cardId: string;
+  targetSeatNumber?: number;
+}
+
 export interface AnnounceDiceRollRequest {
   notation: string;
   total: number;
@@ -510,6 +515,7 @@ export interface PendingSacrificeChoiceRequest {
 
 export interface PendingCurseReleaseRequest {
   choice: "accept" | "pass";
+  statusInstanceId?: string;
 }
 
 export interface CreateBugReportRequest {

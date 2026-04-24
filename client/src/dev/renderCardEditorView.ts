@@ -48,6 +48,24 @@ function checked(value: boolean): string {
   return value ? "checked" : "";
 }
 
+function categorySortIndex(code: CardCategoryCode): number {
+  const index = CATEGORY_OPTIONS.findIndex((option) => option.code === code);
+  return index === -1 ? CATEGORY_OPTIONS.length : index;
+}
+
+function sortedCardPickerOptions(cards: BaseCardDefinition[]): Array<{ card: BaseCardDefinition; index: number }> {
+  return cards
+    .map((card, index) => ({ card, index }))
+    .sort((left, right) => {
+      const categoryDelta = categorySortIndex(left.card.category.code) - categorySortIndex(right.card.category.code);
+      if (categoryDelta !== 0) {
+        return categoryDelta;
+      }
+
+      return left.card.name.localeCompare(right.card.name, "fr", { sensitivity: "base" });
+    });
+}
+
 function defenseBandOrDefault(card: BaseCardDefinition): DefenseBandRules {
   return card.defenseBand ?? {
     resistance: {
@@ -394,7 +412,7 @@ export function renderCardEditorView({
             <button class="action-button action-button--secondary" data-card-editor-action="next">Next</button>
           </div>
           <select class="card-editor-picker" data-card-editor-action="pick-card">
-            ${cards.map((candidate, index) => `
+            ${sortedCardPickerOptions(cards).map(({ card: candidate, index }) => `
               <option value="${index}" ${index === currentIndex ? "selected" : ""}>[${candidate.category.code}] ${escapeHtml(candidate.name)}</option>
             `).join("")}
           </select>

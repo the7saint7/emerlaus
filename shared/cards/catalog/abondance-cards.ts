@@ -362,7 +362,7 @@ export const abondanceCardDefinitions = [
             type: "damage",
             amount: {
               kind: "dice_per_power",
-              notation: "1D10",
+              notation: "1D4",
               powerSource: "self",
               powerBonus: 0
             }

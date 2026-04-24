@@ -195,12 +195,16 @@ export async function announceDiceRoll(
 export async function devDrawCard(
   instanceId: string,
   playerSessionToken: string,
-  cardId: string
+  cardId: string,
+  targetSeatNumber?: number
 ): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/dev/draw-card`, {
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
-    body: JSON.stringify({ cardId })
+    body: JSON.stringify({
+      cardId,
+      ...(targetSeatNumber != null ? { targetSeatNumber } : {})
+    })
   });
   return parseJson<MatchState>(response);
 }

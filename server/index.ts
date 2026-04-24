@@ -8,6 +8,7 @@ import type {
   CreateBugReportRequest,
   DisconnectRequest,
   DiscordAuthTokenRequest,
+  DevDrawCardRequest,
   JoinRequest,
   KickPlayerRequest,
   MatchConfigResponse,
@@ -387,8 +388,8 @@ app.post("/api/matches/:instanceId/dev/draw-card", requireDevCardPickerAccess, (
     const instanceId = Array.isArray(request.params.instanceId)
       ? request.params.instanceId[0]
       : request.params.instanceId;
-    const { cardId } = request.body as { cardId: string };
-    response.json(devDrawCard(instanceId, userId, cardId));
+    const { cardId, targetSeatNumber } = request.body as DevDrawCardRequest;
+    response.json(devDrawCard(instanceId, userId, cardId, targetSeatNumber));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to draw card"
@@ -602,7 +603,7 @@ app.post("/api/matches/:instanceId/curse-release", (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
     const body = request.body as PendingCurseReleaseRequest;
-    response.json(resolveMatchCurseRelease(request.params.instanceId, userId, body.choice));
+    response.json(resolveMatchCurseRelease(request.params.instanceId, userId, body));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to resolve curse release"

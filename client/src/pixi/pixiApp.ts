@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject, submitBugReport } from "../api/gameApi";
+import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingCurseRelease, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject, submitBugReport } from "../api/gameApi";
 import { createDiscordSession } from "../discord/session";
 import {
   canDiscardCard,
@@ -27,7 +27,7 @@ import {
   puissanceCardDefinitions
 } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
-import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingPublicHandRevealState, PendingSacrificeChoiceState, SeatSessionStats, SeatState } from "../../../shared/types";
+import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingCurseReleaseState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingPublicHandRevealState, PendingSacrificeChoiceState, SeatSessionStats, SeatState } from "../../../shared/types";
 
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
@@ -582,9 +582,7 @@ function renderSeatResistancePill(
   const colors = getSeatResistancePillColors(pill.outcome);
   const pillHeight = isLocalSeat ? 34 : 28;
   const pillWidth = Math.max(isLocalSeat ? 92 : 78, Math.min(isLocalSeat ? 156 : 140, 28 + label.length * (isLocalSeat ? 9 : 8)));
-  const pillX = isLocalSeat
-    ? seatRect.x + seatRect.width - pillWidth - 18
-    : seatRect.x + (seatRect.width - pillWidth) / 2;
+  const pillX = seatRect.x + (isLocalSeat ? 18 : 12);
   const pillY = isLocalSeat
     ? seatRect.y - pillHeight - 10
     : seatRect.y - pillHeight - 12;
@@ -3042,6 +3040,7 @@ function buildOverlayMarkup(
   errorMessage: string,
   confirmingLeave: boolean,
   confirmingDiscardCardInstanceId: string,
+  confirmingCurseReleaseStatusInstanceId: string,
   kickTarget: PixiKickTarget | null,
   kickActionTarget: PixiSeatKickActionTarget | null,
   seatFxEditorOpen: boolean,
@@ -3060,6 +3059,7 @@ function buildOverlayMarkup(
   pickpocketPreviewCardInstanceId: string,
   pickpocketSelectedCardInstanceIds: string[],
   pendingSacrificeChoice: PendingSacrificeChoiceState | null,
+  pendingCurseRelease: PendingCurseReleaseState | undefined,
   sacrificeAmountInput: string,
   forcedFollowUp: ForcedFollowUpState | undefined,
   consumePreviewCardInstanceId: string,
@@ -3083,6 +3083,7 @@ function buildOverlayMarkup(
   showVictoryCelebration: boolean,
   enableDevTools: boolean,
   canUseDevCardPicker: boolean,
+  devCardPickerSeatNumber: number,
   sessionMode: "discord" | "browser",
   sessionChannelId: string | null,
   sessionGuildId: string | null,
@@ -3096,6 +3097,13 @@ function buildOverlayMarkup(
   const localSeat = getLocalSeat(match, localSeatNumber);
   const spectatorMode = match.status === "in_progress" && localSeat == null;
   const amHost = localSeat?.isHost === true;
+  const confirmingCurseReleaseCard = confirmingCurseReleaseStatusInstanceId === ""
+    ? undefined
+    : localSeat?.statuses?.find((status) => status.instanceId === confirmingCurseReleaseStatusInstanceId);
+  const confirmingCurseReleaseCount = Math.max(
+    1,
+    confirmingCurseReleaseCard?.defenseBand?.annulationCardsRequired ?? 2
+  );
   const showPassButton = match.status === "in_progress" && localSeat != null && canPassPendingResponse(match);
   const localForcedFollowUp = forcedFollowUp?.actorSeatNumber === localSeatNumber ? forcedFollowUp : null;
   const forcedFollowUpTargetName = localForcedFollowUp == null
@@ -3168,6 +3176,40 @@ function buildOverlayMarkup(
       return [separatorMarkup, ...cardOptionsMarkup];
     })
     .join("");
+  const devCardPickerTargetSeat =
+    canUseDevCardPicker && match.status === "in_progress" && devCardPickerSeatNumber > 0
+      ? match.seats.find((seat) => seat.seatNumber === devCardPickerSeatNumber)
+      : undefined;
+  const devSeatDrawModalMarkup = devCardPickerTargetSeat == null
+    ? ""
+    : `
+      <div class="pixi-modal-backdrop">
+        <article class="modal-card pixi-dev-seat-card-picker">
+          <header class="telepathy-panel__header">
+            <div>
+              <p class="eyebrow">Dev</p>
+              <h2>${escapeHtml(language === "fr" ? "Ajouter une carte" : "Add a card")}</h2>
+              <p>${escapeHtml(language === "fr"
+                ? `Choisissez une carte a ajouter a ${devCardPickerTargetSeat.displayName}.`
+                : `Choose a card to add to ${devCardPickerTargetSeat.displayName}.`)}</p>
+            </div>
+            <button type="button" class="action-button action-button--secondary" data-action="close-dev-seat-card-picker">
+              ${escapeHtml(language === "fr" ? "Fermer" : "Close")}
+            </button>
+          </header>
+          <div class="pixi-dev-seat-card-picker__body">
+            <select
+              class="pixi-dev-select pixi-dev-seat-card-picker__select"
+              data-action="dev-draw-seat-card"
+              data-target-seat-number="${devCardPickerTargetSeat.seatNumber}"
+            >
+              <option value="">+ ${escapeHtml(t(language, "table.draw"))}</option>
+              ${devDrawOptionsMarkup}
+            </select>
+          </div>
+        </article>
+      </div>
+    `;
   const seatFxRowsMarkup = !enableDevTools || !amHost
     ? ""
     : match.seats.map((seat) => {
@@ -3241,6 +3283,7 @@ function buildOverlayMarkup(
           : ""}
       </div>
     </div>
+    ${devSeatDrawModalMarkup}
     ${errorMessage === "" ? "" : `<div class="pixi-error-banner">${errorMessage}</div>`}
     ${match.status === "lobby" && lobbyLayout != null ? `
       <button
@@ -3390,6 +3433,29 @@ function buildOverlayMarkup(
         </div>
       `
       : ""}
+    ${confirmingCurseReleaseCard == null
+      ? ""
+      : `
+        <div class="pixi-modal-backdrop">
+          <section class="modal-card pixi-annulation-choice__card" data-pixi-modal-card="true">
+            <h2>${escapeHtml(language === "fr" ? "Retirer la malediction" : "Remove curse")}</h2>
+            <p>${escapeHtml(language === "fr"
+              ? `Defausser ${confirmingCurseReleaseCount} ${confirmingCurseReleaseCount === 1 ? "Annulation" : "Annulations"} pour retirer ${confirmingCurseReleaseCard.name}. Cela utilise votre action du tour.`
+              : `Discard ${confirmingCurseReleaseCount} ${confirmingCurseReleaseCount === 1 ? "Annulation" : "Annulations"} to remove ${confirmingCurseReleaseCard.name}. This uses your turn action.`)}</p>
+            <div class="modal-actions pixi-annulation-choice__actions">
+              <button type="button" class="pixi-overlay-button" data-action="curse-release-cancel">${t(language, "common.cancel")}</button>
+              <button
+                type="button"
+                class="pixi-overlay-button pixi-overlay-button--accent"
+                data-action="curse-release-confirm"
+                data-status-instance-id="${escapeHtml(confirmingCurseReleaseCard.instanceId)}"
+              >
+                ${escapeHtml(language === "fr" ? "Retirer" : "Remove")}
+              </button>
+            </div>
+          </section>
+        </div>
+      `}
     ${kickTarget == null
       ? ""
       : `
@@ -4257,8 +4323,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let pendingHandPress: PendingHandPress | null = null;
   let confirmingLeave = false;
   let confirmingDiscardCardInstanceId = "";
+  let confirmingCurseReleaseStatusInstanceId = "";
   let selectedKickSeatNumber = 0;
   let confirmingKickSeatNumber = 0;
+  let devCardPickerSeatNumber = 0;
   let seatFxEditorOpen = false;
   let devSeatVisualEffectsBySeat: Record<number, SeatVisualEffectId[]> = {};
   let telepathyPreviewCardInstanceId = "";
@@ -5145,7 +5213,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     pendingAnnulationChoice != null
     || confirmingLeave
     || confirmingDiscardCardInstanceId !== ""
+    || confirmingCurseReleaseStatusInstanceId !== ""
     || confirmingKickSeatNumber !== 0
+    || devCardPickerSeatNumber !== 0
     || bugReportOpen
     || seatFxEditorOpen
     || match.game?.pendingObjectChoice != null
@@ -6355,6 +6425,28 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     return true;
   };
 
+  const getCurseReleaseAnnulationCount = (card: CardView): number =>
+    Math.max(1, card.defenseBand?.annulationCardsRequired ?? 1);
+
+  const canOfferCurseRelease = (card: CardView): boolean => {
+    const localSeat = getLocalSeat(match, localSeatNumber);
+    if (
+      match.status !== "in_progress"
+      || match.game == null
+      || localSeat == null
+      || match.game.currentTurnSeatNumber !== localSeatNumber
+      || card.zone !== "status"
+      || card.categoryCode !== "SO"
+      || card.defenseBand?.annulationAllowed !== true
+    ) {
+      return false;
+    }
+
+    const requiredCount = getCurseReleaseAnnulationCount(card);
+    const availableAnnulations = localSeat.hand?.filter((handCard) => handCard.cardId === "annulation").length ?? 0;
+    return requiredCount > 0 && availableAnnulations >= requiredCount;
+  };
+
   const getHoveredHandCard = (point: StagePoint): HandCardLayout | null => {
     if (currentGeometry == null) {
       return null;
@@ -6697,6 +6789,21 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     rememberPendingActionSnapshot(nextMatch);
     match = nextMatch;
     syncLocalSeatNumberFromMatch(nextMatch);
+    if (
+      devCardPickerSeatNumber !== 0
+      && (
+        getLocalSeat(nextMatch, localSeatNumber) == null
+        || !nextMatch.seats.some((seat) => seat.seatNumber === devCardPickerSeatNumber)
+      )
+    ) {
+      devCardPickerSeatNumber = 0;
+    }
+    if (
+      confirmingCurseReleaseStatusInstanceId !== ""
+      && !getLocalSeat(nextMatch, localSeatNumber)?.statuses?.some((status) => status.instanceId === confirmingCurseReleaseStatusInstanceId)
+    ) {
+      confirmingCurseReleaseStatusInstanceId = "";
+    }
     updateVictoryCelebrationState();
     replayCombatPresentationEvents();
   };
@@ -7028,7 +7135,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, canUseDevCardPicker, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, confirmingCurseReleaseStatusInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, localizedMatch.game?.pendingCurseRelease, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, canUseDevCardPicker, devCardPickerSeatNumber, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -7384,6 +7491,48 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       redraw();
     });
 
+    frameElement.querySelector<HTMLButtonElement>("[data-action='close-dev-seat-card-picker']")?.addEventListener("click", () => {
+      devCardPickerSeatNumber = 0;
+      overlayInteractionLocked = false;
+      redraw();
+      if (syncQueued && !syncInFlight) {
+        syncQueued = false;
+        void requestSync();
+      }
+    });
+
+    const devSeatDrawSelect = frameElement.querySelector<HTMLSelectElement>("[data-action='dev-draw-seat-card']");
+    devSeatDrawSelect?.addEventListener("focus", () => {
+      overlayInteractionLocked = true;
+    });
+    devSeatDrawSelect?.addEventListener("blur", () => {
+      overlayInteractionLocked = false;
+      if (syncQueued && !syncInFlight) {
+        syncQueued = false;
+        void requestSync();
+      }
+    });
+    devSeatDrawSelect?.addEventListener("change", async (event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      const cardId = select.value;
+      const targetSeatNumber = Number(select.dataset.targetSeatNumber ?? "0");
+      if (cardId === "" || isDevDrawSeparatorValue(cardId) || targetSeatNumber <= 0) {
+        select.value = "";
+        return;
+      }
+
+      overlayInteractionLocked = false;
+      select.value = "";
+      try {
+        applyImmediateMatchUpdate(await devDrawCard(session.instanceId, playerSessionToken, cardId, targetSeatNumber));
+        errorMessage = "";
+        devCardPickerSeatNumber = 0;
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : t(language, "error.drawCard");
+      }
+      redraw();
+    });
+
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='kick-seat']").forEach((button) => {
       button.addEventListener("click", async () => {
         const seatNumber = Number(button.dataset.seatNumber ?? "0");
@@ -7719,6 +7868,32 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       });
     });
 
+    frameElement.querySelector<HTMLButtonElement>("[data-action='curse-release-cancel']")?.addEventListener("click", () => {
+      confirmingCurseReleaseStatusInstanceId = "";
+      redraw();
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='curse-release-confirm']")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const statusInstanceId = button.dataset.statusInstanceId ?? confirmingCurseReleaseStatusInstanceId;
+      if (statusInstanceId === "") {
+        return;
+      }
+
+      button.disabled = true;
+      try {
+        applyImmediateMatchUpdate(await resolvePendingCurseRelease(session.instanceId, playerSessionToken, {
+          choice: "accept",
+          statusInstanceId
+        }));
+        errorMessage = "";
+        confirmingCurseReleaseStatusInstanceId = "";
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : "Unable to remove curse";
+      }
+      redraw();
+    });
+
     frameElement.querySelector<HTMLButtonElement>("[data-action='pass-response']")?.addEventListener("click", async () => {
       await performPendingResponse({ choice: "pass" });
     });
@@ -7808,22 +7983,6 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='resize-event-log']")?.addEventListener("mousedown", (e) => {
       handleResizeEventLog(e);
-    });
-
-    frameElement.querySelector<HTMLSelectElement>("[data-action='dev-draw-card']")?.addEventListener("change", async (event) => {
-      const select = event.currentTarget as HTMLSelectElement;
-      const cardId = select.value;
-      if (cardId === "") {
-        return;
-      }
-      select.value = "";
-      try {
-        applyImmediateMatchUpdate(await devDrawCard(session.instanceId, playerSessionToken, cardId));
-        errorMessage = "";
-      } catch (err) {
-        errorMessage = err instanceof Error ? err.message : t(language, "error.drawCard");
-      }
-      redraw();
     });
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='download-server-log']")?.addEventListener("click", () => {
@@ -7918,6 +8077,31 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     const localSeat = getLocalSeat(match, localSeatNumber);
     const geometry = currentGeometry;
+    if (
+      canUseDevCardPicker
+      && match.status === "in_progress"
+      && localSeat != null
+      && geometry != null
+      && getInspectTargetAtPoint(point) == null
+    ) {
+      const clickedTargetSeat = match.seats.find((seat) =>
+        seat.seatNumber !== localSeatNumber
+        && geometry.seatRects.has(seat.seatNumber)
+        && pointInRect(point, geometry.seatRects.get(seat.seatNumber)!)
+      );
+      if (clickedTargetSeat != null) {
+        event.preventDefault();
+        selectedKickSeatNumber = 0;
+        devCardPickerSeatNumber = clickedTargetSeat.seatNumber;
+        redraw();
+        return;
+      }
+      if (devCardPickerSeatNumber !== 0) {
+        devCardPickerSeatNumber = 0;
+        redraw();
+      }
+    }
+
     if (localSeat?.isHost === true && geometry != null) {
       const clickedHumanSeat = match.seats.find((seat) =>
         seat.seatNumber !== localSeatNumber
@@ -8023,6 +8207,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
       const inspectTarget = getInspectTargetAtPoint(point);
       if (inspectTarget != null) {
+        if (inspectTarget.group === "status" && canOfferCurseRelease(inspectTarget.card)) {
+          confirmingCurseReleaseStatusInstanceId = inspectTarget.card.instanceId;
+          redraw();
+          return;
+        }
         openCardInspect(inspectTarget);
       }
       return;

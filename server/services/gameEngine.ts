@@ -30,6 +30,7 @@ import type {
   MatchExpansionSettings
 } from "../../shared/types.js";
 import type {
+  StoredBotPriorityCard,
   StoredCardInstance,
   StoredForcedFollowUpState,
   StoredGameState,
@@ -630,10 +631,10 @@ function definitionSwapsOnlyHp(definition: BaseCardDefinition): boolean {
   );
 }
 
-function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number | undefined {
+function getBotEligibleOpponentTargets(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number[] {
   const game = match.internalGame;
   if (game == null) {
-    return undefined;
+    return [];
   }
 
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
@@ -643,6 +644,25 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
   const eligibleOpponents = requiresTargetObject
     ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
     : opponents;
+  return eligibleOpponents;
+}
+
+function pickBotOpponentTarget(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  definition: BaseCardDefinition,
+  preferredTargetSeatNumber?: number
+): number | undefined {
+  const game = match.internalGame;
+  if (game == null) {
+    return undefined;
+  }
+
+  const eligibleOpponents = getBotEligibleOpponentTargets(match, actorSeatNumber, definition);
+  if (preferredTargetSeatNumber != null && eligibleOpponents.includes(preferredTargetSeatNumber)) {
+    return preferredTargetSeatNumber;
+  }
+
   if (definitionSwapsOnlyHp(definition)) {
     const actorHp = getPublicSeat(match, actorSeatNumber).hp;
     const beneficialTargets = eligibleOpponents.filter((seatNumber) => getPublicSeat(match, seatNumber).hp > actorHp);
@@ -5529,7 +5549,6 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
       continue;
     }
 
-    maybeQueueCurseRelease(match, candidateSeat.seatNumber);
     return;
   }
 }
@@ -6057,48 +6076,6 @@ function buildPendingCurseReleasePublicState(match: StoredMatchState): GameState
   };
 }
 
-function maybeQueueCurseRelease(match: StoredMatchState, seatNumber: number): boolean {
-  const game = match.internalGame;
-  if (game == null) {
-    return false;
-  }
-
-  const seatState = getStoredSeat(game, seatNumber);
-  const releasableStatus = seatState.statuses.find((status) => {
-    const definition = requireDefinition(status.cardId);
-    return (
-      definition.category.code === "SO"
-      && definition.rules.staysInPlay
-      && definition.defenseBand?.annulationAllowed === true
-      && (definition.defenseBand.annulationCardsRequired ?? 0) > 0
-    );
-  });
-  if (releasableStatus == null) {
-    return false;
-  }
-
-  const releaseDefinition = requireDefinition(releasableStatus.cardId);
-  const releaseCardCount = Math.max(1, releaseDefinition.defenseBand?.annulationCardsRequired ?? 1);
-  const annulationCount = seatState.hand.filter((card) => card.cardId === "annulation").length;
-  if (annulationCount < releaseCardCount) {
-    return false;
-  }
-
-  game.pendingCurseRelease = {
-    seatNumber,
-    statusInstanceId: releasableStatus.instanceId,
-    sourceCardId: releasableStatus.cardId,
-    releaseCardId: "annulation",
-    releaseCardCount
-  };
-  appendServerDebugLog(
-    match,
-    "curse",
-    `Seat ${seatNumber} may discard ${releaseCardCount} Annulation to remove ${releaseDefinition.name}`
-  );
-  return true;
-}
-
 function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number, boxId?: string): void {
   const game = match.internalGame;
   if (game == null) {
@@ -6565,7 +6542,6 @@ function resolvePendingActionContinuation(
 
   if (continuation.mode === "resume_turn") {
     game.pendingCurseRelease = undefined;
-    maybeQueueCurseRelease(match, continuation.seatNumber);
     appendServerDebugLog(
       match,
       "turn",
@@ -7778,7 +7754,6 @@ function resolvePendingTurnContinuation(
   }
 
   game.pendingCurseRelease = undefined;
-  maybeQueueCurseRelease(match, seatNumber);
   appendServerDebugLog(
     match,
     "turn",
@@ -8389,15 +8364,60 @@ export function resolvePendingSacrificeChoice(match: StoredMatchState, userId: s
   autoRespondIfNeeded(match);
 }
 
-export function resolvePendingCurseRelease(match: StoredMatchState, userId: string, choice: "accept" | "pass"): void {
+export function resolvePendingCurseRelease(
+  match: StoredMatchState,
+  userId: string,
+  choice: "accept" | "pass",
+  statusInstanceId?: string
+): void {
   const game = match.internalGame;
-  const pendingCurseRelease = game?.pendingCurseRelease;
-  if (game == null || pendingCurseRelease == null) {
+  let pendingCurseRelease = game?.pendingCurseRelease;
+  if (game == null) {
     throw new Error("No pending curse release");
   }
 
   const seat = match.seats.find((candidate) => candidate.userId === userId);
-  if (seat == null || seat.seatNumber !== pendingCurseRelease.seatNumber) {
+  if (seat == null) {
+    throw new Error("Player seat not found");
+  }
+
+  if (pendingCurseRelease == null && statusInstanceId != null && choice === "accept") {
+    if (game.currentTurnSeatNumber !== seat.seatNumber) {
+      throw new Error("A curse can only be removed on your turn");
+    }
+
+    const seatState = getStoredSeat(game, seat.seatNumber);
+    const releasableStatus = seatState.statuses.find((status) => status.instanceId === statusInstanceId);
+    if (releasableStatus == null) {
+      throw new Error("Curse status no longer present");
+    }
+
+    const releaseDefinition = requireDefinition(releasableStatus.cardId);
+    const releaseCardCount = Math.max(1, releaseDefinition.defenseBand?.annulationCardsRequired ?? 1);
+    if (
+      releaseDefinition.category.code !== "SO" ||
+      !releaseDefinition.rules.staysInPlay ||
+      releaseDefinition.defenseBand?.annulationAllowed !== true ||
+      releaseCardCount <= 0
+    ) {
+      throw new Error("This status cannot be removed with Annulation");
+    }
+
+    game.pendingCurseRelease = {
+      seatNumber: seat.seatNumber,
+      statusInstanceId: releasableStatus.instanceId,
+      sourceCardId: releasableStatus.cardId,
+      releaseCardId: "annulation",
+      releaseCardCount
+    };
+    pendingCurseRelease = game.pendingCurseRelease;
+  }
+
+  if (pendingCurseRelease == null) {
+    throw new Error("No pending curse release");
+  }
+
+  if (seat.seatNumber !== pendingCurseRelease.seatNumber) {
     throw new Error("This seat cannot resolve the curse prompt");
   }
 
@@ -9324,6 +9344,57 @@ export function getCurrentTurnSeat(match: StoredMatchState): SeatState | undefin
   return match.seats.find((seat) => seat.seatNumber === currentSeatNumber);
 }
 
+function getBotPriorityHandCards(game: StoredGameState, seatNumber: number): Array<{
+  card: StoredCardInstance;
+  priority: StoredBotPriorityCard;
+}> {
+  const seatState = getStoredSeat(game, seatNumber);
+  const priorityEntries = game.botPriorityCardsBySeat?.[seatNumber] ?? [];
+  if (priorityEntries.length === 0) {
+    return [];
+  }
+
+  const handById = new Map(seatState.hand.map((card) => [card.instanceId, card]));
+  const priorityCards = priorityEntries
+    .map((priority) => {
+      const card = handById.get(priority.cardInstanceId);
+      return card == null ? null : { card, priority };
+    })
+    .filter((entry): entry is { card: StoredCardInstance; priority: StoredBotPriorityCard } => entry != null);
+
+  if (priorityCards.length !== priorityEntries.length && game.botPriorityCardsBySeat != null) {
+    game.botPriorityCardsBySeat[seatNumber] = priorityCards.map((entry) => entry.priority);
+  }
+
+  return priorityCards;
+}
+
+function getBotResponseChoiceForPriorityCard(
+  match: StoredMatchState,
+  seatNumber: number,
+  card: StoredCardInstance,
+  availableChoices: Set<ResponseChoiceType>
+): Exclude<ResponseChoiceType, "pending"> | undefined {
+  if (!canPlayCardAsPendingResponse(match, seatNumber, card).canPlay) {
+    return undefined;
+  }
+
+  if (card.cardId === "annulation" && availableChoices.has("annulation")) {
+    return "annulation";
+  }
+  if (card.cardId === ORDRE_DEMMERLAUS_CARD_ID && availableChoices.has("ordre-demmerlaus")) {
+    return "ordre-demmerlaus";
+  }
+  if (card.cardId === "resistance-accrue" && availableChoices.has("resistance_accrue")) {
+    return "resistance_accrue";
+  }
+  if (card.cardId === "miroir" && availableChoices.has("mirror")) {
+    return "mirror";
+  }
+
+  return undefined;
+}
+
 export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number): PlayCardRequest | undefined {
   const game = match.internalGame;
   if (game == null) {
@@ -9343,7 +9414,15 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
   }
 
   const seatState = getStoredSeat(game, seatNumber);
-  for (const handCard of seatState.hand) {
+  const priorityCards = getBotPriorityHandCards(game, seatNumber);
+  const priorityByCardId = new Map(priorityCards.map((entry) => [entry.card.instanceId, entry.priority]));
+  const priorityCardIds = new Set(priorityCards.map((entry) => entry.card.instanceId));
+  const orderedHandCards = [
+    ...priorityCards.map((entry) => entry.card),
+    ...seatState.hand.filter((card) => !priorityCardIds.has(card.instanceId))
+  ];
+
+  for (const handCard of orderedHandCards) {
     const definition = requireDefinition(handCard.cardId);
     const playState = canPlayCardActively(match, seatNumber, handCard);
     if (!playState.canPlay) {
@@ -9359,22 +9438,23 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
       cardInstanceId: handCard.instanceId,
       mode: "active"
     };
+    const preferredTargetSeatNumber = priorityByCardId.get(handCard.instanceId)?.preferredTargetSeatNumber;
 
     switch (definition.rules.targets) {
       case "single_opponent":
-        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition);
+        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition, preferredTargetSeatNumber);
         if (request.targetSeatNumber == null) {
           continue;
         }
         break;
       case "self_or_single_opponent":
-        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition) ?? seatNumber;
+        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition, preferredTargetSeatNumber) ?? seatNumber;
         break;
       case "left_opponent":
         request.targetSeatNumber = getLeftOpponentSeatNumber(game, seatNumber);
         break;
       case "single_player_or_object":
-        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition);
+        request.targetSeatNumber = pickBotOpponentTarget(match, seatNumber, definition, preferredTargetSeatNumber);
         if (request.targetSeatNumber == null) {
           continue;
         }
@@ -9448,8 +9528,14 @@ export function buildBotPendingResponse(match: StoredMatchState, seatNumber: num
     const availableAnnulations = getStoredSeat(match.internalGame!, seatNumber).hand.filter((card) => card.cardId === "annulation").length;
     canUseMeaningfulCollectiveAnnulation = remainingOtherPendingResponders || alreadyCommitted + availableAnnulations >= annulationRequired;
   }
+  const priorityChoice = match.internalGame == null
+    ? undefined
+    : getBotPriorityHandCards(match.internalGame, seatNumber)
+      .map(({ card }) => getBotResponseChoiceForPriorityCard(match, seatNumber, card, availableChoices))
+      .find((choice) => choice != null && (choice !== "annulation" || canUseMeaningfulCollectiveAnnulation));
   const preferredChoice =
-    canUseMeaningfulCollectiveAnnulation && availableChoices.has("annulation") ? "annulation"
+    priorityChoice != null ? priorityChoice
+    : canUseMeaningfulCollectiveAnnulation && availableChoices.has("annulation") ? "annulation"
     : availableChoices.has("ordre-demmerlaus") ? "ordre-demmerlaus"
     : availableChoices.has("mirror") ? "mirror"
     : availableChoices.has("resistance_accrue") ? "resistance_accrue"

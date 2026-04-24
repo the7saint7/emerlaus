@@ -527,6 +527,24 @@ select {
   color: #fff;
 }
 
+.pixi-dev-seat-card-picker {
+  width: min(620px, calc(100% - 32px));
+}
+
+.pixi-dev-seat-card-picker__body {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.pixi-dev-seat-card-picker__select {
+  width: 100%;
+  max-width: none;
+  min-height: 46px;
+  border-radius: 14px;
+  font-size: 0.95rem;
+}
+
 .pixi-event-log {
   position: relative;
   width: var(--event-log-width, 380px);

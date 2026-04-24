@@ -21,6 +21,7 @@ import type {
   PendingPickpocketRequest,
   PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
+  PendingCurseReleaseRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
   SeatState,
@@ -876,7 +877,12 @@ export function playMatchCard(instanceId: string, userId: string, request: PlayC
   return buildPublicMatchState(match, userId);
 }
 
-export function devDrawCard(instanceId: string, userId: string, cardId: string): MatchState {
+export function devDrawCard(
+  instanceId: string,
+  userId: string,
+  cardId: string,
+  targetSeatNumber?: number
+): MatchState {
   const match = requireMatch(instanceId);
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
@@ -886,14 +892,39 @@ export function devDrawCard(instanceId: string, userId: string, cardId: string):
     throw new Error(`Unknown card: ${cardId}`);
   }
 
-  const seat = requireHumanSeat(match, userId);
-  const seatState = match.internalGame?.seatStates.find((s) => s.seatNumber === seat.seatNumber);
+  const requesterSeat = requireHumanSeat(match, userId);
+  const effectiveTargetSeatNumber = targetSeatNumber ?? requesterSeat.seatNumber;
+  const targetSeat = match.seats.find((seat) => seat.seatNumber === effectiveTargetSeatNumber);
+  if (targetSeat == null) {
+    throw new Error("Target seat not found");
+  }
+
+  const seatState = match.internalGame?.seatStates.find((s) => s.seatNumber === effectiveTargetSeatNumber);
   if (seatState == null) {
     throw new Error("Seat state not found");
   }
 
-  seatState.hand.push({ instanceId: randomUUID(), cardId });
+  const cardInstance = { instanceId: randomUUID(), cardId };
+  seatState.hand.push(cardInstance);
+  if (targetSeat.controllerType === "bot" && match.internalGame != null) {
+    const requesterSeatNumber = requesterSeat.seatNumber;
+    const priorityBySeat = match.internalGame.botPriorityCardsBySeat ?? {};
+    match.internalGame.botPriorityCardsBySeat = priorityBySeat;
+    priorityBySeat[effectiveTargetSeatNumber] = [
+      {
+        cardInstanceId: cardInstance.instanceId,
+        preferredTargetSeatNumber: requesterSeatNumber === effectiveTargetSeatNumber ? undefined : requesterSeatNumber
+      },
+      ...(priorityBySeat[effectiveTargetSeatNumber] ?? []).filter((entry) => entry.cardInstanceId !== cardInstance.instanceId)
+    ];
+    appendServerDebugLog(
+      match,
+      "bot_ai",
+      `Seat ${effectiveTargetSeatNumber} will prioritize dev-granted ${baseCardDefinitionById[cardId]?.name ?? cardId}${requesterSeatNumber === effectiveTargetSeatNumber ? "" : ` against seat ${requesterSeatNumber}`}`
+    );
+  }
   saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);
 }
 
@@ -1009,7 +1040,7 @@ export function resolveMatchSacrificeChoice(instanceId: string, userId: string, 
   return buildPublicMatchState(match, userId);
 }
 
-export function resolveMatchCurseRelease(instanceId: string, userId: string, choice: "accept" | "pass"): MatchState {
+export function resolveMatchCurseRelease(instanceId: string, userId: string, request: PendingCurseReleaseRequest): MatchState {
   const match = requireMatch(instanceId);
   if (match.status !== "in_progress") {
     throw new Error("The match is not in progress");
@@ -1017,7 +1048,7 @@ export function resolveMatchCurseRelease(instanceId: string, userId: string, cho
   requireNotSpectator(match, userId);
 
   clearBotTurnTimer(instanceId);
-  resolvePendingCurseRelease(match, userId, choice);
+  resolvePendingCurseRelease(match, userId, request.choice, request.statusInstanceId);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);
