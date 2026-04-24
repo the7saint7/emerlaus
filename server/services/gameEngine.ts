@@ -8920,12 +8920,18 @@ function resolveRemovedCardPlay(
     }
   }
 
-  let ringOverflow = false;
+  let pendingRingDiscardChoice = false;
   if (options?.skipStoredCardResolution !== true) {
     if (definition.rules.staysInPlay) {
-      ringOverflow = movePersistentCard(match, currentActorSeatNumber, currentTargetSeatNumbers, removedCard, definition);
+      const ringOverflow = movePersistentCard(match, currentActorSeatNumber, currentTargetSeatNumbers, removedCard, definition);
       if (ringOverflow) {
-        queueRingDiscardChoice(match, currentActorSeatNumber, removedCard, boxId, currentFinalizeActorSeatNumber ?? currentActorSeatNumber);
+        pendingRingDiscardChoice = queueRingDiscardChoice(
+          match,
+          currentActorSeatNumber,
+          removedCard,
+          boxId,
+          currentFinalizeActorSeatNumber ?? currentActorSeatNumber
+        );
       }
     } else {
       discardPlayedCardToTalon(game, removedCard, definition, request);
@@ -8946,7 +8952,7 @@ function resolveRemovedCardPlay(
     game.forcedFollowUp = undefined;
     appendServerDebugLog(match, "forced_follow_up", `Seat ${actorSeatNumber} completed Colère du magicien follow-up with ${definition.name}`);
   }
-  if (ringOverflow) {
+  if (pendingRingDiscardChoice) {
     return;
   }
   finalizeResolvedAction(match, currentFinalizeActorSeatNumber ?? currentActorSeatNumber, boxId);
