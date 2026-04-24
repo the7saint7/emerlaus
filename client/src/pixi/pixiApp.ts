@@ -3260,13 +3260,14 @@ function buildOverlayMarkup(
       ${lobbyLayout.botKickButtons.map((btn) => `
         <button
           type="button"
-          class="pixi-overlay-button pixi-overlay-button--danger"
+          class="pixi-overlay-button pixi-overlay-button--danger pixi-lobby-remove-bot-button"
           style="position:absolute; left:${btn.leftPx}px; top:${btn.topPx}px; width:${btn.widthPx}px; height:${btn.heightPx}px; padding:0 10px; z-index:2;"
           data-action="kick-seat"
           data-seat-number="${btn.seatNumber}"
+          data-remove-lobby-bot="true"
           ${amHost ? "" : "disabled"}
         >
-          ${t(language, "table.kickPlayer")}
+          ${t(language, "table.removeBot")}
         </button>
       `).join("")}
       ${lobbyLayout.expansionButtons.map((btn) => `
@@ -7384,9 +7385,25 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     });
 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='kick-seat']").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const seatNumber = Number(button.dataset.seatNumber ?? "0");
         if (seatNumber <= 0) {
+          return;
+        }
+        if (button.dataset.removeLobbyBot === "true") {
+          button.disabled = true;
+          try {
+            applyImmediateMatchUpdate(await requestKickPlayer(session.instanceId, playerSessionToken, {
+              seatNumber
+            }));
+            errorMessage = "";
+          } catch (error) {
+            errorMessage = error instanceof Error ? error.message : t(language, "error.kickPlayer");
+          } finally {
+            selectedKickSeatNumber = 0;
+            confirmingKickSeatNumber = 0;
+          }
+          redraw();
           return;
         }
         confirmingKickSeatNumber = seatNumber;

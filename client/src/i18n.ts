@@ -89,6 +89,7 @@ type TranslationKey =
   | "table.thinking"
   | "table.player"
   | "table.kickPlayer"
+  | "table.removeBot"
   | "table.noPlayableDiscard"
   | "table.discard"
   | "seatFx.title"
@@ -365,6 +366,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.thinking": "Thinking",
     "table.player": "Player",
     "table.kickPlayer": "Kick Player",
+    "table.removeBot": "Remove",
     "table.noPlayableDiscard": "You cannot play any card this turn. Choose one card to discard.",
     "table.discard": "Discard",
     "seatFx.title": "Seat FX Preview",
@@ -638,6 +640,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.thinking": "Réfléchit",
     "table.player": "Joueur",
     "table.kickPlayer": "Expulser le joueur",
+    "table.removeBot": "Enlever",
     "table.noPlayableDiscard": "Vous ne pouvez jouer aucune carte ce tour-ci. Choisissez une carte à défausser.",
     "table.discard": "Défausser",
     "seatFx.title": "Previsualisation des effets de siege",

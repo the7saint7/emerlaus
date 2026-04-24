@@ -132,13 +132,36 @@ function requireHumanSeat(match: StoredMatchState, userId: string): SeatState {
   return seat;
 }
 
+function findNextBotDisplayIndex(match: StoredMatchState): number {
+  const usedIndexes = new Set<number>();
+  for (const seat of match.seats) {
+    const matchResult = seat.displayName.match(/^Bot (\d+)$/);
+    if (matchResult == null) {
+      continue;
+    }
+
+    const index = Number(matchResult[1]);
+    if (Number.isInteger(index) && index > 0) {
+      usedIndexes.add(index);
+    }
+  }
+
+  for (let index = 1; index <= match.maxSeats; index += 1) {
+    if (!usedIndexes.has(index)) {
+      return index;
+    }
+  }
+
+  return usedIndexes.size + 1;
+}
+
 function createBotSeat(match: StoredMatchState, difficulty = "normal"): SeatState {
   const seatNumber = findNextOpenSeat(match);
   if (seatNumber == null) {
     throw new Error("No open seats remain");
   }
 
-  const botIndex = match.seats.filter((seat) => seat.controllerType === "bot").length + 1;
+  const botIndex = findNextBotDisplayIndex(match);
 
   return {
     seatNumber,

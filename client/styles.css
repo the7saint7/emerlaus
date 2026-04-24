@@ -402,6 +402,10 @@ select {
   pointer-events: auto;
 }
 
+.pixi-lobby-remove-bot-button {
+  pointer-events: auto;
+}
+
 .pixi-lobby-cell-btn:disabled {
   cursor: default;
   pointer-events: none;
