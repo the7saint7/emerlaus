@@ -180,6 +180,9 @@ const PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID: Partial<Record<string, Persi
   },
   "tremblement-de-terre": {
     damageNotation: "1D20"
+  },
+  "vent-du-nord": {
+    damageNotation: "1D6"
   }
 };
 
@@ -616,6 +619,17 @@ function singleOpponentTargetRequiresEligibleObject(definition: BaseCardDefiniti
   );
 }
 
+function definitionSwapsOnlyHp(definition: BaseCardDefinition): boolean {
+  return definition.rules.effects.some((effect) =>
+    effect.type === "swap_bodies"
+    && effect.swapHp
+    && !effect.swapSeatOrder
+    && !effect.swapHand
+    && !effect.swapObjects
+    && !effect.swapStatuses
+  );
+}
+
 function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number | undefined {
   const game = match.internalGame;
   if (game == null) {
@@ -629,6 +643,20 @@ function pickBotOpponentTarget(match: StoredMatchState, actorSeatNumber: number,
   const eligibleOpponents = requiresTargetObject
     ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
     : opponents;
+  if (definitionSwapsOnlyHp(definition)) {
+    const actorHp = getPublicSeat(match, actorSeatNumber).hp;
+    const beneficialTargets = eligibleOpponents.filter((seatNumber) => getPublicSeat(match, seatNumber).hp > actorHp);
+    const targetSeatNumber = pickRandom(beneficialTargets);
+    if (targetSeatNumber == null) {
+      appendServerDebugLog(
+        match,
+        "bot_ai",
+        `Seat ${actorSeatNumber} skipped ${definition.name}; no opponent has higher HP to swap`
+      );
+    }
+    return targetSeatNumber;
+  }
+
   if (!isAttackDefinition(definition) || Math.random() >= 0.5) {
     return pickRandom(eligibleOpponents);
   }
