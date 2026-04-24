@@ -3275,7 +3275,9 @@ function applyDamage(
     const mirrorRobeDefinition = requireDefinition("robe-miroir");
     applyDamage(match, sourceSeatNumber, reflectedAmount, mirrorRobeDefinition, false, boxId, targetSeatNumber);
   }
-  triggerCounterattackRobe(match, targetSeatNumber, sourceDefinition, sourceSeatNumber, boxId);
+  if (reducedAmount > 0) {
+    triggerCounterattackRobe(match, targetSeatNumber, sourceDefinition, sourceSeatNumber, boxId);
+  }
   handleSeatDeath(match, targetSeatNumber, resurrectionBlocked, sourceSeatNumber);
   return reducedAmount;
 }
