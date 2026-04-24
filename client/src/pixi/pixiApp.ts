@@ -7558,13 +7558,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='preview-board-reset-card']").forEach((button) => {
       button.addEventListener("click", async () => {
         const cardInstanceId = button.dataset.cardInstanceId ?? "";
-        const cardName = button.dataset.cardName ?? "";
         if (cardInstanceId === "") {
           return;
         }
-        if (!window.confirm(t(language, "boardReset.confirmKeep", { cardName }))) {
-          return;
-        }
+        button.disabled = true;
         try {
           applyImmediateMatchUpdate(await resolvePendingBoardResetKeep(session.instanceId, playerSessionToken, { cardInstanceId }));
           errorMessage = "";
