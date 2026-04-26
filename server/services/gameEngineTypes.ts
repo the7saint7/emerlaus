@@ -59,6 +59,9 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   sourceZone?: "hand" | "object";
   skipStoredCardResolution?: boolean;
   sharedSacrificeAmount?: number;
+  corruptionPowerRingDamage?: number;
+  corruptionPowerRingCard?: StoredCardInstance;
+  corruptionPowerRingChooserSeatNumber?: number;
   deferredMirrorHits?: Array<{ sourceSeatNumber: number; targetSeatNumber: number }>;
   continuation?: {
     mode: "resume_turn" | "advance_turn_without_play";
@@ -126,7 +129,7 @@ export interface StoredGameState {
     chooserSeatNumber: number;
     ownerSeatNumber: number;
     sourceCard: StoredCardInstance;
-    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "mass_attack_staff_turn";
+    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "arm_corruption_power_ring" | "mass_attack_staff_turn";
     continuationMode?: "resume_turn" | "advance_turn_without_play";
     finalizeActorSeatNumber?: number;
   };
@@ -188,6 +191,10 @@ export interface StoredGameState {
     cardId: string;
     request: PlayCardRequest;
     forcedFollowUp?: StoredForcedFollowUpState;
+  };
+  botTurnDelayUntil?: {
+    seatNumber: number;
+    notBefore: string;
   };
   pausedSequentialAction?: StoredPendingActionState;
   extraPlayMode?: StoredExtraPlayModeState;

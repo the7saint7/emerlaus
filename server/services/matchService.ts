@@ -67,6 +67,27 @@ function getBotResponderTimerKey(instanceId: string, seatNumber: number): string
   return `${instanceId}:response:${seatNumber}`;
 }
 
+function getScheduledBotTurnDelayMs(match: StoredMatchState, seatNumber: number): number {
+  const baseDelayMs = 500 + Math.floor(Math.random() * 1001);
+  const delayUntil = match.internalGame?.botTurnDelayUntil;
+  if (delayUntil == null) {
+    return baseDelayMs;
+  }
+
+  if (delayUntil.seatNumber !== seatNumber) {
+    match.internalGame!.botTurnDelayUntil = undefined;
+    return baseDelayMs;
+  }
+
+  const remainingDelayMs = Math.max(0, new Date(delayUntil.notBefore).getTime() - Date.now());
+  if (remainingDelayMs <= 0) {
+    match.internalGame!.botTurnDelayUntil = undefined;
+    return baseDelayMs;
+  }
+
+  return Math.max(baseDelayMs, remainingDelayMs);
+}
+
 function buildAvatarFallback(displayName: string): string {
   return buildAvatarDataUrl(displayName);
 }
@@ -594,7 +615,7 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
     return;
   }
 
-  const delayMs = 500 + Math.floor(Math.random() * 1001);
+  const delayMs = getScheduledBotTurnDelayMs(match, currentSeat.seatNumber);
   const timer = setTimeout(() => {
     botTurnTimers.delete(turnTimerKey);
     const latestMatch = getMatch(instanceId);

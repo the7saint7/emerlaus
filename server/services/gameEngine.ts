@@ -20,6 +20,7 @@ import type {
   MatchSessionStats,
   MatchState,
   PendingActionOption,
+  PendingObjectChoiceState,
   PlayCardRequest,
   PendingActionResponseRequest,
   PendingActionResponderState,
@@ -47,6 +48,7 @@ const ATTACK_CATEGORIES = new Set<CardCategoryCode>(["AD", "AM", "S", "E", "CO"]
 const MASS_ATTACK_STAFF_CARD_ID = "baton-dattaque-massive";
 const ORDRE_DEMMERLAUS_CARD_ID = "ordre-demmerlaus";
 const ABUNDANCE_ALLOWED_CATEGORIES: CardCategoryCode[] = ["A", "AD", "AM"];
+const HUMAN_REFILL_TO_BOT_TURN_DELAY_MS = 2500;
 
 interface SuccessfulHitDamageModifierConfig {
   triggerNotation: string;
@@ -186,6 +188,11 @@ const PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID: Partial<Record<string, Persi
     damageNotation: "1D6"
   }
 };
+
+function supportsDeferredCollectiveMirrorHit(definition: BaseCardDefinition): boolean {
+  return definition.rules.effects.some((effect) => effect.type === "damage" || effect.type === "lifesteal")
+    || definition.id === "vent-du-nord";
+}
 
 const FULL_TURN_NO_RIPOSTE_STATUS_CARD_IDS = new Set<string>([
   "sommeil",
@@ -2719,7 +2726,8 @@ function queuePowerRingChoice(
   chooserSeatNumber: number,
   sourceCard: StoredCardInstance,
   boxId?: string,
-  finalizeActorSeatNumber?: number
+  finalizeActorSeatNumber?: number,
+  mode: "consume_power_ring" | "arm_corruption_power_ring" = "consume_power_ring"
 ): boolean {
   const game = match.internalGame;
   if (game == null) {
@@ -2747,7 +2755,7 @@ function queuePowerRingChoice(
       chooserSeatNumber,
       ownerSeatNumber: chooserSeatNumber,
       sourceCard,
-      mode: "consume_power_ring",
+      mode,
       finalizeActorSeatNumber
     };
     selectPendingObject(match, chooser.userId, chosenRing.instanceId);
@@ -2759,7 +2767,7 @@ function queuePowerRingChoice(
     chooserSeatNumber,
     ownerSeatNumber: chooserSeatNumber,
     sourceCard,
-    mode: "consume_power_ring",
+    mode,
     finalizeActorSeatNumber
   };
   appendServerDebugLog(
@@ -4310,7 +4318,11 @@ function resolvePersistentOwnerTurnMassDamageTick(
   ownerSeatNumber: number,
   definition: BaseCardDefinition,
   statusInstance?: StoredSeatStatus,
-  boxId?: string
+  boxId?: string,
+  options?: {
+    excludedTargetSeatNumbers?: Set<number>;
+    deferredMirrorHits?: Array<{ sourceSeatNumber: number; targetSeatNumber: number }>;
+  }
 ): void {
   const game = match.internalGame;
   const config = PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id];
@@ -4320,7 +4332,11 @@ function resolvePersistentOwnerTurnMassDamageTick(
 
   const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, ownerSeatNumber);
   const affectedTargetSeatNumbers = targetSeatNumbers.filter((targetSeatNumber) =>
+    !options?.excludedTargetSeatNumbers?.has(targetSeatNumber) &&
     !isProtectedFromAttack(match, targetSeatNumber, definition, ownerSeatNumber)
+  );
+  const deferredMirrorHits = (options?.deferredMirrorHits ?? []).filter((hit) =>
+    getStoredSeat(game, hit.targetSeatNumber).alive
   );
   const timedPotionDamageMultiplier = getTimedPotionDamageMultiplier(match, ownerSeatNumber);
 
@@ -4350,7 +4366,7 @@ function resolvePersistentOwnerTurnMassDamageTick(
     `${definition.name} rolled ${config.damageNotation} => ${roll.total} against targets ${targetSeatNumbers.join(", ")} [box ${actionBoxId}]`
   );
 
-  if (affectedTargetSeatNumbers.length === 0) {
+  if (affectedTargetSeatNumbers.length === 0 && deferredMirrorHits.length === 0) {
     appendServerDebugLog(match, "effect", `${definition.name} found no valid opponents after protections were applied`);
     return;
   }
@@ -4369,6 +4385,28 @@ function resolvePersistentOwnerTurnMassDamageTick(
       cardName: definition.name
     });
     applyDamage(match, targetSeatNumber, roll.total * timedPotionDamageMultiplier, definition, false, actionBoxId, ownerSeatNumber);
+  }
+
+  for (const hit of deferredMirrorHits) {
+    const reflectedMultiplier = getTimedPotionDamageMultiplier(match, hit.sourceSeatNumber);
+    const amount = roll.total * reflectedMultiplier;
+    if (amount <= 0) {
+      continue;
+    }
+
+    pushPresentationEvent(match, {
+      boxId: actionBoxId,
+      type: "attack_impact",
+      actorSeatNumber: hit.sourceSeatNumber,
+      targetSeatNumber: hit.targetSeatNumber,
+      cardName: definition.name
+    });
+    appendServerDebugLog(
+      match,
+      "resolve",
+      `Applying deferred mirror ${definition.name} damage ${amount} to seat ${hit.targetSeatNumber}`
+    );
+    applyDamage(match, hit.targetSeatNumber, amount, definition, false, actionBoxId, hit.sourceSeatNumber);
   }
 
   checkForWinner(match);
@@ -4418,6 +4456,23 @@ function getPowerRingLevel(cardId: string): number | null {
 
 function getEquippedPowerRings(seat: StoredSeatState): StoredCardInstance[] {
   return seat.objects.filter((objectCard) => getPowerRingLevel(objectCard.cardId) != null);
+}
+
+function wouldPowerRingImproveEquippedSet(seat: StoredSeatState, cardId: string): boolean {
+  const newLevel = getPowerRingLevel(cardId);
+  if (newLevel == null) {
+    return true;
+  }
+
+  const equippedLevels = getEquippedPowerRings(seat)
+    .map((ring) => getPowerRingLevel(ring.cardId) ?? 0)
+    .sort((left, right) => left - right);
+  const ringLimit = OBJECT_SLOT_LIMITS["anneau"] ?? 2;
+  if (equippedLevels.length < ringLimit) {
+    return true;
+  }
+
+  return newLevel > (equippedLevels[0] ?? 0);
 }
 
 const OBJECT_SLOT_LIMITS: Record<string, number> = {
@@ -4520,7 +4575,13 @@ function queueRingDiscardChoice(
 
   const publicSeat = getPublicSeat(match, seatNumber);
   if (publicSeat.controllerType === "bot") {
-    const toDiscard = rings.find((r) => r.instanceId !== newRingCard.instanceId) ?? rings[0];
+    const toDiscard = rings
+      .slice()
+      .sort((left, right) => {
+        if (left.instanceId === newRingCard.instanceId) return 1;
+        if (right.instanceId === newRingCard.instanceId) return -1;
+        return (getPowerRingLevel(left.cardId) ?? 0) - (getPowerRingLevel(right.cardId) ?? 0);
+      })[0];
     if (toDiscard != null) {
       const removed = removeObjectFromSeat(match, seatNumber, toDiscard.instanceId);
       discardInstances(game, removed);
@@ -5553,6 +5614,34 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
   }
 }
 
+function markBotTurnDelayAfterHumanRefill(
+  match: StoredMatchState,
+  previousSeatNumber: number,
+  handBeforeRefill: number,
+  handAfterRefill: number
+): void {
+  const game = match.internalGame;
+  if (game == null || handAfterRefill <= handBeforeRefill) {
+    return;
+  }
+
+  const previousSeat = match.seats.find((seat) => seat.seatNumber === previousSeatNumber);
+  const currentSeat = match.seats.find((seat) => seat.seatNumber === game.currentTurnSeatNumber);
+  if (previousSeat?.controllerType !== "human" || currentSeat?.controllerType !== "bot") {
+    return;
+  }
+
+  game.botTurnDelayUntil = {
+    seatNumber: currentSeat.seatNumber,
+    notBefore: new Date(Date.now() + HUMAN_REFILL_TO_BOT_TURN_DELAY_MS).toISOString()
+  };
+  appendServerDebugLog(
+    match,
+    "bot_ai",
+    `Delayed bot seat ${currentSeat.seatNumber} turn after human seat ${previousSeatNumber} refill ${handBeforeRefill} -> ${handAfterRefill}`
+  );
+}
+
 export function passTurnWithoutPlaying(match: StoredMatchState, seatNumber: number, reason: string): void {
   const game = match.internalGame;
   if (game == null || game.currentTurnSeatNumber !== seatNumber) {
@@ -5574,6 +5663,7 @@ export function passTurnWithoutPlaying(match: StoredMatchState, seatNumber: numb
     `Seat ${seatNumber} ended turn without playing (${reason}); refill ${handBeforeRefill} -> ${seat.hand.length}`
   );
   startNextTurn(match, seatNumber);
+  markBotTurnDelayAfterHumanRefill(match, seatNumber, handBeforeRefill, seat.hand.length);
   refreshSeatSummaries(match);
 }
 
@@ -5821,7 +5911,8 @@ function buildPendingObjectChoicePublicState(match: StoredMatchState): GameState
   }
 
   const isRingDiscard = pendingObjectChoice.mode === "discard_ring";
-  const isPowerRingConsume = pendingObjectChoice.mode === "consume_power_ring";
+  const isCorruptionPowerRingArm = pendingObjectChoice.mode === "arm_corruption_power_ring";
+  const isPowerRingConsume = pendingObjectChoice.mode === "consume_power_ring" || isCorruptionPowerRingArm;
   const allowedSlots = isRingDiscard
     ? ["anneau"]
     : isPowerRingConsume
@@ -5834,13 +5925,18 @@ function buildPendingObjectChoicePublicState(match: StoredMatchState): GameState
     : pendingObjectChoice.mode === "steal"
     ? `Choose an object to steal from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName}.`
     : `Choose an object to remove from ${getPublicSeat(match, pendingObjectChoice.ownerSeatNumber).displayName}.`;
+  const publicMode: PendingObjectChoiceState["mode"] = isCorruptionPowerRingArm
+    ? "consume_power_ring"
+    : pendingObjectChoice.mode === "arm_corruption_power_ring"
+    ? "consume_power_ring"
+    : pendingObjectChoice.mode;
   return {
     boxId: pendingObjectChoice.boxId,
     chooserSeatNumber: pendingObjectChoice.chooserSeatNumber,
     ownerSeatNumber: pendingObjectChoice.ownerSeatNumber,
     cardName: sourceDefinition.name,
     prompt,
-    mode: pendingObjectChoice.mode,
+    mode: publicMode,
     objectOptions: owner.objects
       .filter((objectCard) =>
         objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
@@ -6216,6 +6312,7 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
       `Closed box ${boxId ?? "n/a"} for seat ${actorSeatNumber}; refill ${handBeforeRefill} -> ${actorState.hand.length}`
     );
     startNextTurn(match, actorSeatNumber);
+    markBotTurnDelayAfterHumanRefill(match, actorSeatNumber, handBeforeRefill, actorState.hand.length);
   }
 
   if (
@@ -6272,6 +6369,9 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
     sourceZone: pendingAction.sourceZone ?? "hand",
     fromMirror: true,
     mirrorOriginActorSeatNumber: originActorSeatNumber,
+    corruptionPowerRingDamage: pendingAction.corruptionPowerRingDamage,
+    corruptionPowerRingCard: pendingAction.corruptionPowerRingCard,
+    corruptionPowerRingChooserSeatNumber: pendingAction.corruptionPowerRingChooserSeatNumber,
     responders: targetAlive
       ? [{ seatNumber: reflectTargetSeatNumber, state: "pending", choice: "pending", consumedCards: [] }]
       : [],
@@ -6465,6 +6565,9 @@ function beginPendingAction(
     sourceZone: "hand",
     skipStoredCardResolution,
     sharedSacrificeAmount: undefined,
+    corruptionPowerRingDamage: undefined,
+    corruptionPowerRingCard: undefined,
+    corruptionPowerRingChooserSeatNumber: undefined,
     responders: responderSeatNumbers.map((seatNumber) => ({
       seatNumber,
       state: "pending",
@@ -6486,6 +6589,17 @@ function beginPendingAction(
       "sacrifice",
       `Seat ${actorSeatNumber} auto-selected sacrifice amount ${game.pendingAction.sharedSacrificeAmount} for ${definition.name}${boxId != null ? ` [box ${boxId}]` : ""}`
     );
+  }
+
+  if (definition.id === "corruption-dun-anneau") {
+    if (queuePowerRingChoice(match, actorSeatNumber, removedCard, boxId, undefined, "arm_corruption_power_ring")) {
+      return;
+    }
+
+    appendDealerMessage(match, `${getPublicSeat(match, actorSeatNumber).displayName} has no power ring left to sacrifice for ${definition.name}.`);
+    appendServerDebugLog(match, "object", `${definition.name} could not find a power ring to sacrifice before responses [box ${boxId}]`);
+    finalizePendingAction(match);
+    return;
   }
 
   autoRespondIfNeeded(match);
@@ -6699,7 +6813,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
   const shouldDeferCollectiveMirrorHit =
     pendingAction.fromMirror === true
     && game.pausedSequentialAction?.responseMode === "collective"
-    && definition.rules.effects.some((effect) => effect.type === "damage" || effect.type === "lifesteal");
+    && supportsDeferredCollectiveMirrorHit(definition);
   if (!getStoredSeat(game, targetSeatNumber).alive) {
     discardInstances(game, responder.consumedCards);
     return;
@@ -6807,9 +6921,43 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
     if (!resisted && definition.id === "corruption-dun-anneau") {
       discardInstances(game, responder.consumedCards);
+      if (pendingAction.corruptionPowerRingDamage != null) {
+        pushPresentationEvent(match, {
+          boxId: pendingAction.boxId,
+          type: "attack_impact",
+          actorSeatNumber: pendingAction.actorSeatNumber,
+          targetSeatNumber,
+          cardName: definition.name
+        });
+        const dealt = applyDamage(
+          match,
+          targetSeatNumber,
+          pendingAction.corruptionPowerRingDamage,
+          definition,
+          false,
+          pendingAction.boxId,
+          pendingAction.actorSeatNumber
+        );
+        const chooserSeatNumber = pendingAction.corruptionPowerRingChooserSeatNumber ?? pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
+        const ringName = pendingAction.corruptionPowerRingCard == null
+          ? "a power ring"
+          : requireDefinition(pendingAction.corruptionPowerRingCard.cardId).name;
+        appendDealerMessage(
+          match,
+          `${getPublicSeat(match, chooserSeatNumber).displayName}'s ${ringName} fuels ${definition.name}, dealing ${dealt} damage to ${getPublicSeat(match, targetSeatNumber).displayName}.`
+        );
+        appendServerDebugLog(
+          match,
+          "object",
+          `${definition.name} used preselected ${pendingAction.corruptionPowerRingCard?.cardId ?? "power ring"} for ${dealt} damage to seat ${targetSeatNumber}${pendingAction.boxId != null ? ` [box ${pendingAction.boxId}]` : ""}`
+        );
+        return;
+      }
+
+      const chooserSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
       if (queuePowerRingChoice(
         match,
-        pendingAction.actorSeatNumber,
+        chooserSeatNumber,
         pendingAction.storedCard,
         pendingAction.boxId
       )) {
@@ -6818,7 +6966,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
       appendDealerMessage(
         match,
-        `${getPublicSeat(match, pendingAction.actorSeatNumber).displayName} has no power ring left to sacrifice for ${definition.name}.`
+        `${getPublicSeat(match, chooserSeatNumber).displayName} has no power ring left to sacrifice for ${definition.name}.`
       );
       appendServerDebugLog(
         match,
@@ -6990,10 +7138,9 @@ function finalizePendingAction(match: StoredMatchState): void {
     // Mirror chain link resolved — resume the paused outer action if there is one
     const pausedAction = game.pausedSequentialAction;
     const reflectedTargetSeatNumber = pendingAction.targetSeatNumbers[0];
-    const shouldDeferCollectiveMirrorHit =
-      requireDefinition(pendingAction.storedCard.cardId).rules.effects.some(
-        (effect) => effect.type === "damage" || effect.type === "lifesteal"
-      );
+    const shouldDeferCollectiveMirrorHit = supportsDeferredCollectiveMirrorHit(
+      requireDefinition(pendingAction.storedCard.cardId)
+    );
     if (
       shouldDeferCollectiveMirrorHit &&
       pausedAction?.responseMode === "collective" &&
@@ -7303,7 +7450,10 @@ function resolvePendingAction(match: StoredMatchState): void {
   }
 
   if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
-    resolvePersistentOwnerTurnMassDamageTick(match, pendingAction.actorSeatNumber, definition, undefined, pendingAction.boxId);
+    resolvePersistentOwnerTurnMassDamageTick(match, pendingAction.actorSeatNumber, definition, undefined, pendingAction.boxId, {
+      excludedTargetSeatNumbers: mirroredTargets,
+      deferredMirrorHits
+    });
   }
 
   const successfulHitDamageContextBySeatNumber = new Map<number, SuccessfulHitDamageContext>();
@@ -7835,7 +7985,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
     if (getObjectSlot(requireDefinition(chosenCardId).name) !== "anneau") {
       throw new Error("You must choose a ring to discard");
     }
-  } else if (pendingObjectChoice.mode === "consume_power_ring") {
+  } else if (pendingObjectChoice.mode === "consume_power_ring" || pendingObjectChoice.mode === "arm_corruption_power_ring") {
     if (getPowerRingLevel(chosenCardId) == null) {
       throw new Error("You must choose a power ring to sacrifice");
     }
@@ -7856,7 +8006,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
         match,
         `${chooserSeat.displayName} discards ${requireDefinition(removed[0].cardId).name} to equip ${sourceDefinition.name}.`
       );
-    } else if (pendingObjectChoice.mode === "consume_power_ring") {
+    } else if (pendingObjectChoice.mode === "consume_power_ring" || pendingObjectChoice.mode === "arm_corruption_power_ring") {
       const sacrificedRing = removed[0];
       const sacrificedDefinition = requireDefinition(sacrificedRing.cardId);
       const ringLevel = getPowerRingLevel(sacrificedRing.cardId);
@@ -7866,7 +8016,28 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
       }
 
       const amount = 25 * ringLevel;
-      if (sourceDefinition.id === "transformation-energetique-dun-anneau") {
+      if (pendingObjectChoice.mode === "arm_corruption_power_ring") {
+        if (game.pendingAction == null) {
+          appendServerDebugLog(
+            match,
+            "object",
+            `${sourceDefinition.name} consumed ${sacrificedRing.cardId}, but there is no pending action to arm${pendingObjectChoice.boxId != null ? ` [box ${pendingObjectChoice.boxId}]` : ""}`
+          );
+        } else {
+          game.pendingAction.corruptionPowerRingDamage = amount;
+          game.pendingAction.corruptionPowerRingCard = sacrificedRing;
+          game.pendingAction.corruptionPowerRingChooserSeatNumber = pendingObjectChoice.chooserSeatNumber;
+          appendDealerMessage(
+            match,
+            `${chooserSeat.displayName} sacrifices ${sacrificedDefinition.name} with ${sourceDefinition.name}.`
+          );
+          appendServerDebugLog(
+            match,
+            "object",
+            `${sourceDefinition.name} armed with ${sacrificedRing.cardId} for ${amount} damage before responses${pendingObjectChoice.boxId != null ? ` [box ${pendingObjectChoice.boxId}]` : ""}`
+          );
+        }
+      } else if (sourceDefinition.id === "transformation-energetique-dun-anneau") {
         const healResult = setSeatHp(
           match,
           pendingObjectChoice.chooserSeatNumber,
@@ -9431,6 +9602,15 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
 
     // Don't play a résistance diminuée card unless the hand has an attack that benefits from it
     if (isResistanceDiminueeCard(handCard.cardId) && !hasPlayableResistanceReductionFollowUp(match, seatNumber, handCard.instanceId)) {
+      continue;
+    }
+
+    if (getPowerRingLevel(handCard.cardId) != null && !wouldPowerRingImproveEquippedSet(seatState, handCard.cardId)) {
+      appendServerDebugLog(
+        match,
+        "bot_ai",
+        `Seat ${seatNumber} skipped ${definition.name}; equipped power rings are already as strong`
+      );
       continue;
     }
 
