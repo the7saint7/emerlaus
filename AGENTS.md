@@ -28,6 +28,7 @@ Use these from the repository root:
 - `npm start` serves the built Express app from `dist/server/server/index.js`.
 - `npm run preview` builds and runs `wrangler dev`.
 - `npm run deploy` builds and deploys with Wrangler.
+- `npm run release:prod` prepares a production release from `develop`, pushes `develop`, merges to `main`, writes release version metadata, and pushes `main` to trigger Railway.
 
 There is no dedicated test suite in `package.json` currently. Use `npm run typecheck` as the minimum verification after code changes, and run a build when changes affect bundling, assets, server output, or Cloudflare deployment.
 
@@ -173,6 +174,14 @@ These are useful when reproducing gameplay bugs. Check them before changing game
 - After gameplay changes, verify both type safety and at least one local browser flow when possible.
 - Do not reintroduce alternate renderer assumptions; docs indicate the Pixi migration is complete and the current renderer is Pixi only.
 - Avoid committing or editing `.env`. Use `.env.example` for documented environment changes.
+
+## Production Release Guidelines
+
+- Production release work must start from the `develop` branch. If an agent is asked to do release work and `git branch --show-current` is not `develop`, stop and report the current branch.
+- Do not push to `main` unless the user explicitly asks for a production release.
+- Before a production release, make sure `client/public/changelog.json` contains high-level English and French player-facing notes.
+- Use `npm run release:prod` for production releases. The script runs typecheck/build, updates `client/public/version.json`, commits/pushes `develop`, merges to `main`, and pushes `main`.
+- The release version is timestamp based. Pushing `main` triggers Railway to rebuild the app.
 
 ## Documentation To Check
 

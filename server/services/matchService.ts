@@ -124,6 +124,19 @@ function pickBotObjectChoiceId(
     [0]?.instanceId;
 }
 
+function getBotObjectSwapValue(objects: Array<{ cardId: string; attachedCards?: unknown[] }>): number {
+  return objects.reduce((total, objectCard) => {
+    const priority = getPowerObjectPriority(objectCard.cardId);
+    if (priority > 0) {
+      return total + priority;
+    }
+    if (objectCard.cardId === "baton-dattaque" || objectCard.cardId === "baton-dattaque-massive") {
+      return total + 70 + (objectCard.attachedCards?.length ?? 0) * 8;
+    }
+    return total + 10;
+  }, 0);
+}
+
 function getBotTurnTimerKey(instanceId: string): string {
   return `${instanceId}:turn`;
 }
@@ -499,6 +512,17 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
               } else if (latestChoice.mode === "choice_hp_or_redraw") {
                 const chooserPublicSeat = latestMatch.seats.find((seat) => seat.seatNumber === latestChoice.chooserSeatNumber);
                 const choiceId = (chooserPublicSeat?.hp ?? 0) > 25 ? "__decision_hp" : "__decision_redraw";
+                selectPendingObject(latestMatch, latestChooser.userId, choiceId);
+                saveMatch(latestMatch);
+                notifyMatchUpdated(instanceId);
+              } else if (latestChoice.mode === "choice_swap_hand_or_objects") {
+                const actorState = latestMatch.internalGame?.seatStates.find((seat) => seat.seatNumber === latestChoice.ownerSeatNumber);
+                const targetState = latestMatch.internalGame?.seatStates.find((seat) => seat.seatNumber === latestChoice.chooserSeatNumber);
+                const actorObjectValue = actorState == null ? 0 : getBotObjectSwapValue(actorState.objects);
+                const targetObjectValue = targetState == null ? 0 : getBotObjectSwapValue(targetState.objects);
+                const choiceId = actorObjectValue > 0 && actorObjectValue > targetObjectValue
+                  ? "__option_objects"
+                  : "__option_hand";
                 selectPendingObject(latestMatch, latestChooser.userId, choiceId);
                 saveMatch(latestMatch);
                 notifyMatchUpdated(instanceId);

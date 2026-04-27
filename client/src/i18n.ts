@@ -84,6 +84,7 @@ type TranslationKey =
   | "table.leaveMatch"
   | "table.cardReference"
   | "table.reportBug"
+  | "table.changelog"
   | "table.seatFx"
   | "table.currentTurn"
   | "table.thinking"
@@ -162,6 +163,9 @@ type TranslationKey =
   | "bugReport.send"
   | "bugReport.sending"
   | "bugReport.cancel"
+  | "changelog.close"
+  | "changelog.version"
+  | "changelog.loading"
   | "bugInbox.title"
   | "bugInbox.subtitle"
   | "bugInbox.filterLabel"
@@ -364,6 +368,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.leaveMatch": "Leave Match",
     "table.cardReference": "Card Guide",
     "table.reportBug": "Report Bug",
+    "table.changelog": "Changelog",
     "table.seatFx": "Seat FX",
     "table.currentTurn": "Current turn",
     "table.thinking": "Thinking",
@@ -450,6 +455,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugReport.send": "Send",
     "bugReport.sending": "Sending...",
     "bugReport.cancel": "Cancel",
+    "changelog.close": "Close",
+    "changelog.version": "Version {version}",
+    "changelog.loading": "Loading changelog...",
     "bugInbox.title": "Bug Reports",
     "bugInbox.subtitle": "Review saved player reports and update their status.",
     "bugInbox.filterLabel": "Filter",
@@ -641,6 +649,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.leaveMatch": "Quitter la partie",
     "table.cardReference": "Guide des cartes",
     "table.reportBug": "Signaler un bug",
+    "table.changelog": "Changelog",
     "table.seatFx": "Effets siege",
     "table.currentTurn": "Tour actuel",
     "table.thinking": "Réfléchit",
@@ -727,6 +736,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugReport.send": "Envoyer",
     "bugReport.sending": "Envoi...",
     "bugReport.cancel": "Annuler",
+    "changelog.close": "Fermer",
+    "changelog.version": "Version {version}",
+    "changelog.loading": "Chargement du changelog...",
     "bugInbox.title": "Signalements de bugs",
     "bugInbox.subtitle": "Consultez les signalements joueurs et mettez leur statut a jour.",
     "bugInbox.filterLabel": "Filtre",

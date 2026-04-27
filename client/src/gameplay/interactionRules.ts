@@ -4,6 +4,15 @@ function isAttackCard(card: CardView): boolean {
   return ["AD", "AM", "S", "E", "CO", "ST", "SO"].includes(card.categoryCode);
 }
 
+const RED_ARROW_SELF_TARGET_CARD_IDS = new Set([
+  "expulsion-temporaire",
+  "la-ceinture-qui-disparait"
+]);
+
+function cardUsesRedArrowSelfTargeting(card: CardView): boolean {
+  return RED_ARROW_SELF_TARGET_CARD_IDS.has(card.cardId);
+}
+
 export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?: CardView): CardView["targets"] {
   if (
     card.cardId === "vierge"
@@ -22,7 +31,7 @@ export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boo
     targets === "single_opponent"
     || targets === "target_object"
     || card.cardId === "depouillement"
-    || card.cardId === "expulsion-temporaire"
+    || cardUsesRedArrowSelfTargeting(card)
   );
 }
 
@@ -154,7 +163,7 @@ export function isSeatTargetable(
   }
 
   const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
-  const canTargetSelf = selectedCard.cardId === "expulsion-temporaire";
+  const canTargetSelf = cardUsesRedArrowSelfTargeting(selectedCard);
   if (seat.seatNumber === localSeatNumber && !canTargetSelf) {
     return false;
   }

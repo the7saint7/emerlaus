@@ -191,6 +191,28 @@ export interface CardsDiscardedEvent {
   cards: CardView[];
 }
 
+export interface TelekinesieSequenceEvent {
+  id: string;
+  boxId: string;
+  type: "telekinesie_sequence";
+  createdAt: string;
+  actorSeatNumber: number;
+  targetSeatNumber: number;
+  sourceCard: CardView;
+  revealedCards: CardView[];
+  projectedCards: CardView[];
+}
+
+export interface TelekinesieProjectCardEvent {
+  id: string;
+  boxId: string;
+  type: "telekinesie_project_card";
+  createdAt: string;
+  actorSeatNumber: number;
+  targetSeatNumber: number;
+  card: CardView;
+}
+
 export interface TurnStartEvent {
   id: string;
   boxId: string;
@@ -199,7 +221,7 @@ export interface TurnStartEvent {
   seatNumber: number;
 }
 
-export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent | CardsDiscardedEvent | TurnStartEvent;
+export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent | CardsDiscardedEvent | TelekinesieSequenceEvent | TelekinesieProjectCardEvent | TurnStartEvent;
 
 export interface DebugLogEntry {
   id: string;
@@ -244,7 +266,7 @@ export interface PendingObjectChoiceState {
   ownerSeatNumber: number;
   cardName: string;
   prompt: string;
-  mode?: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "choice_hp_or_object" | "choice_hp_or_redraw" | "mass_attack_staff_turn";
+  mode?: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "choice_hp_or_object" | "choice_hp_or_redraw" | "choice_swap_hand_or_objects" | "mass_attack_staff_turn";
   objectOptions: CardView[];
 }
 
