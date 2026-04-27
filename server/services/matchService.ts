@@ -65,6 +65,39 @@ function getAttackStaffLoadCategory(cardId: string): "AD" | "AM" {
   return cardId === "baton-dattaque" ? "AD" : "AM";
 }
 
+function getAnnulationReleaseCardCount(cardId: string): number {
+  if (cardId === "lapidation") {
+    return 1;
+  }
+
+  return Math.max(1, baseCardDefinitionById[cardId]?.defenseBand?.annulationCardsRequired ?? 1);
+}
+
+function canReleaseStatusWithAnnulation(cardId: string): boolean {
+  const definition = baseCardDefinitionById[cardId];
+  return (
+    definition?.id === "lapidation"
+    || (
+      definition?.category.code === "SO"
+      && definition.rules.staysInPlay
+      && definition.defenseBand?.annulationAllowed === true
+    )
+  );
+}
+
+function findBotAnnulationReleaseStatus(match: StoredMatchState, seatNumber: number): string | undefined {
+  const seatState = match.internalGame?.seatStates.find((candidate) => candidate.seatNumber === seatNumber);
+  if (seatState == null) {
+    return undefined;
+  }
+
+  const annulationCount = seatState.hand.filter((card) => card.cardId === "annulation").length;
+  return seatState.statuses.find((status) =>
+    canReleaseStatusWithAnnulation(status.cardId)
+    && annulationCount >= getAnnulationReleaseCardCount(status.cardId)
+  )?.instanceId;
+}
+
 function getPowerObjectPriority(cardId: string): number {
   switch (cardId) {
     case "anneau-de-puissance-3":
@@ -675,6 +708,15 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
 
     let attemptedBotCardName: string | undefined;
     try {
+      const releasableStatusInstanceId = findBotAnnulationReleaseStatus(latestMatch, latestCurrentSeat.seatNumber);
+      if (releasableStatusInstanceId != null) {
+        resolvePendingCurseRelease(latestMatch, latestCurrentSeat.userId, "accept", releasableStatusInstanceId);
+        saveMatch(latestMatch);
+        notifyMatchUpdated(instanceId);
+        scheduleBotTurnIfNeeded(instanceId);
+        return;
+      }
+
       const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
       if (botRequest != null) {
         const actorSeatState = latestMatch.internalGame?.seatStates.find(

@@ -18,7 +18,12 @@ export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?
 
 export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boolean {
   const targets = getEffectiveInteractionTargets(card, viergeReplayCard);
-  return targets === "single_opponent" || targets === "target_object" || card.cardId === "depouillement";
+  return (
+    targets === "single_opponent"
+    || targets === "target_object"
+    || card.cardId === "depouillement"
+    || card.cardId === "expulsion-temporaire"
+  );
 }
 
 export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView): boolean {
@@ -141,9 +146,16 @@ export function isSeatTargetable(
   seat: SeatState,
   localSeatNumber: number,
   forcedTargetSeatNumber?: number,
-  viergeReplayCard?: CardView
+  viergeReplayCard?: CardView,
+  lapidationTargetSeatNumbers?: number[]
 ): boolean {
-  if (selectedCard == null || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
+  if (selectedCard == null || seat.isAlive === false) {
+    return false;
+  }
+
+  const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
+  const canTargetSelf = selectedCard.cardId === "expulsion-temporaire";
+  if (seat.seatNumber === localSeatNumber && !canTargetSelf) {
     return false;
   }
 
@@ -151,11 +163,23 @@ export function isSeatTargetable(
     return false;
   }
 
+  if (
+    selectedCard.categoryCode === "AD"
+    && lapidationTargetSeatNumbers != null
+    && !lapidationTargetSeatNumbers.includes(seat.seatNumber)
+  ) {
+    return false;
+  }
+
   if ((seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")) {
     return false;
   }
 
-  if ((seat.statuses ?? []).some((card) => card.cardId === "potion-dinvincibilite")) {
+  if ((seat.statuses ?? []).some((card) =>
+    card.cardId === "potion-dinvincibilite"
+    || card.cardId === "expulsion-temporaire"
+    || card.cardId === "invisibilite"
+  )) {
     return false;
   }
 
@@ -167,7 +191,6 @@ export function isSeatTargetable(
     return false;
   }
 
-  const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
   return (
     targets === "single_opponent"
     || targets === "self_or_single_opponent"

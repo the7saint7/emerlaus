@@ -10,6 +10,7 @@ import {
   type CardEffect,
   type RollExpression
 } from "../../shared/cards/index.js";
+import { determineMinimumHandSize } from "../../shared/gameSetupRules.js";
 import type {
   CardTargetMode,
   CardView,
@@ -100,6 +101,9 @@ interface TimedPotionStatusConfig {
   extraPlaysPerTurn?: number;
   grantsAttackImmunity?: boolean;
 }
+
+const TEMPORARY_EXPULSION_CARD_ID = "expulsion-temporaire";
+const INVISIBILITY_CARD_ID = "invisibilite";
 
 const SUCCESSFUL_HIT_DAMAGE_MODIFIER_BY_CARD_ID: Partial<Record<string, SuccessfulHitDamageModifierConfig>> = {
   "eclair-diabolique": {
@@ -317,18 +321,6 @@ function createDeck(enabledExpansions: MatchExpansionSettings): StoredCardInstan
   }
 
   return shuffle(deck);
-}
-
-function determineMinimumHandSize(deckSize: number): number {
-  if (deckSize >= 300) {
-    return 7;
-  }
-
-  if (deckSize >= 200) {
-    return 6;
-  }
-
-  return 5;
 }
 
 function createSeatState(seatNumber: number): StoredSeatState {
@@ -674,7 +666,10 @@ function getBotEligibleOpponentTargets(match: StoredMatchState, actorSeatNumber:
   const eligibleOpponents = requiresTargetObject
     ? opponents.filter((seatNumber) => seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots))
     : opponents;
-  return eligibleOpponents;
+  const lapidationTargets = getLapidationForcedTargetSeatNumbers(match, actorSeatNumber, definition);
+  return lapidationTargets == null
+    ? eligibleOpponents
+    : eligibleOpponents.filter((seatNumber) => lapidationTargets.includes(seatNumber));
 }
 
 function pickBotOpponentTarget(
@@ -1088,6 +1083,51 @@ function nextLivingOpponentSeatNumbers(game: StoredGameState, actorSeatNumber: n
   return clockwiseSeatNumbers(game, actorSeatNumber).filter((seatNumber) => seatNumber !== actorSeatNumber);
 }
 
+function getActiveLapidationSeatNumbers(game: StoredGameState): number[] {
+  return aliveSeatNumbers(game).filter((seatNumber) =>
+    getStoredSeat(game, seatNumber).statuses.some((status) => status.cardId === "lapidation")
+  );
+}
+
+function getLapidationForcedTargetSeatNumbers(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  definition: BaseCardDefinition
+): number[] | undefined {
+  const game = match.internalGame;
+  if (game == null || definition.category.code !== "AD") {
+    return undefined;
+  }
+
+  const activeLapidationSeatNumbers = getActiveLapidationSeatNumbers(game);
+  if (activeLapidationSeatNumbers.length === 0) {
+    return undefined;
+  }
+
+  return activeLapidationSeatNumbers.filter((seatNumber) =>
+    seatNumber !== actorSeatNumber && !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber)
+  );
+}
+
+function isAnnulationReleasableStatus(definition: BaseCardDefinition): boolean {
+  return (
+    definition.id === "lapidation"
+    || (
+      definition.category.code === "SO"
+      && definition.rules.staysInPlay
+      && definition.defenseBand?.annulationAllowed === true
+    )
+  );
+}
+
+function getAnnulationReleaseCardCount(definition: BaseCardDefinition): number {
+  if (definition.id === "lapidation") {
+    return 1;
+  }
+
+  return Math.max(1, definition.defenseBand?.annulationCardsRequired ?? 1);
+}
+
 function getLeftOpponentSeatNumber(game: StoredGameState, actorSeatNumber: number): number | undefined {
   const alive = aliveSeatNumbers(game);
   const index = alive.indexOf(actorSeatNumber);
@@ -1110,6 +1150,7 @@ function listTargetableObjectOwners(
       (includeSelf || seat.seatNumber !== actorSeatNumber)
       && seat.alive
       && (ignoreAttackImmunity || seat.attackImmunityTurns === 0)
+      && (ignoreAttackImmunity || !hasActiveInvisibility(seat))
       && (
         seat.objects.some((card) => requireDefinition(card.cardId).category.code === "O")
         || (canTargetSeatStatuses(sourceDefinition) && seat.statuses.length > 0)
@@ -1191,7 +1232,7 @@ function evaluateRoll(
       const basePower = expression.powerSource === "all_living_players"
         ? match.internalGame == null
           ? 0
-          : aliveSeatNumbers(match.internalGame).reduce((total, seatNumber) => total + (getPublicSeat(match, seatNumber).powerLevel ?? 0), 0)
+          : getTotalAlivePowerLevel(match)
         : (expression.powerSource === "target" ? targetSeat : actorSeat)?.powerLevel ?? 0;
       const effectivePower = Math.max(0, basePower + (expression.powerBonus ?? 0));
       if (effectivePower === 0) {
@@ -1392,7 +1433,7 @@ function getTotalAlivePowerLevel(match: StoredMatchState): number {
   }
 
   return aliveSeatNumbers(game)
-    .map((seatNumber) => getPublicSeat(match, seatNumber).powerLevel ?? 1)
+    .map((seatNumber) => computePowerLevel(match, seatNumber))
     .reduce((sum, powerLevel) => sum + powerLevel, 0);
 }
 
@@ -1610,6 +1651,20 @@ function buildCardView(
     disabledReason,
     zone
   };
+}
+
+function hasActiveTemporaryExpulsion(seatState: StoredSeatState): boolean {
+  return seatState.statuses.some((status) =>
+    status.cardId === TEMPORARY_EXPULSION_CARD_ID
+    && (status.remainingTurnTriggers ?? 0) > 0
+  );
+}
+
+function hasActiveInvisibility(seatState: StoredSeatState): boolean {
+  return seatState.statuses.some((status) =>
+    status.cardId === INVISIBILITY_CARD_ID
+    && (status.remainingTurnTriggers ?? 0) > 0
+  );
 }
 
 function buildReplayPreviewCardView(cardId: string): CardView {
@@ -2064,7 +2119,10 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
   const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
   const requiresTargetObject = singleOpponentTargetRequiresEligibleObject(definition);
   const livingOpponents = nextLivingOpponentSeatNumbers(game, actorSeatNumber);
-  const attackableOpponents = livingOpponents.filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber));
+  const lapidationForcedTargetSeatNumbers = getLapidationForcedTargetSeatNumbers(match, actorSeatNumber, definition);
+  const attackableOpponents = livingOpponents
+    .filter((seatNumber) => lapidationForcedTargetSeatNumbers == null || lapidationForcedTargetSeatNumbers.includes(seatNumber))
+    .filter((seatNumber) => !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber));
   const attackableOpponentsWithObjects = attackableOpponents.filter((seatNumber) => getStoredSeat(game, seatNumber).objects.length > 0);
   const opponentsWithEligibleObjects = livingOpponents.filter((seatNumber) =>
     seatHasEligibleTargetObject(game, seatNumber, allowedObjectSlots)
@@ -2490,12 +2548,20 @@ function isProtectedFromAttack(
     return false;
   }
 
+  const targetSeat = getStoredSeat(game, targetSeatNumber);
+  if (!isOrdreDemmerlausDefinition(sourceDefinition) && hasActiveTemporaryExpulsion(targetSeat)) {
+    return true;
+  }
+
   if (sourceSeatNumber != null && sourceSeatNumber === targetSeatNumber) {
     return false;
   }
 
-  const targetSeat = getStoredSeat(game, targetSeatNumber);
   if (targetSeat.attackImmunityTurns > 0) {
+    return true;
+  }
+
+  if (hasActiveInvisibility(targetSeat)) {
     return true;
   }
 
@@ -4834,7 +4900,9 @@ function resolveEquilibre(
     return;
   }
 
-  const livingSeatNumbers = aliveSeatNumbers(game);
+  const livingSeatNumbers = aliveSeatNumbers(game).filter((seatNumber) =>
+    seatNumber === actorSeatNumber || !isProtectedFromAttack(match, seatNumber, definition, actorSeatNumber)
+  );
   if (livingSeatNumbers.length === 0) {
     return;
   }
@@ -5346,15 +5414,23 @@ function movePersistentCard(
     return false;
   }
 
-  if (definition.id === "invisibilite") {
+  if (definition.id === INVISIBILITY_CARD_ID) {
     const seat = getStoredSeat(game, actorSeatNumber);
+    const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
+    const remainingTurnTriggers = Math.max(1, actorSeat.powerLevel ?? 1);
     seat.statuses.push({
       instanceId: card.instanceId,
       cardId: card.cardId,
       sourceSeatNumber: actorSeatNumber,
-      bodyBound: true
+      remainingTurnTriggers,
+      bodyBound: true,
+      activatesNextTurn: true
     });
-    appendServerDebugLog(match, "status", `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves`);
+    appendServerDebugLog(
+      match,
+      "status",
+      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves for ${remainingTurnTriggers} turn(s), starting next turn`
+    );
     return false;
   }
 
@@ -5369,6 +5445,31 @@ function movePersistentCard(
       appendDealerMessage(
         match,
         `${getPublicSeat(match, actorSeatNumber).displayName} placed ${definition.name} on ${getPublicSeat(match, targetSeatNumber).displayName}.`
+      );
+    }
+    return false;
+  }
+
+  if (definition.id === TEMPORARY_EXPULSION_CARD_ID) {
+    const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
+    const remainingTurnTriggers = Math.max(1, actorSeat.powerLevel ?? 1);
+    for (const targetSeatNumber of targetSeatNumbers) {
+      getStoredSeat(game, targetSeatNumber).statuses.push({
+        instanceId: card.instanceId,
+        cardId: card.cardId,
+        sourceSeatNumber: actorSeatNumber,
+        remainingTurnTriggers,
+        bodyBound: true,
+        activatesNextTurn: targetSeatNumber === actorSeatNumber
+      });
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${targetSeatNumber} received ${definition.name} from seat ${actorSeatNumber} for ${remainingTurnTriggers} turn(s)`
+      );
+      appendDealerMessage(
+        match,
+        `${getPublicSeat(match, targetSeatNumber).displayName} is expelled from combat for ${remainingTurnTriggers} turn(s).`
       );
     }
     return false;
@@ -5567,6 +5668,78 @@ function resolveTotalPowerOverrideTurnEnd(match: StoredMatchState, seatNumber: n
 
   for (const status of activeStatuses) {
     const definition = requireDefinition(status.cardId);
+    const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
+    if (nextRemainingTurnTriggers > 0) {
+      status.remainingTurnTriggers = nextRemainingTurnTriggers;
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${seatNumber}'s ${definition.name} has ${nextRemainingTurnTriggers} affected turn(s) remaining`
+      );
+      continue;
+    }
+
+    seatState.statuses = seatState.statuses.filter((candidate) => candidate.instanceId !== status.instanceId);
+    discardInstances(game, [{ instanceId: status.instanceId, cardId: status.cardId }]);
+    appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} ends.`);
+    appendServerDebugLog(match, "status", `Seat ${seatNumber}'s ${definition.name} expired at end of turn`);
+  }
+}
+
+function resolveTemporaryExpulsionTurnEnd(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const expulsionStatuses = seatState.statuses.filter((status) =>
+    status.cardId === TEMPORARY_EXPULSION_CARD_ID && (status.remainingTurnTriggers ?? 0) > 0
+  );
+
+  for (const status of expulsionStatuses) {
+    const definition = requireDefinition(status.cardId);
+    if (status.activatesNextTurn === true) {
+      status.activatesNextTurn = false;
+      continue;
+    }
+
+    const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
+    if (nextRemainingTurnTriggers > 0) {
+      status.remainingTurnTriggers = nextRemainingTurnTriggers;
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${seatNumber}'s ${definition.name} has ${nextRemainingTurnTriggers} affected turn(s) remaining`
+      );
+      continue;
+    }
+
+    seatState.statuses = seatState.statuses.filter((candidate) => candidate.instanceId !== status.instanceId);
+    discardInstances(game, [{ instanceId: status.instanceId, cardId: status.cardId }]);
+    appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} ends.`);
+    appendServerDebugLog(match, "status", `Seat ${seatNumber}'s ${definition.name} expired at end of turn`);
+  }
+}
+
+function resolveInvisibilityTurnEnd(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const invisibilityStatuses = seatState.statuses.filter((status) =>
+    status.cardId === INVISIBILITY_CARD_ID && (status.remainingTurnTriggers ?? 0) > 0
+  );
+
+  for (const status of invisibilityStatuses) {
+    const definition = requireDefinition(status.cardId);
+    if (status.activatesNextTurn === true) {
+      status.activatesNextTurn = false;
+      continue;
+    }
+
     const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
     if (nextRemainingTurnTriggers > 0) {
       status.remainingTurnTriggers = nextRemainingTurnTriggers;
@@ -5952,9 +6125,10 @@ function applyEffect(
     case "modify_resistance":
       // O-category cards stay in play as objects; computeResistanceThreshold already
       // reads the modifier from storedSeat.objects, so no separate status entry is needed.
-      // SO-category curses/statuses are added by movePersistentCard; avoid duplicating them here.
+      // Persistent cards are added by movePersistentCard; avoid duplicating their status here.
       if (
         effect.duration === "until_removed"
+        && !definition.rules.staysInPlay
         && definition.category.code !== "O"
         && definition.category.code !== "SO"
         && definition.id !== "hydromel"
@@ -6118,6 +6292,9 @@ function applyEffect(
       break;
     }
     case "grant_attack_immunity":
+      if (definition.id === INVISIBILITY_CARD_ID) {
+        break;
+      }
       actorState.attackImmunityTurns = Math.max(
         actorState.attackImmunityTurns,
         effect.durationSource === "actor_power"
@@ -6258,13 +6435,6 @@ function resolveAgonieTurnStart(match: StoredMatchState, seatNumber: number): vo
     const definition = requireDefinition(status.cardId);
     const boxId = randomUUID();
     const roll = rollDiceNotationDetailed("1D4");
-    pushGameEvent(match, {
-      id: randomUUID(),
-      boxId,
-      type: "turn_start",
-      createdAt: new Date().toISOString(),
-      seatNumber
-    });
     publishSeatDiceRoll(match, seatNumber, "1D4", roll.total, roll.values, boxId, status.instanceId);
     recordLuckOutcome(match, status.sourceSeatNumber, "1D4", roll.total, true);
     applyDamage(match, seatNumber, roll.total, definition, false, boxId, status.sourceSeatNumber);
@@ -6351,6 +6521,13 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
 
     game.currentTurnSeatNumber = candidateSeat.seatNumber;
     game.turnNumber += 1;
+    pushGameEvent(match, {
+      id: randomUUID(),
+      boxId: randomUUID(),
+      type: "turn_start",
+      createdAt: new Date().toISOString(),
+      seatNumber: candidateSeat.seatNumber
+    });
     refreshActiveObjectHoldDurations(match);
     for (const objectCard of candidateSeat.objects) {
       objectCard.usedThisTurn = false;
@@ -6373,12 +6550,6 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
           discardInstances(game, removedSanctuaryCards);
           syncObjectOwnershipStats(match);
           appendServerDebugLog(match, "status", `Seat ${candidateSeat.seatNumber}'s Sanctuaire d'Emmerlaus expired`);
-        }
-        const removedInvisibilityStatuses = candidateSeat.statuses.filter((status) => status.cardId === "invisibilite");
-        candidateSeat.statuses = candidateSeat.statuses.filter((status) => status.cardId !== "invisibilite");
-        if (removedInvisibilityStatuses.length > 0) {
-          discardInstances(game, removedInvisibilityStatuses.map((status) => ({ instanceId: status.instanceId, cardId: status.cardId })));
-          appendServerDebugLog(match, "status", `Seat ${candidateSeat.seatNumber}'s Invisibilité expired`);
         }
       }
     }
@@ -6408,6 +6579,8 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
       resolveAbundanceTurnEnd(match, candidateSeat.seatNumber);
       resolveTimedPotionTurnEnd(match, candidateSeat.seatNumber);
       resolveTotalPowerOverrideTurnEnd(match, candidateSeat.seatNumber);
+      resolveTemporaryExpulsionTurnEnd(match, candidateSeat.seatNumber);
+      resolveInvisibilityTurnEnd(match, candidateSeat.seatNumber);
       appendDealerMessage(match, `${getPublicSeat(match, candidateSeat.seatNumber).displayName} loses a turn.`);
       appendServerDebugLog(match, "turn", `Seat ${candidateSeat.seatNumber} skipped turn (${candidateSeat.skipTurnsRemaining} skips remaining)`);
       nextIndex = (nextIndex + 1) % ordered.length;
@@ -6457,6 +6630,8 @@ export function passTurnWithoutPlaying(match: StoredMatchState, seatNumber: numb
   resolveAbundanceTurnEnd(match, seatNumber);
   resolveTimedPotionTurnEnd(match, seatNumber);
   resolveTotalPowerOverrideTurnEnd(match, seatNumber);
+  resolveTemporaryExpulsionTurnEnd(match, seatNumber);
+  resolveInvisibilityTurnEnd(match, seatNumber);
   const handBeforeRefill = seat.hand.length;
   while (seat.hand.length < game.minimumHandSize && seat.alive) {
     drawCards(match, seatNumber, 1);
@@ -7123,6 +7298,8 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
     resolveAbundanceTurnEnd(match, actorSeatNumber);
     resolveTimedPotionTurnEnd(match, actorSeatNumber);
     resolveTotalPowerOverrideTurnEnd(match, actorSeatNumber);
+    resolveTemporaryExpulsionTurnEnd(match, actorSeatNumber);
+    resolveInvisibilityTurnEnd(match, actorSeatNumber);
     const handBeforeRefill = actorState.hand.length;
     while (actorState.hand.length < game.minimumHandSize && actorState.alive) {
       drawCards(match, actorSeatNumber, 1);
@@ -7492,6 +7669,8 @@ function resolvePendingActionContinuation(
     resolveAbundanceTurnEnd(match, continuation.seatNumber);
     resolveTimedPotionTurnEnd(match, continuation.seatNumber);
     resolveTotalPowerOverrideTurnEnd(match, continuation.seatNumber);
+    resolveTemporaryExpulsionTurnEnd(match, continuation.seatNumber);
+    resolveInvisibilityTurnEnd(match, continuation.seatNumber);
     startNextTurn(match, continuation.seatNumber);
   }
 
@@ -7616,7 +7795,14 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
   discardInstances(game, responder.consumedCards);
 
   if (definition.rules.staysInPlay && anyEffectLanded) {
-    movePersistentCard(match, pendingAction.actorSeatNumber, [targetSeatNumber], pendingAction.storedCard, definition);
+    movePersistentCard(
+      match,
+      pendingAction.actorSeatNumber,
+      [targetSeatNumber],
+      pendingAction.storedCard,
+      definition,
+      pendingAction.sourceZone ?? "hand"
+    );
   }
 }
 
@@ -7949,7 +8135,14 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
   discardInstances(game, responder.consumedCards);
 
   if (definition.rules.staysInPlay && !resisted) {
-    movePersistentCard(match, pendingAction.actorSeatNumber, [targetSeatNumber], pendingAction.storedCard, definition);
+    movePersistentCard(
+      match,
+      pendingAction.actorSeatNumber,
+      [targetSeatNumber],
+      pendingAction.storedCard,
+      definition,
+      pendingAction.sourceZone ?? "hand"
+    );
   }
 }
 
@@ -8776,6 +8969,8 @@ function resolvePendingTurnContinuation(
     resolveAbundanceTurnEnd(match, seatNumber);
     resolveTimedPotionTurnEnd(match, seatNumber);
     resolveTotalPowerOverrideTurnEnd(match, seatNumber);
+    resolveTemporaryExpulsionTurnEnd(match, seatNumber);
+    resolveInvisibilityTurnEnd(match, seatNumber);
     startNextTurn(match, seatNumber);
     refreshSeatSummaries(match);
     return;
@@ -9249,7 +9444,8 @@ export function resolvePendingBoardResetKeep(match: StoredMatchState, userId: st
           pendingAction.actorSeatNumber,
           [...pendingAction.targetSeatNumbers],
           pendingAction.storedCard,
-          definition
+          definition,
+          pendingAction.sourceZone ?? "hand"
         );
       }
     } else {
@@ -9509,10 +9705,6 @@ export function resolvePendingCurseRelease(
   }
 
   if (pendingCurseRelease == null && statusInstanceId != null && choice === "accept") {
-    if (game.currentTurnSeatNumber !== seat.seatNumber) {
-      throw new Error("A curse can only be removed on your turn");
-    }
-
     const seatState = getStoredSeat(game, seat.seatNumber);
     const releasableStatus = seatState.statuses.find((status) => status.instanceId === statusInstanceId);
     if (releasableStatus == null) {
@@ -9520,14 +9712,13 @@ export function resolvePendingCurseRelease(
     }
 
     const releaseDefinition = requireDefinition(releasableStatus.cardId);
-    const releaseCardCount = Math.max(1, releaseDefinition.defenseBand?.annulationCardsRequired ?? 1);
-    if (
-      releaseDefinition.category.code !== "SO" ||
-      !releaseDefinition.rules.staysInPlay ||
-      releaseDefinition.defenseBand?.annulationAllowed !== true ||
-      releaseCardCount <= 0
-    ) {
+    const releaseCardCount = getAnnulationReleaseCardCount(releaseDefinition);
+    if (!isAnnulationReleasableStatus(releaseDefinition) || releaseCardCount <= 0) {
       throw new Error("This status cannot be removed with Annulation");
+    }
+
+    if (game.currentTurnSeatNumber !== seat.seatNumber) {
+      throw new Error("A curse can only be removed on your turn");
     }
 
     game.pendingCurseRelease = {
@@ -9569,6 +9760,18 @@ export function resolvePendingCurseRelease(
 
   const [removedStatus] = seatState.statuses.splice(removedStatusIndex, 1);
   const consumedAnnulations = consumeHandCardsById(seatState.hand, pendingCurseRelease.releaseCardId, pendingCurseRelease.releaseCardCount);
+  const releaseBoxId = randomUUID();
+  pushGameEvent(match, {
+    id: randomUUID(),
+    boxId: releaseBoxId,
+    type: "cards_discarded",
+    createdAt: new Date().toISOString(),
+    seatNumber: seat.seatNumber,
+    cards: [
+      ...consumedAnnulations.map((card) => buildCardView(card, requireDefinition(card.cardId), "hand", false)),
+      buildCardView({ instanceId: removedStatus.instanceId, cardId: removedStatus.cardId }, requireDefinition(removedStatus.cardId), "status", false)
+    ]
+  });
   discardInstances(game, [
     ...consumedAnnulations,
     { instanceId: removedStatus.instanceId, cardId: removedStatus.cardId }
@@ -9577,9 +9780,14 @@ export function resolvePendingCurseRelease(
     match,
     `${seat.displayName} discarded ${pendingCurseRelease.releaseCardCount} ${requireDefinition(pendingCurseRelease.releaseCardId).name} to remove ${requireDefinition(pendingCurseRelease.sourceCardId).name}.`
   );
-  appendServerDebugLog(match, "curse", `Seat ${seat.seatNumber} removed ${requireDefinition(pendingCurseRelease.sourceCardId).name} and ends the turn`);
+  const removedDefinition = requireDefinition(pendingCurseRelease.sourceCardId);
+  appendServerDebugLog(
+    match,
+    "curse",
+    `Seat ${seat.seatNumber} removed ${removedDefinition.name} and ends the turn`
+  );
   game.pendingCurseRelease = undefined;
-  finalizeResolvedAction(match, seat.seatNumber);
+  finalizeResolvedAction(match, seat.seatNumber, releaseBoxId);
 }
 
 function resolveRemovedCardPlay(
@@ -9603,6 +9811,10 @@ function resolveRemovedCardPlay(
 
   const actorSeat = getPublicSeat(match, actorSeatNumber);
   const activeExtraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  const lapidationForcedTargetSeatNumbers =
+    request.mode === "active" && forcedFollowUp == null
+      ? getLapidationForcedTargetSeatNumbers(match, actorSeatNumber, definition)
+      : undefined;
   const forceAllOpponents =
     request.mode === "active"
     && activeExtraPlayMode?.forceAllOpponents === true
@@ -9612,7 +9824,7 @@ function resolveRemovedCardPlay(
     : forcedFollowUp != null
       ? [forcedFollowUp.targetSeatNumber]
       : forceAllOpponents
-        ? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
+        ? lapidationForcedTargetSeatNumbers ?? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
         : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const effectiveTargetSeatNumbers =
     request.mode === "active" && (definition.rules.targets === "all_opponents" || forceAllOpponents)
@@ -9626,6 +9838,17 @@ function resolveRemovedCardPlay(
     && request.targetSeatNumber !== forcedFollowUp.targetSeatNumber
   ) {
     invalidReason = "Colère du magicien follow-up must target the paralyzed opponent";
+  } else if (
+    request.mode === "active"
+    && definition.category.code === "AD"
+    && forcedFollowUp == null
+    && lapidationForcedTargetSeatNumbers != null
+    && (
+      lapidationForcedTargetSeatNumbers.length === 0
+      || !targetSeatNumbers.some((seatNumber) => lapidationForcedTargetSeatNumbers.includes(seatNumber))
+    )
+  ) {
+    invalidReason = "Lapidation requires AD cards to target the cursed opponent";
   } else if (
     request.mode === "active"
     && definition.rules.targets === "single_opponent"
@@ -10209,13 +10432,15 @@ function validateActionRequestBeforeHandRemoval(
   }
 
   const activeExtraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  const lapidationForcedTargetSeatNumbers =
+    forcedFollowUp == null ? getLapidationForcedTargetSeatNumbers(match, actorSeatNumber, definition) : undefined;
   const forceAllOpponents =
     activeExtraPlayMode?.forceAllOpponents === true
     && (activeExtraPlayMode.allowedCategories === "any" || activeExtraPlayMode.allowedCategories.includes(definition.category.code));
   const targetSeatNumbers = forcedFollowUp != null
     ? [forcedFollowUp.targetSeatNumber]
     : forceAllOpponents
-      ? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
+      ? lapidationForcedTargetSeatNumbers ?? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
       : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const effectiveTargetSeatNumbers =
     definition.rules.targets === "all_opponents" || forceAllOpponents
@@ -10238,13 +10463,14 @@ function validateActionRequestBeforeHandRemoval(
     throw new Error("Original target is no longer alive");
   }
 
-  const lapidationTargetSeatNumbers = nextLivingOpponentSeatNumbers(game, actorSeatNumber)
-    .filter((seatNumber) => getStoredSeat(game, seatNumber).statuses.some((status) => status.cardId === "lapidation"));
   if (
     definition.category.code === "AD"
     && forcedFollowUp == null
-    && lapidationTargetSeatNumbers.length > 0
-    && !targetSeatNumbers.some((seatNumber) => lapidationTargetSeatNumbers.includes(seatNumber))
+    && lapidationForcedTargetSeatNumbers != null
+    && (
+      lapidationForcedTargetSeatNumbers.length === 0
+      || !targetSeatNumbers.some((seatNumber) => lapidationForcedTargetSeatNumbers.includes(seatNumber))
+    )
   ) {
     throw new Error("Lapidation requires AD cards to target the cursed opponent");
   }

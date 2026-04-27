@@ -432,8 +432,33 @@ function isDevDrawSeparatorValue(value: string): boolean {
 
 function getEnabledDevDrawGroups(match: MatchState) {
   return DEV_DRAW_GROUPS.filter((group) =>
-    group.key === "base" || group.key === "communion" || match.enabledExpansions[group.key]
+    group.key === "base" || match.enabledExpansions[group.key]
   );
+}
+
+function getLapidationTargetSeatNumbers(match: MatchState, localSeatNumber: number, card: CardView | undefined): number[] | undefined {
+  if (card?.categoryCode !== "AD") {
+    return undefined;
+  }
+
+  const markedSeats = match.seats.filter((seat) =>
+    seat.isAlive !== false && (seat.statuses ?? []).some((status) => status.cardId === "lapidation")
+  );
+  if (markedSeats.length === 0) {
+    return undefined;
+  }
+
+  return markedSeats
+    .filter((seat) =>
+      seat.seatNumber !== localSeatNumber
+      && !(seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")
+      && !(seat.statuses ?? []).some((card) =>
+        card.cardId === "potion-dinvincibilite"
+        || card.cardId === "expulsion-temporaire"
+        || card.cardId === "invisibilite"
+      )
+    )
+    .map((seat) => seat.seatNumber);
 }
 
 function delay(ms: number): Promise<void> {
@@ -2279,9 +2304,12 @@ function renderTableScene(
   const responseSlot: RectGeometry | null = isLocalResponder
     ? { x: 538, y: centerSlotTopY - 16, width: 140, height: centerSlotHeight }
     : null;
+  const visibleResponseSlot: RectGeometry | null = responseSlot
+    ?? (centerResponseCards.length > 0 ? { x: 538, y: centerSlotTopY - 16, width: 140, height: centerSlotHeight } : null);
   const draggedCard = playerSeat?.hand?.find((card) =>
     card.instanceId === (interactionState.arrowDrag?.cardInstanceId ?? interactionState.draggingCardInstanceId)
   );
+  const lapidationTargetSeatNumbers = getLapidationTargetSeatNumbers(match, playerSeatNumber, draggedCard);
   const activeObjectArrowCard = interactionState.arrowDrag?.source === "object"
     ? playerSeat?.objects?.find((card) => card.instanceId === interactionState.arrowDrag?.cardInstanceId)
     : undefined;
@@ -2388,7 +2416,14 @@ function renderTableScene(
       width: seatWidth,
       height: seatHeight
     });
-      const targetable = isSeatTargetable(draggedCard, seat, playerSeatNumber, undefined, viergeReplayCard ?? undefined)
+      const targetable = isSeatTargetable(
+        draggedCard,
+        seat,
+        playerSeatNumber,
+        undefined,
+        viergeReplayCard ?? undefined,
+        lapidationTargetSeatNumbers
+      )
         || (
           isAttackStaffObjectCard(activeObjectArrowCard)
           && activeObjectArrowCard.usedThisTurn !== true
@@ -2397,7 +2432,11 @@ function renderTableScene(
           && seat.seatNumber !== playerSeatNumber
           && seat.isAlive !== false
           && !(seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")
-          && !(seat.statuses ?? []).some((card) => card.cardId === "potion-dinvincibilite")
+          && !(seat.statuses ?? []).some((card) =>
+            card.cardId === "potion-dinvincibilite"
+            || card.cardId === "expulsion-temporaire"
+            || card.cardId === "invisibilite"
+          )
         );
     if (targetable) {
       seatTargets.push({
@@ -2461,6 +2500,39 @@ function renderTableScene(
   if (!spectatorMode && playerSeat != null) {
     seatCenters.set(playerSeat.seatNumber, { x: STAGE_WIDTH / 2, y: 790 });
     seatRects.set(playerSeat.seatNumber, handArea);
+    const localSelfTargetable = isSeatTargetable(
+      draggedCard,
+      playerSeat,
+      playerSeatNumber,
+      undefined,
+      viergeReplayCard ?? undefined,
+      lapidationTargetSeatNumbers
+    );
+    if (localSelfTargetable) {
+      seatTargets.push({
+        seatNumber: playerSeat.seatNumber,
+        x: handArea.x,
+        y: handArea.y,
+        width: handArea.width,
+        height: handArea.height,
+        centerX: STAGE_WIDTH / 2,
+        centerY: handArea.y + handArea.height / 2
+      });
+      const localSelfHovered = interactionState.arrowDrag?.nearestSeatNumber === playerSeat.seatNumber
+        || (
+          interactionState.dragHoverTarget?.kind === "seat"
+          && interactionState.dragHoverTarget.seatNumber === playerSeat.seatNumber
+        );
+      scene.addChild(createRect(
+        handArea.x - 7,
+        handArea.y - 7,
+        handArea.width + 14,
+        handArea.height + 14,
+        "#d23a3a",
+        localSelfHovered ? 0.26 : 0.12,
+        38
+      ));
+    }
     const localObjectRow = renderObjectRow(
       scene,
       playerSeat,
@@ -2615,13 +2687,13 @@ function renderTableScene(
     }
   }
 
-  if (responseSlot != null) {
-    scene.addChild(createRect(responseSlot.x, responseSlot.y, responseSlot.width, responseSlot.height, "#102114", 0.92, 28));
-    if (interactionState.dragHoverTarget?.kind === "response-slot") {
+  if (visibleResponseSlot != null) {
+    scene.addChild(createRect(visibleResponseSlot.x, visibleResponseSlot.y, visibleResponseSlot.width, visibleResponseSlot.height, "#102114", 0.92, 28));
+    if (responseSlot != null && interactionState.dragHoverTarget?.kind === "response-slot") {
       scene.addChild(createRect(responseSlot.x - 4, responseSlot.y - 4, responseSlot.width + 8, responseSlot.height + 8, "#8ac8ff", 0.26, 32));
     }
     const visibleResponseCards = responseCards.slice(-3);
-    if (visibleResponseCards.length === 0) {
+    if (responseSlot != null && visibleResponseCards.length === 0) {
       scene.addChild(createLabel(
         t(language, "table.dropDefense"),
         responseSlot.x + responseSlot.width / 2,
@@ -2642,8 +2714,8 @@ function renderTableScene(
     visibleResponseCards.forEach((card, index) => {
       scene.addChild(createCenterCardFace(
         card,
-        responseSlot.x + responseSlot.width / 2,
-        responseSlot.y + responseSlot.height / 2 + centerSlotCardCenterOffsetY - (visibleResponseCards.length - 1 - index) * 4,
+        visibleResponseSlot.x + visibleResponseSlot.width / 2,
+        visibleResponseSlot.y + visibleResponseSlot.height / 2 + centerSlotCardCenterOffsetY - (visibleResponseCards.length - 1 - index) * 4,
         118,
         165,
         0,
@@ -2654,8 +2726,8 @@ function renderTableScene(
       inspectTargets.push({
         card,
         group: "response",
-        x: responseSlot.x + responseSlot.width / 2 - 59,
-        y: responseSlot.y + responseSlot.height / 2 + centerSlotCardCenterOffsetY - (visibleResponseCards.length - 1 - index) * 4 - 82.5,
+        x: visibleResponseSlot.x + visibleResponseSlot.width / 2 - 59,
+        y: visibleResponseSlot.y + visibleResponseSlot.height / 2 + centerSlotCardCenterOffsetY - (visibleResponseCards.length - 1 - index) * 4 - 82.5,
         width: 118,
         height: 165
       });
@@ -2889,8 +2961,16 @@ function renderTableScene(
       const nearestSeat = seatTargets.find((target) => target.seatNumber === interactionState.arrowDrag?.nearestSeatNumber);
       const nearestObject = objectTargets.find((target) => target.objectInstanceId === interactionState.arrowDrag?.nearestObjectInstanceId);
       const nearestObjectCenter = nearestObject == null ? null : getRectCenter(nearestObject);
-      const tipX = nearestObjectCenter?.x ?? nearestSeat?.centerX ?? interactionState.arrowDrag.pointerX;
-      const tipY = nearestObjectCenter?.y ?? nearestSeat?.centerY ?? interactionState.arrowDrag.pointerY;
+      const arrowOverDiscard = interactionState.arrowDrag.source === "hand" && pointInRect(
+        {
+          x: interactionState.arrowDrag.pointerX,
+          y: interactionState.arrowDrag.pointerY
+        },
+        discardZone
+      );
+      const discardCenter = arrowOverDiscard ? getRectCenter(discardZone) : null;
+      const tipX = discardCenter?.x ?? nearestObjectCenter?.x ?? nearestSeat?.centerX ?? interactionState.arrowDrag.pointerX;
+      const tipY = discardCenter?.y ?? nearestObjectCenter?.y ?? nearestSeat?.centerY ?? interactionState.arrowDrag.pointerY;
       const originX = interactionState.arrowDrag.source === "hand"
         ? STAGE_WIDTH / 2
         : interactionState.arrowDrag.originX;
@@ -2902,8 +2982,8 @@ function renderTableScene(
         originY,
         tipX,
         tipY,
-        nearestObject != null || nearestSeat != null ? "#d23a3a" : "#b45d5d",
-        nearestObject != null || nearestSeat != null ? 12 : 8,
+        nearestObject != null || nearestSeat != null || discardCenter != null ? "#d23a3a" : "#b45d5d",
+        nearestObject != null || nearestSeat != null || discardCenter != null ? 12 : 8,
         nearestObject == null
       );
       scene.addChild(arrow);
@@ -3487,7 +3567,11 @@ function buildOverlayMarkup(
       : `
         <div class="pixi-modal-backdrop">
           <section class="modal-card pixi-annulation-choice__card" data-pixi-modal-card="true">
-            <h2>${escapeHtml(language === "fr" ? "Retirer la malediction" : "Remove curse")}</h2>
+            <h2>${escapeHtml(
+              confirmingCurseReleaseCard.cardId === "lapidation"
+                ? confirmingCurseReleaseCard.name
+                : language === "fr" ? "Retirer la malediction" : "Remove curse"
+            )}</h2>
             <p>${escapeHtml(language === "fr"
               ? `Defausser ${confirmingCurseReleaseCount} ${confirmingCurseReleaseCount === 1 ? "Annulation" : "Annulations"} pour retirer ${confirmingCurseReleaseCard.name}. Cela utilise votre action du tour.`
               : `Discard ${confirmingCurseReleaseCount} ${confirmingCurseReleaseCount === 1 ? "Annulation" : "Annulations"} to remove ${confirmingCurseReleaseCard.name}. This uses your turn action.`)}</p>
@@ -5874,7 +5958,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       "info",
       900,
       runId,
-      { seatNumber: event.seatNumber, showBanner: false }
+      { seatNumber: event.seatNumber, showBanner: event.responseChoice !== "pass" }
     );
 
     if (event.responseChoice !== "pass" && event.seatNumber != null) {
@@ -5884,6 +5968,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const discardTarget = getPlaybackDiscardTarget() ?? responseCenter;
       const responseCards = getResponsePlaybackCards(event);
       const responseCard = responseCards.at(-1) ?? null;
+      if (responseCards.length > 0) {
+        centerResponseCards = responseCards;
+      }
       if (responseCard != null) {
         seatResponseThumbnailTurnSeatNumber = activeActionVisual?.actorSeatNumber
           ?? seatResponseThumbnailTurnSeatNumber
@@ -6071,6 +6158,45 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       timeScale: replaySpeedMultiplier
     });
     return waitForReplayMs(250, runId);
+  };
+
+  const replayCardsDiscardedPresentation = async (
+    event: Extract<GameEvent, { type: "cards_discarded" }>,
+    runId: number
+  ): Promise<boolean> => {
+    const discardTarget = getPlaybackDiscardTarget();
+    if (discardTarget == null || event.cards.length === 0) {
+      return waitForReplayMs(300, runId);
+    }
+
+    const discardRect = currentGeometry?.discardZone ?? {
+      x: discardTarget.x - 1,
+      y: discardTarget.y - 1,
+      width: 2,
+      height: 2
+    };
+    const start = getSeatEdgePointTowardRect(event.seatNumber, discardRect) ?? getSeatCenterPoint(event.seatNumber);
+    if (start == null) {
+      return waitForReplayMs(300, runId);
+    }
+
+    const flights = event.cards.map((card, index) => {
+      const centeredOffset = index - (event.cards.length - 1) / 2;
+      return addCardFlight(card, start, {
+        x: discardTarget.x + centeredOffset * 18,
+        y: discardTarget.y - Math.abs(centeredOffset) * 8
+      }, runId, {
+        durationMs: 520 + index * 80,
+        width: 92,
+        height: 128,
+        arcHeight: 64,
+        rotationFrom: -0.08,
+        rotationTo: 0.06
+      });
+    });
+
+    const completed = await Promise.all(flights);
+    return completed.every(Boolean);
   };
 
   const replayTurnStartPresentation = async (event: Extract<GameEvent, { type: "turn_start" }>, runId: number): Promise<boolean> => {
@@ -6284,6 +6410,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
 
       if (event.type === "seat_snapshot") {
+        continue;
+      }
+
+      if (event.type === "cards_discarded") {
+        const completed = await replayCardsDiscardedPresentation(event, runId);
+        if (!completed) {
+          return;
+        }
         continue;
       }
 
@@ -6525,6 +6659,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       event.type === "action_start" ||
       event.type === "dealer_message" ||
       event.type === "seat_snapshot" ||
+      event.type === "cards_discarded" ||
       event.type === "turn_start" ||
       event.type === "response_choice" ||
       event.type === "resistance_start" ||
@@ -6562,18 +6697,19 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   };
 
   const getCurseReleaseAnnulationCount = (card: CardView): number =>
-    Math.max(1, card.defenseBand?.annulationCardsRequired ?? 1);
+    card.cardId === "lapidation" ? 1 : Math.max(1, card.defenseBand?.annulationCardsRequired ?? 1);
 
   const canOfferCurseRelease = (card: CardView): boolean => {
     const localSeat = getLocalSeat(match, localSeatNumber);
+    const isLapidation = card.cardId === "lapidation";
     if (
       match.status !== "in_progress"
       || match.game == null
       || localSeat == null
-      || match.game.currentTurnSeatNumber !== localSeatNumber
       || card.zone !== "status"
-      || card.categoryCode !== "SO"
-      || card.defenseBand?.annulationAllowed !== true
+      || match.game.currentTurnSeatNumber !== localSeatNumber
+      || (!isLapidation && card.categoryCode !== "SO")
+      || (!isLapidation && card.defenseBand?.annulationAllowed !== true)
     ) {
       return false;
     }
@@ -6812,7 +6948,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         originY: STAGE_HEIGHT + 44,
         pointerX: point.x,
         pointerY: point.y,
-        nearestSeatNumber: resolveArrowNearestSeatNumber(point),
+        nearestSeatNumber: resolveArrowNearestSeatNumber(point, layout.card),
         nearestObjectInstanceId: arrowCanTargetObjects ? resolveArrowNearestObjectInstanceId(point) : null
       };
       interactionState.draggingCardInstanceId = "";
@@ -6885,9 +7021,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     return null;
   };
 
-  const resolveArrowNearestSeatNumber = (point: StagePoint): number | null => {
+  const resolveArrowNearestSeatNumber = (point: StagePoint, card?: CardView): number | null => {
     if (currentGeometry == null) {
       return null;
+    }
+
+    const lapidationTargetSeatNumbers = getLapidationTargetSeatNumbers(match, localSeatNumber, card);
+    if (lapidationTargetSeatNumbers?.length === 1) {
+      return lapidationTargetSeatNumbers[0] ?? null;
     }
 
     let nearestSeatNumber: number | null = null;
@@ -8179,11 +8320,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     if (interactionState.arrowDrag != null) {
       interactionState.arrowDrag.pointerX = point.x;
       interactionState.arrowDrag.pointerY = point.y;
-      interactionState.arrowDrag.nearestSeatNumber = resolveArrowNearestSeatNumber(point);
+      const arrowCard = getLocalHand().find((card) => card.instanceId === interactionState.arrowDrag?.cardInstanceId);
+      interactionState.arrowDrag.nearestSeatNumber = resolveArrowNearestSeatNumber(point, arrowCard);
       if (interactionState.arrowDrag.source === "object") {
         interactionState.arrowDrag.nearestObjectInstanceId = null;
       } else {
-        const arrowCard = getLocalHand().find((card) => card.instanceId === interactionState.arrowDrag?.cardInstanceId);
         interactionState.arrowDrag.nearestObjectInstanceId = arrowCard?.cardId === "depouillement"
           ? null
           : resolveArrowNearestObjectInstanceId(point);
@@ -8305,7 +8446,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         originY: inspectTarget.y + inspectTarget.height / 2,
         pointerX: point.x,
         pointerY: point.y,
-        nearestSeatNumber: resolveArrowNearestSeatNumber(point),
+        nearestSeatNumber: resolveArrowNearestSeatNumber(point, inspectTarget.card),
         nearestObjectInstanceId: null
       };
       interactionState.draggingCardInstanceId = "";
@@ -8361,6 +8502,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         redraw();
         return;
       }
+      if (
+        currentGeometry != null
+        && canDiscardCard(match, localSeatNumber)
+        && pointInRect(point, currentGeometry.discardZone)
+      ) {
+        clearInteractionState();
+        confirmingDiscardCardInstanceId = cardInstanceId;
+        redraw();
+        return;
+      }
       if (nearestObjectInstanceId != null) {
         if (draggedCard != null && !draggedCard.canPlay) {
           showBlockedCardMessage(draggedCard);
@@ -8384,17 +8535,6 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           mode: "active",
           targetSeatNumber: nearestSeatNumber
         });
-        return;
-      }
-
-      if (
-        currentGeometry != null
-        && canDiscardCard(match, localSeatNumber)
-        && pointInRect(point, currentGeometry.discardZone)
-      ) {
-        clearInteractionState();
-        confirmingDiscardCardInstanceId = cardInstanceId;
-        redraw();
         return;
       }
 

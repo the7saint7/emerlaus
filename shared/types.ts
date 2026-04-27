@@ -182,6 +182,15 @@ export interface SeatSnapshotEvent {
   seat: SeatState;
 }
 
+export interface CardsDiscardedEvent {
+  id: string;
+  boxId: string;
+  type: "cards_discarded";
+  createdAt: string;
+  seatNumber: number;
+  cards: CardView[];
+}
+
 export interface TurnStartEvent {
   id: string;
   boxId: string;
@@ -190,7 +199,7 @@ export interface TurnStartEvent {
   seatNumber: number;
 }
 
-export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent | TurnStartEvent;
+export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent | CardsDiscardedEvent | TurnStartEvent;
 
 export interface DebugLogEntry {
   id: string;

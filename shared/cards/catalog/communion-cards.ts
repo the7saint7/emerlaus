@@ -900,7 +900,7 @@ export const communionCardDefinitions = [
         targets: "self_or_single_opponent",
         requiresDefenseWindow: true,
         requiresResistanceCheck: false,
-        staysInPlay: false,
+        staysInPlay: true,
         effects: [
           {
             type: "skip_turn",

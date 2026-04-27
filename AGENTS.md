@@ -166,6 +166,7 @@ These are useful when reproducing gameplay bugs. Check them before changing game
 
 - Use strict TypeScript patterns already present in the repo.
 - Keep client/server/shared contracts aligned; many failures come from changing one side only.
+- Confirm card-specific defense rules with the user before changing whether a card can be canceled, mirrored, resisted, or otherwise answered unless the current card data/rules docs explicitly state the behavior.
 - Prefer existing helpers in `shared/`, `client/src/gameplay/interactionRules.ts`, and `server/services/gameEngine.ts` over duplicating rule logic.
 - Treat `client/src/pixi/pixiApp.ts` as high-risk because it mixes rendering, input handling, synchronization, overlays, replay, and dev UI.
 - Treat `server/services/gameEngine.ts` as high-risk because it encodes card behavior, turn flow, pending actions, damage, defense, statuses, deaths, and bot decisions.
