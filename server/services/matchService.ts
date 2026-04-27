@@ -23,6 +23,7 @@ import type {
   PendingSacrificeChoiceRequest,
   PendingCurseReleaseRequest,
   PendingActionResponseRequest,
+  FireObjectRequest,
   PlayCardRequest,
   SeatState,
   SpectatorState,
@@ -40,6 +41,7 @@ import {
   passForcedFollowUp,
   resolvePendingPublicHandReveal,
   passTurnWithoutPlaying,
+  fireObjectAtTarget,
   playCardFromHand,
   resolvePendingBoardResetKeep,
   resolvePendingDeathSearch,
@@ -58,6 +60,82 @@ import { notifyMatchUpdated } from "../store/sseStore.js";
 import { canUseDevCardPickerFromDiscordRole } from "./discordOAuth.js";
 
 const botTurnTimers = new Map<string, NodeJS.Timeout>();
+
+function getAttackStaffLoadCategory(cardId: string): "AD" | "AM" {
+  return cardId === "baton-dattaque" ? "AD" : "AM";
+}
+
+function getAnnulationReleaseCardCount(cardId: string): number {
+  if (cardId === "lapidation") {
+    return 1;
+  }
+
+  return Math.max(1, baseCardDefinitionById[cardId]?.defenseBand?.annulationCardsRequired ?? 1);
+}
+
+function canReleaseStatusWithAnnulation(cardId: string): boolean {
+  const definition = baseCardDefinitionById[cardId];
+  return (
+    definition?.id === "lapidation"
+    || (
+      definition?.category.code === "SO"
+      && definition.rules.staysInPlay
+      && definition.defenseBand?.annulationAllowed === true
+    )
+  );
+}
+
+function findBotAnnulationReleaseStatus(match: StoredMatchState, seatNumber: number): string | undefined {
+  const seatState = match.internalGame?.seatStates.find((candidate) => candidate.seatNumber === seatNumber);
+  if (seatState == null) {
+    return undefined;
+  }
+
+  const annulationCount = seatState.hand.filter((card) => card.cardId === "annulation").length;
+  return seatState.statuses.find((status) =>
+    canReleaseStatusWithAnnulation(status.cardId)
+    && annulationCount >= getAnnulationReleaseCardCount(status.cardId)
+  )?.instanceId;
+}
+
+function getPowerObjectPriority(cardId: string): number {
+  switch (cardId) {
+    case "anneau-de-puissance-3":
+      return 103;
+    case "anneau-de-puissance-2":
+      return 102;
+    case "anneau-de-puissance-1":
+      return 101;
+    case "ceinture-de-force-3":
+      return 83;
+    case "ceinture-de-force-2":
+      return 82;
+    default:
+      return 0;
+  }
+}
+
+function pickBotObjectChoiceId(
+  objects: Array<{ instanceId: string; cardId: string }>
+): string | undefined {
+  return objects
+    .slice()
+    .sort((left, right) => getPowerObjectPriority(right.cardId) - getPowerObjectPriority(left.cardId))
+    [0]?.instanceId;
+}
+
+function getBotObjectSwapValue(objects: Array<{ cardId: string; attachedCards?: unknown[] }>): number {
+  return objects.reduce((total, objectCard) => {
+    const priority = getPowerObjectPriority(objectCard.cardId);
+    if (priority > 0) {
+      return total + priority;
+    }
+    if (objectCard.cardId === "baton-dattaque" || objectCard.cardId === "baton-dattaque-massive") {
+      return total + 70 + (objectCard.attachedCards?.length ?? 0) * 8;
+    }
+    return total + 10;
+  }, 0);
+}
 
 function getBotTurnTimerKey(instanceId: string): string {
   return `${instanceId}:turn`;
@@ -414,20 +492,44 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
             try {
               if (latestChoice.mode === "mass_attack_staff_turn") {
                 const staff = latestOwner.objects.find((card) => card.instanceId === latestChoice.sourceCard.instanceId);
-                const amCards = latestOwner.hand.filter((card) => baseCardDefinitionById[card.cardId]?.category.code === "AM");
-                const shouldLoad = amCards.length > 0 && (staff?.attachedCards?.length ?? 0) < 2 && Math.random() < 0.45;
+                const loadCategory = getAttackStaffLoadCategory(latestChoice.sourceCard.cardId);
+                const loadableCards = latestOwner.hand.filter((card) => baseCardDefinitionById[card.cardId]?.category.code === loadCategory);
+                const shouldLoad = loadableCards.length > 0 && (staff?.attachedCards?.length ?? 0) < 2 && Math.random() < 0.45;
                 const choiceId = shouldLoad
-                  ? amCards[Math.floor(Math.random() * amCards.length)]?.instanceId
+                  ? loadableCards[Math.floor(Math.random() * loadableCards.length)]?.instanceId
                   : latestChoice.sourceCard.instanceId;
                 if (choiceId != null) {
                   selectPendingObject(latestMatch, latestChooser.userId, choiceId);
                   saveMatch(latestMatch);
                   notifyMatchUpdated(instanceId);
                 }
+              } else if (latestChoice.mode === "choice_hp_or_object") {
+                const chooserPublicSeat = latestMatch.seats.find((seat) => seat.seatNumber === latestChoice.chooserSeatNumber);
+                const choiceId = (chooserPublicSeat?.hp ?? 0) > 25 ? "__choix_hp" : "__choix_object";
+                selectPendingObject(latestMatch, latestChooser.userId, choiceId);
+                saveMatch(latestMatch);
+                notifyMatchUpdated(instanceId);
+              } else if (latestChoice.mode === "choice_hp_or_redraw") {
+                const chooserPublicSeat = latestMatch.seats.find((seat) => seat.seatNumber === latestChoice.chooserSeatNumber);
+                const choiceId = (chooserPublicSeat?.hp ?? 0) > 25 ? "__decision_hp" : "__decision_redraw";
+                selectPendingObject(latestMatch, latestChooser.userId, choiceId);
+                saveMatch(latestMatch);
+                notifyMatchUpdated(instanceId);
+              } else if (latestChoice.mode === "choice_swap_hand_or_objects") {
+                const actorState = latestMatch.internalGame?.seatStates.find((seat) => seat.seatNumber === latestChoice.ownerSeatNumber);
+                const targetState = latestMatch.internalGame?.seatStates.find((seat) => seat.seatNumber === latestChoice.chooserSeatNumber);
+                const actorObjectValue = actorState == null ? 0 : getBotObjectSwapValue(actorState.objects);
+                const targetObjectValue = targetState == null ? 0 : getBotObjectSwapValue(targetState.objects);
+                const choiceId = actorObjectValue > 0 && actorObjectValue > targetObjectValue
+                  ? "__option_objects"
+                  : "__option_hand";
+                selectPendingObject(latestMatch, latestChooser.userId, choiceId);
+                saveMatch(latestMatch);
+                notifyMatchUpdated(instanceId);
               } else {
-                const object = latestOwner.objects[Math.floor(Math.random() * latestOwner.objects.length)];
-                if (object != null) {
-                  selectPendingObject(latestMatch, latestChooser.userId, object.instanceId);
+                const objectInstanceId = pickBotObjectChoiceId(latestOwner.objects);
+                if (objectInstanceId != null) {
+                  selectPendingObject(latestMatch, latestChooser.userId, objectInstanceId);
                   saveMatch(latestMatch);
                   notifyMatchUpdated(instanceId);
                 }
@@ -630,6 +732,15 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
 
     let attemptedBotCardName: string | undefined;
     try {
+      const releasableStatusInstanceId = findBotAnnulationReleaseStatus(latestMatch, latestCurrentSeat.seatNumber);
+      if (releasableStatusInstanceId != null) {
+        resolvePendingCurseRelease(latestMatch, latestCurrentSeat.userId, "accept", releasableStatusInstanceId);
+        saveMatch(latestMatch);
+        notifyMatchUpdated(instanceId);
+        scheduleBotTurnIfNeeded(instanceId);
+        return;
+      }
+
       const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
       if (botRequest != null) {
         const actorSeatState = latestMatch.internalGame?.seatStates.find(
@@ -893,6 +1004,20 @@ export function playMatchCard(instanceId: string, userId: string, request: PlayC
 
   clearBotTurnTimer(instanceId);
   playCardFromHand(match, userId, request);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function fireMatchObject(instanceId: string, userId: string, request: FireObjectRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+  requireNotSpectator(match, userId);
+
+  clearBotTurnTimer(instanceId);
+  fireObjectAtTarget(match, userId, request);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);

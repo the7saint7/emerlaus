@@ -13,6 +13,11 @@ import {
   puissanceCardDefinitions,
   puissanceDeckCardQuantities
 } from "./catalog/puissance-cards.js";
+import {
+  communionCardDefinitionById,
+  communionCardDefinitions,
+  communionDeckCardQuantities
+} from "./catalog/communion-cards.js";
 
 export {
   baseCardDefinitions,
@@ -20,17 +25,21 @@ export {
   abondanceCardDefinitions,
   abondanceDeckCardQuantities,
   puissanceCardDefinitions,
-  puissanceDeckCardQuantities
+  puissanceDeckCardQuantities,
+  communionCardDefinitions,
+  communionDeckCardQuantities
 };
 
 export const allCardDefinitions = [
   ...baseCardDefinitions,
   ...abondanceCardDefinitions,
-  ...puissanceCardDefinitions
+  ...puissanceCardDefinitions,
+  ...communionCardDefinitions
 ];
 
 export const baseCardDefinitionById = {
   ...baseOnlyCardDefinitionById,
   ...abondanceCardDefinitionById,
-  ...puissanceCardDefinitionById
+  ...puissanceCardDefinitionById,
+  ...communionCardDefinitionById
 };

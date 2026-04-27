@@ -4,6 +4,15 @@ function isAttackCard(card: CardView): boolean {
   return ["AD", "AM", "S", "E", "CO", "ST", "SO"].includes(card.categoryCode);
 }
 
+const RED_ARROW_SELF_TARGET_CARD_IDS = new Set([
+  "expulsion-temporaire",
+  "la-ceinture-qui-disparait"
+]);
+
+function cardUsesRedArrowSelfTargeting(card: CardView): boolean {
+  return RED_ARROW_SELF_TARGET_CARD_IDS.has(card.cardId);
+}
+
 export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?: CardView): CardView["targets"] {
   if (
     card.cardId === "vierge"
@@ -18,7 +27,12 @@ export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?
 
 export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boolean {
   const targets = getEffectiveInteractionTargets(card, viergeReplayCard);
-  return targets === "single_opponent" || targets === "target_object" || card.cardId === "depouillement";
+  return (
+    targets === "single_opponent"
+    || targets === "target_object"
+    || card.cardId === "depouillement"
+    || cardUsesRedArrowSelfTargeting(card)
+  );
 }
 
 export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView): boolean {
@@ -141,9 +155,16 @@ export function isSeatTargetable(
   seat: SeatState,
   localSeatNumber: number,
   forcedTargetSeatNumber?: number,
-  viergeReplayCard?: CardView
+  viergeReplayCard?: CardView,
+  lapidationTargetSeatNumbers?: number[]
 ): boolean {
-  if (selectedCard == null || seat.seatNumber === localSeatNumber || seat.isAlive === false) {
+  if (selectedCard == null || seat.isAlive === false) {
+    return false;
+  }
+
+  const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
+  const canTargetSelf = cardUsesRedArrowSelfTargeting(selectedCard);
+  if (seat.seatNumber === localSeatNumber && !canTargetSelf) {
     return false;
   }
 
@@ -151,11 +172,23 @@ export function isSeatTargetable(
     return false;
   }
 
+  if (
+    selectedCard.categoryCode === "AD"
+    && lapidationTargetSeatNumbers != null
+    && !lapidationTargetSeatNumbers.includes(seat.seatNumber)
+  ) {
+    return false;
+  }
+
   if ((seat.objects ?? []).some((card) => card.cardId === "sanctuaire-demmerlaus")) {
     return false;
   }
 
-  if ((seat.statuses ?? []).some((card) => card.cardId === "potion-dinvincibilite")) {
+  if ((seat.statuses ?? []).some((card) =>
+    card.cardId === "potion-dinvincibilite"
+    || card.cardId === "expulsion-temporaire"
+    || card.cardId === "invisibilite"
+  )) {
     return false;
   }
 
@@ -167,7 +200,6 @@ export function isSeatTargetable(
     return false;
   }
 
-  const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
   return (
     targets === "single_opponent"
     || targets === "self_or_single_opponent"
@@ -181,10 +213,23 @@ export function canLoadMassAttackStaff(
   ownerSeatNumber: number,
   localSeatNumber: number
 ): boolean {
-  void selectedCard;
-  void objectCard;
-  void ownerSeatNumber;
-  void localSeatNumber;
+  if (
+    selectedCard == null
+    || selectedCard.zone !== "hand"
+    || objectCard.zone !== "object"
+    || ownerSeatNumber !== localSeatNumber
+  ) {
+    return false;
+  }
+
+  if (objectCard.cardId === "baton-dattaque") {
+    return selectedCard.categoryCode === "AD";
+  }
+
+  if (objectCard.cardId === "baton-dattaque-massive") {
+    return selectedCard.categoryCode === "AM";
+  }
+
   return false;
 }
 

@@ -1,0 +1,20 @@
+{
+  "version": "2026.04.27-2123",
+  "releasedAt": "2026-04-27T21:23:15.601Z",
+  "en": {
+    "title": "Latest Update",
+    "items": [
+      "New expansion cards and gameplay fixes.",
+      "Improved card targeting and table animations.",
+      "More visible resolution steps for complex card effects."
+    ]
+  },
+  "fr": {
+    "title": "Derniere mise a jour",
+    "items": [
+      "Nouvelles cartes d'extension et corrections de jeu.",
+      "Ciblage des cartes et animations de table ameliores.",
+      "Etapes de resolution plus visibles pour les effets de cartes complexes."
+    ]
+  }
+}

@@ -42,7 +42,7 @@ Minimum hand size depends on deck size:
 
 - `100` cards: `5`
 - `200+` cards: `6`
-- `300` cards: `7`
+- `300+` cards: `7`
 
 At the end of a living player's turn, they refill their hand back to the minimum required hand size.
 

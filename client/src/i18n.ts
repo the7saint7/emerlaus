@@ -84,6 +84,7 @@ type TranslationKey =
   | "table.leaveMatch"
   | "table.cardReference"
   | "table.reportBug"
+  | "table.changelog"
   | "table.seatFx"
   | "table.currentTurn"
   | "table.thinking"
@@ -122,9 +123,11 @@ type TranslationKey =
   | "objectChoice.discardRingTitle"
   | "objectChoice.massAttackStaffTitle"
   | "objectChoice.massAttackStaffBody"
+  | "objectChoice.massAttackStaffBodyWithCategory"
   | "objectChoice.massAttackStaffWaitingBody"
   | "objectChoice.massAttackStaffFire"
   | "objectChoice.massAttackStaffCannotFire"
+  | "objectChoice.massAttackStaffNoLoadCards"
   | "objectChoice.massAttackStaffLoad"
   | "objectChoice.chooserWaiting"
   | "objectChoice.waitingBody"
@@ -150,6 +153,7 @@ type TranslationKey =
   | "reference.deckBase"
   | "reference.deckAbondance"
   | "reference.deckPuissance"
+  | "reference.deckCommunion"
   | "reference.empty"
   | "bugReport.title"
   | "bugReport.body"
@@ -159,6 +163,9 @@ type TranslationKey =
   | "bugReport.send"
   | "bugReport.sending"
   | "bugReport.cancel"
+  | "changelog.close"
+  | "changelog.version"
+  | "changelog.loading"
   | "bugInbox.title"
   | "bugInbox.subtitle"
   | "bugInbox.filterLabel"
@@ -344,7 +351,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.openSeat": "Open Seat",
     "lobby.seatAvailable": "Available for a player or a bot.",
     "lobby.expansions": "Expansion Decks",
-    "lobby.expansionsHint": "The host can toggle Abondance here. The other expansion decks remain disabled for now.",
+    "lobby.expansionsHint": "The host can toggle Abondance, Puissance, and Communion here. The other expansion decks remain disabled for now.",
     "lobby.expansionDisabled": "Disabled",
     "lobby.expansionEnabled": "Enabled",
     "lobby.expansionOff": "Off",
@@ -361,6 +368,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.leaveMatch": "Leave Match",
     "table.cardReference": "Card Guide",
     "table.reportBug": "Report Bug",
+    "table.changelog": "Changelog",
     "table.seatFx": "Seat FX",
     "table.currentTurn": "Current turn",
     "table.thinking": "Thinking",
@@ -406,11 +414,13 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "objectChoice.stealTitle": "Choose an object to steal",
     "objectChoice.discardRingTitle": "Choose a ring to discard",
     "objectChoice.massAttackStaffTitle": "Choose the staff action",
-    "objectChoice.massAttackStaffBody": "Fire Bâton d’attaque massive now, or load one AM card onto it as your card play for the turn.",
+    "objectChoice.massAttackStaffBody": "Fire the staff now, or load one compatible card onto it as your card play for the turn.",
+    "objectChoice.massAttackStaffBodyWithCategory": "Fire the staff now, or load one {category} card onto it as your card play for the turn.",
     "objectChoice.massAttackStaffWaitingBody": "Waiting for {chooserName} to choose whether to fire or load {ownerName}'s staff.",
     "objectChoice.massAttackStaffFire": "Fire the staff",
     "objectChoice.massAttackStaffCannotFire": "No valid targets to fire at right now.",
-    "objectChoice.massAttackStaffLoad": "Load an AM card",
+    "objectChoice.massAttackStaffNoLoadCards": "No compatible cards available to load.",
+    "objectChoice.massAttackStaffLoad": "Load a card",
     "objectChoice.chooserWaiting": "{chooserName} is choosing an object",
     "objectChoice.waitingBody": "Waiting for {chooserName} to choose one of {ownerName}'s objects.",
     "telepathy.inProgress": "Telepathy in progress",
@@ -435,6 +445,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.deckBase": "Base",
     "reference.deckAbondance": "Abondance",
     "reference.deckPuissance": "Puissance",
+    "reference.deckCommunion": "Communion",
     "reference.empty": "No cards match this search.",
     "bugReport.title": "Report A Bug",
     "bugReport.body": "Describe what happened. Session {shortId} will be attached automatically.",
@@ -444,6 +455,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugReport.send": "Send",
     "bugReport.sending": "Sending...",
     "bugReport.cancel": "Cancel",
+    "changelog.close": "Close",
+    "changelog.version": "Version {version}",
+    "changelog.loading": "Loading changelog...",
     "bugInbox.title": "Bug Reports",
     "bugInbox.subtitle": "Review saved player reports and update their status.",
     "bugInbox.filterLabel": "Filter",
@@ -618,7 +632,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.openSeat": "Siège libre",
     "lobby.seatAvailable": "Disponible pour un joueur ou un bot.",
     "lobby.expansions": "Extensions",
-    "lobby.expansionsHint": "L'hote peut activer Abondance ici. Les autres extensions restent desactivees pour le moment.",
+    "lobby.expansionsHint": "L'hote peut activer Abondance, Puissance et Communion ici. Les autres extensions restent desactivees pour le moment.",
     "lobby.expansionDisabled": "Desactivee",
     "lobby.expansionEnabled": "Activee",
     "lobby.expansionOff": "Inactive",
@@ -635,6 +649,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "table.leaveMatch": "Quitter la partie",
     "table.cardReference": "Guide des cartes",
     "table.reportBug": "Signaler un bug",
+    "table.changelog": "Changelog",
     "table.seatFx": "Effets siege",
     "table.currentTurn": "Tour actuel",
     "table.thinking": "Réfléchit",
@@ -680,11 +695,13 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "objectChoice.stealTitle": "Choisissez un objet à voler",
     "objectChoice.discardRingTitle": "Choisissez un anneau à défausser",
     "objectChoice.massAttackStaffTitle": "Choisissez l'action du bâton",
-    "objectChoice.massAttackStaffBody": "Utilisez Bâton d’attaque massive maintenant, ou chargez-y une carte AM comme votre carte jouée du tour.",
+    "objectChoice.massAttackStaffBody": "Utilisez le bâton maintenant, ou chargez-y une carte compatible comme votre carte jouée du tour.",
+    "objectChoice.massAttackStaffBodyWithCategory": "Utilisez le bâton maintenant, ou chargez-y une carte {category} comme votre carte jouée du tour.",
     "objectChoice.massAttackStaffWaitingBody": "En attente que {chooserName} choisisse d'utiliser ou de charger le bâton de {ownerName}.",
     "objectChoice.massAttackStaffFire": "Utiliser le bâton",
     "objectChoice.massAttackStaffCannotFire": "Aucune cible valide pour utiliser le bâton en ce moment.",
-    "objectChoice.massAttackStaffLoad": "Charger une carte AM",
+    "objectChoice.massAttackStaffNoLoadCards": "Aucune carte compatible à charger.",
+    "objectChoice.massAttackStaffLoad": "Charger une carte",
     "objectChoice.chooserWaiting": "{chooserName} choisit un objet",
     "objectChoice.waitingBody": "En attente que {chooserName} choisisse un des objets de {ownerName}.",
     "telepathy.inProgress": "Télépathie en cours",
@@ -709,6 +726,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.deckBase": "Base",
     "reference.deckAbondance": "Abondance",
     "reference.deckPuissance": "Puissance",
+    "reference.deckCommunion": "Communion",
     "reference.empty": "Aucune carte ne correspond a cette recherche.",
     "bugReport.title": "Signaler un bug",
     "bugReport.body": "Decrivez ce qui s'est passe. La session {shortId} sera jointe automatiquement.",
@@ -718,6 +736,9 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "bugReport.send": "Envoyer",
     "bugReport.sending": "Envoi...",
     "bugReport.cancel": "Annuler",
+    "changelog.close": "Fermer",
+    "changelog.version": "Version {version}",
+    "changelog.loading": "Chargement du changelog...",
     "bugInbox.title": "Signalements de bugs",
     "bugInbox.subtitle": "Consultez les signalements joueurs et mettez leur statut a jour.",
     "bugInbox.filterLabel": "Filtre",

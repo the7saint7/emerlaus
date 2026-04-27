@@ -79,6 +79,10 @@ export function buildEventLogEntries(match: MatchState, language: AppLanguage): 
       continue;
     }
 
+    if (event.type === "turn_start") {
+      continue;
+    }
+
     if (event.type === "action_start") {
       if (isMirrorReflectSummary(event.summary)) {
         continue;

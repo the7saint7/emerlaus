@@ -1,4 +1,5 @@
 import { defaultMatchExpansionSettings, type MatchState, type SeatState } from "./types.js";
+import { determineSetupHandSize } from "./gameSetupRules.js";
 
 function generateShortId(): string {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -71,8 +72,10 @@ export function assignHost(match: MatchState, userId?: string): void {
 }
 
 export function seedSkeletonStats(match: MatchState): void {
+  const handCount = determineSetupHandSize(match.enabledExpansions);
+
   for (const seat of match.seats) {
-    seat.handCount = 4;
+    seat.handCount = handCount;
     seat.hp = 50;
   }
 }

@@ -19,21 +19,25 @@ export interface SaveBaseDefenseBandMappingRequest {
   mapping: DefenseBandRules;
 }
 
-export type DevCardCatalogId = "base" | "abondance" | "puissance";
+export type DevCardCatalogId = "base" | "abondance" | "puissance" | "communion";
 
 export type RollScaleMode = "power" | "target_power" | "multiply_power" | "multiply_target_power";
 
 export type RollExpression =
   | { kind: "dice"; notation: string; scaleBy?: RollScaleMode; bonusPerPower?: number; powerBonus?: number }
-  | { kind: "dice_per_power"; notation: string; powerSource: "self" | "target"; powerBonus?: number }
+  | { kind: "dice_per_power"; notation: string; powerSource: "self" | "target" | "all_living_players"; powerBonus?: number }
   | { kind: "fixed"; amount: number; scaleBy?: RollScaleMode; bonusPerPower?: number; powerBonus?: number }
   | { kind: "current_hp_fraction"; numerator: number; denominator: number }
   | { kind: "sacrifice_amount"; multiplier?: number }
   | { kind: "total_active_players_times"; amount: number };
 
 export type CardEffect =
-  | { type: "damage"; amount: RollExpression; grantsHalfDamageOnResistance?: boolean }
+  | { type: "damage"; amount: RollExpression; grantsHalfDamageOnResistance?: boolean; targetOverride?: "all_opponents" }
   | { type: "heal"; amount: RollExpression; target: "self" | "all_opponents" }
+  | { type: "share_hp"; participants: "actor_and_target" }
+  | { type: "choice_hp_or_object"; hpLoss: number }
+  | { type: "choice_hp_or_redraw"; hpLoss: number }
+  | { type: "choice_swap_hand_or_objects" }
   | { type: "redraw_hand"; redrawCount?: number }
   | { type: "lifesteal"; amount: RollExpression; powerSource: "self" | "target" }
   | { type: "set_target_hp"; amount: RollExpression }
@@ -41,13 +45,13 @@ export type CardEffect =
   | { type: "remove_target_object"; mode: "chosen_by_attacker" | "all"; chance?: { notation: string; successTotals: number[] }; allowedSlots?: string[] }
   | { type: "steal_target_object"; mode: "chosen_by_attacker"; allowedSlots?: string[] }
   | { type: "modify_resistance"; amount: number; duration: "current_action" | "until_removed" }
-  | { type: "skip_turn"; target: "target"; durationTurns: number }
+  | { type: "skip_turn"; target: "target"; durationTurns: number; durationSource?: "actor_power" }
   | { type: "disable_riposte"; target: "target"; duration: "current_action" | "full_turn" }
   | { type: "paralyze_for_bonus_attack"; doubledDamageForForcedAttack: boolean }
   | { type: "play_extra_cards"; count: number; allowedCategories: "any" | CardCategoryCode[]; refillAtTurnEnd: boolean }
   | { type: "swap_bodies"; swapSeatOrder: boolean; swapHand: boolean; swapHp: boolean; swapObjects: boolean; swapStatuses: boolean }
   | { type: "board_reset"; keeperCards: number; attackerHpBonus: number; discardSelfToTalon: boolean; reshuffleAllOtherCards: boolean }
-  | { type: "grant_attack_immunity"; durationTurns: number; onlyAgainstAttacks: boolean; bonusHeal?: RollExpression }
+  | { type: "grant_attack_immunity"; durationTurns: number; durationSource?: "actor_power"; onlyAgainstAttacks: boolean; bonusHeal?: RollExpression }
   | { type: "power_modifier"; amount: number }
   | { type: "resurrection_ring"; reviveHp: number; redrawCards: number; keepOtherObjects: boolean }
   | { type: "absorb_damage"; amount: RollExpression; appliesTo: "all_hp_loss_attacks" | "physical_only" }

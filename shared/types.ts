@@ -95,6 +95,7 @@ export interface CardView {
   defenseBand: DefenseBandRules | null;
   attachedCardCount?: number;
   remainingTurnTriggers?: number;
+  usedThisTurn?: boolean;
   canPlay: boolean;
   disabledReason?: string;
   zone: "hand" | "object" | "status" | "discard";
@@ -125,6 +126,7 @@ export interface DiceRollPlaybackEvent {
   type: "dice_roll";
   createdAt: string;
   seatNumber?: number;
+  anchorCardInstanceId?: string;
   notation: string;
   total: number;
   values: number[];
@@ -180,7 +182,46 @@ export interface SeatSnapshotEvent {
   seat: SeatState;
 }
 
-export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent;
+export interface CardsDiscardedEvent {
+  id: string;
+  boxId: string;
+  type: "cards_discarded";
+  createdAt: string;
+  seatNumber: number;
+  cards: CardView[];
+}
+
+export interface TelekinesieSequenceEvent {
+  id: string;
+  boxId: string;
+  type: "telekinesie_sequence";
+  createdAt: string;
+  actorSeatNumber: number;
+  targetSeatNumber: number;
+  sourceCard: CardView;
+  revealedCards: CardView[];
+  projectedCards: CardView[];
+}
+
+export interface TelekinesieProjectCardEvent {
+  id: string;
+  boxId: string;
+  type: "telekinesie_project_card";
+  createdAt: string;
+  actorSeatNumber: number;
+  targetSeatNumber: number;
+  card: CardView;
+}
+
+export interface TurnStartEvent {
+  id: string;
+  boxId: string;
+  type: "turn_start";
+  createdAt: string;
+  seatNumber: number;
+}
+
+export type GameEvent = ActionStartEvent | DiceRollPlaybackEvent | CombatPresentationEvent | DealerMessageEvent | SeatSnapshotEvent | CardsDiscardedEvent | TelekinesieSequenceEvent | TelekinesieProjectCardEvent | TurnStartEvent;
 
 export interface DebugLogEntry {
   id: string;
@@ -225,7 +266,7 @@ export interface PendingObjectChoiceState {
   ownerSeatNumber: number;
   cardName: string;
   prompt: string;
-  mode?: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "mass_attack_staff_turn";
+  mode?: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "choice_hp_or_object" | "choice_hp_or_redraw" | "choice_swap_hand_or_objects" | "mass_attack_staff_turn";
   objectOptions: CardView[];
 }
 
@@ -478,6 +519,11 @@ export interface PlayCardRequest {
   mode: "active" | "inactive";
   targetSeatNumber?: number;
   targetObjectInstanceId?: string;
+}
+
+export interface FireObjectRequest {
+  objectInstanceId: string;
+  targetSeatNumber: number;
 }
 
 export interface PendingActionResponseRequest {

@@ -28,6 +28,7 @@ Use these from the repository root:
 - `npm start` serves the built Express app from `dist/server/server/index.js`.
 - `npm run preview` builds and runs `wrangler dev`.
 - `npm run deploy` builds and deploys with Wrangler.
+- `npm run release:prod` prepares a production release from `develop`, pushes `develop`, merges to `main`, writes release version metadata, and pushes `main` to trigger Railway.
 
 There is no dedicated test suite in `package.json` currently. Use `npm run typecheck` as the minimum verification after code changes, and run a build when changes affect bundling, assets, server output, or Cloudflare deployment.
 
@@ -141,6 +142,10 @@ Important paths:
 - `client/public/assets/cards/processed-manifest.json`
 - `docs/artifacts/card-bands/base/`
 
+External source data:
+
+- `C:\Users\Work\Desktop\Emerlaus_scraper\V2` contains extracted original cards, expansions, and card descriptions. Check this location when planning or importing new expansion data such as Communion.
+
 Related scripts:
 
 - `npm run import:base-cards`
@@ -162,12 +167,21 @@ These are useful when reproducing gameplay bugs. Check them before changing game
 
 - Use strict TypeScript patterns already present in the repo.
 - Keep client/server/shared contracts aligned; many failures come from changing one side only.
+- Confirm card-specific defense rules with the user before changing whether a card can be canceled, mirrored, resisted, or otherwise answered unless the current card data/rules docs explicitly state the behavior.
 - Prefer existing helpers in `shared/`, `client/src/gameplay/interactionRules.ts`, and `server/services/gameEngine.ts` over duplicating rule logic.
 - Treat `client/src/pixi/pixiApp.ts` as high-risk because it mixes rendering, input handling, synchronization, overlays, replay, and dev UI.
 - Treat `server/services/gameEngine.ts` as high-risk because it encodes card behavior, turn flow, pending actions, damage, defense, statuses, deaths, and bot decisions.
 - After gameplay changes, verify both type safety and at least one local browser flow when possible.
 - Do not reintroduce alternate renderer assumptions; docs indicate the Pixi migration is complete and the current renderer is Pixi only.
 - Avoid committing or editing `.env`. Use `.env.example` for documented environment changes.
+
+## Production Release Guidelines
+
+- Production release work must start from the `develop` branch. If an agent is asked to do release work and `git branch --show-current` is not `develop`, stop and report the current branch.
+- Do not push to `main` unless the user explicitly asks for a production release.
+- Before a production release, make sure `client/public/changelog.json` contains high-level English and French player-facing notes.
+- Use `npm run release:prod` for production releases. The script runs typecheck/build, updates `client/public/version.json`, commits/pushes `develop`, merges to `main`, and pushes `main`.
+- The release version is timestamp based. Pushing `main` triggers Railway to rebuild the app.
 
 ## Documentation To Check
 

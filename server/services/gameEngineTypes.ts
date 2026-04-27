@@ -18,6 +18,7 @@ export interface StoredCardInstance {
   instanceId: string;
   cardId: string;
   attachedCards?: StoredCardInstance[];
+  usedThisTurn?: boolean;
 }
 
 export interface StoredBotPriorityCard {
@@ -59,6 +60,7 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   sourceZone?: "hand" | "object";
   skipStoredCardResolution?: boolean;
   sharedSacrificeAmount?: number;
+  powerSourceSeatNumber?: number;
   corruptionPowerRingDamage?: number;
   corruptionPowerRingCard?: StoredCardInstance;
   corruptionPowerRingChooserSeatNumber?: number;
@@ -90,6 +92,8 @@ export interface StoredExtraPlayModeState {
   temporaryPowerBonus: number;
   temporaryResistanceModifier: number;
   useTotalAlivePower?: boolean;
+  forceAllOpponents?: boolean;
+  repeatFollowUp?: boolean;
 }
 
 export interface StoredObjectOwnershipStatState {
@@ -129,7 +133,7 @@ export interface StoredGameState {
     chooserSeatNumber: number;
     ownerSeatNumber: number;
     sourceCard: StoredCardInstance;
-    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "arm_corruption_power_ring" | "mass_attack_staff_turn";
+    mode: "remove" | "steal" | "discard_ring" | "consume_power_ring" | "arm_corruption_power_ring" | "choice_hp_or_object" | "choice_hp_or_redraw" | "choice_swap_hand_or_objects" | "mass_attack_staff_turn";
     continuationMode?: "resume_turn" | "advance_turn_without_play";
     finalizeActorSeatNumber?: number;
   };
@@ -187,6 +191,7 @@ export interface StoredGameState {
     releaseCardCount: number;
   };
   pendingRepeatedPlay?: {
+    sourceCardId?: string;
     actorSeatNumber: number;
     cardId: string;
     request: PlayCardRequest;

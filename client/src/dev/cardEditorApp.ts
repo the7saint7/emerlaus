@@ -14,7 +14,8 @@ import { renderCardEditorView } from "./renderCardEditorView";
 const EDITOR_DECK_OPTIONS = [
   { id: "base", label: "Jeu de base" },
   { id: "abondance", label: "Abondance" },
-  { id: "puissance", label: "Puissance" }
+  { id: "puissance", label: "Puissance" },
+  { id: "communion", label: "Communion" }
 ] satisfies Array<{ id: DevCardCatalogId; label: string }>;
 
 interface EditorState {
@@ -40,6 +41,7 @@ const CATEGORY_LABELS: Record<CardCategoryCode, string> = {
 
 const SELECTED_DECK_STORAGE_KEY = "emerlaus.cardEditor.selectedDeck";
 const SELECTED_CARD_STORAGE_KEY = "emerlaus.cardEditor.selectedCardId";
+type DicePerPowerSource = Extract<RollExpression, { kind: "dice_per_power" }>["powerSource"];
 
 function rememberSelectedDeck(deck: DevCardCatalogId): void {
   window.sessionStorage.setItem(SELECTED_DECK_STORAGE_KEY, deck);
@@ -47,7 +49,7 @@ function rememberSelectedDeck(deck: DevCardCatalogId): void {
 
 function rememberedDeck(): DevCardCatalogId {
   const value = window.sessionStorage.getItem(SELECTED_DECK_STORAGE_KEY);
-  return value === "abondance" || value === "puissance" ? value : "base";
+  return value === "abondance" || value === "puissance" || value === "communion" ? value : "base";
 }
 
 function selectedCardStorageKey(deck: DevCardCatalogId): string {
@@ -166,12 +168,14 @@ function updateFormulaKind(card: BaseCardDefinition, kind: RollExpression["kind"
   const current = formulaFromEffect(primaryFormulaEffect(card));
   const notation = "notation" in current ? current.notation : "1D6";
   const amount = "amount" in current && typeof current.amount === "number" ? current.amount : 0;
-  const inferredPowerSource = (
-    "scaleBy" in current
-    && (current.scaleBy === "target_power" || current.scaleBy === "multiply_target_power")
-  )
-    ? "target"
-    : ("powerSource" in current && current.powerSource === "target" ? "target" : "self");
+  const inferredPowerSource: DicePerPowerSource = current.kind === "dice_per_power"
+    ? current.powerSource
+    : (
+      "scaleBy" in current
+      && (current.scaleBy === "target_power" || current.scaleBy === "multiply_target_power")
+    )
+      ? "target"
+      : "self";
   const inferredPowerBonus = (
     "powerBonus" in current
     && typeof current.powerBonus === "number"
@@ -252,6 +256,19 @@ function updateEffectType(card: BaseCardDefinition, effectType: string): void {
   }
 }
 
+function ensureSelectedOpponentForFormulaTargetPower(card: BaseCardDefinition): void {
+  const effect = primaryFormulaEffect(card);
+  if (
+    effect?.type === "heal"
+    && effect.target === "self"
+    && effect.amount.kind === "dice_per_power"
+    && effect.amount.powerSource === "target"
+  ) {
+    card.rules.selectionMode = "target";
+    card.rules.targets = "single_opponent";
+  }
+}
+
 function applyFieldUpdate(card: BaseCardDefinition, field: string, element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): void {
   const value = element.value;
   const checked = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : false;
@@ -313,10 +330,24 @@ function applyFieldUpdate(card: BaseCardDefinition, field: string, element: HTML
       }
       break;
     }
+    case "effect.damageTargetOverride": {
+      const effect = primaryFormulaEffect(card);
+      if (effect?.type === "damage") {
+        if (value === "all_opponents") {
+          effect.targetOverride = "all_opponents";
+          card.rules.selectionMode = "target";
+          card.rules.targets = "single_opponent";
+        } else {
+          delete effect.targetOverride;
+        }
+      }
+      break;
+    }
     case "effect.healTarget": {
       const effect = primaryFormulaEffect(card);
       if (effect?.type === "heal") {
         effect.target = value as Extract<CardEffect, { type: "heal" }>["target"];
+        ensureSelectedOpponentForFormulaTargetPower(card);
       }
       break;
     }
@@ -381,8 +412,9 @@ function applyFieldUpdate(card: BaseCardDefinition, field: string, element: HTML
     case "formula.powerSource": {
       const formula = formulaFromEffect(primaryFormulaEffect(card));
       if (formula.kind === "dice_per_power") {
-        formula.powerSource = value as "self" | "target";
+        formula.powerSource = value as DicePerPowerSource;
         updatePrimaryFormula(card, formula);
+        ensureSelectedOpponentForFormulaTargetPower(card);
       }
       break;
     }
@@ -430,7 +462,8 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
     currentIndexByDeck: {
       base: initialDeck === "base" ? rememberedCardIndex("base", initialCards) : 0,
       abondance: initialDeck === "abondance" ? rememberedCardIndex("abondance", initialCards) : 0,
-      puissance: initialDeck === "puissance" ? rememberedCardIndex("puissance", initialCards) : 0
+      puissance: initialDeck === "puissance" ? rememberedCardIndex("puissance", initialCards) : 0,
+      communion: initialDeck === "communion" ? rememberedCardIndex("communion", initialCards) : 0
     },
     selectedDeck: initialDeck,
     statusMessage: `Edit a card and save it into the ${EDITOR_DECK_OPTIONS.find((option) => option.id === initialDeck)?.label ?? initialDeck} catalog.`,
@@ -477,7 +510,7 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
 
     rootElement.querySelector<HTMLSelectElement>("[data-card-editor-action='pick-deck']")?.addEventListener("change", async (event) => {
       const nextDeck = (event.currentTarget as HTMLSelectElement).value as DevCardCatalogId;
-      if (nextDeck !== "base" && nextDeck !== "abondance" && nextDeck !== "puissance") {
+      if (nextDeck !== "base" && nextDeck !== "abondance" && nextDeck !== "puissance" && nextDeck !== "communion") {
         return;
       }
 
