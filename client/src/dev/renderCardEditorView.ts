@@ -132,14 +132,19 @@ function describeFormulaBehavior(formula: RollExpression): string | null {
     }
     case "dice_per_power": {
       const notation = formula.notation.trim().toUpperCase();
-      const powerLabel = formula.powerSource === "target" ? "target" : "self";
+      const powerLabel = formula.powerSource === "all_living_players"
+        ? "all living players' total"
+        : formula.powerSource === "target"
+          ? "target"
+          : "self";
       const bonus = formula.powerBonus ?? 0;
       const bonusText = bonus === 0
         ? ""
         : ` ${bonus > 0 ? "+" : "-"} ${Math.abs(bonus)}`;
-      const sampleEffectivePower = Math.max(0, 3 + bonus);
+      const sampleBasePower = formula.powerSource === "all_living_players" ? 12 : 3;
+      const sampleEffectivePower = Math.max(0, sampleBasePower + bonus);
       const sampleNotation = exampleDicePoolNotation(notation, sampleEffectivePower);
-      return `Use ${powerLabel} power${bonusText} as the number of ${notation} dice, and roll them all together in one combined throw. Example: power 3${bonus === 0 ? "" : ` with bonus ${bonus > 0 ? "+" : "-"}${Math.abs(bonus)}`} becomes ${sampleNotation}.`;
+      return `Use ${powerLabel} power${bonusText} as the number of ${notation} dice, and roll them all together in one combined throw. Example: power ${sampleBasePower}${bonus === 0 ? "" : ` with bonus ${bonus > 0 ? "+" : "-"}${Math.abs(bonus)}`} becomes ${sampleNotation}.`;
     }
     case "fixed":
       return "Use a fixed amount with optional power scaling.";
@@ -170,6 +175,7 @@ function renderFormulaFields(card: BaseCardDefinition): string {
   const healTarget = effect?.type === "heal" ? effect.target : "self";
   const lifestealPowerSource = effect?.type === "lifesteal" ? effect.powerSource : "self";
   const halfDamage = effect?.type === "damage" ? effect.grantsHalfDamageOnResistance === true : false;
+  const damageTargetOverride = effect?.type === "damage" ? effect.targetOverride ?? "selected_targets" : "selected_targets";
   const formulaBehavior = describeFormulaBehavior(formula);
   const fields: string[] = [];
 
@@ -262,6 +268,7 @@ function renderFormulaFields(card: BaseCardDefinition): string {
         <select id="formula-power-source" data-card-editor-field="formula.powerSource">
           <option value="self" ${selected(powerSource, "self")}>Self power decides the number of dice</option>
           <option value="target" ${selected(powerSource, "target")}>Target power decides the number of dice</option>
+          <option value="all_living_players" ${selected(powerSource, "all_living_players")}>All living players' total power decides the number of dice</option>
         </select>
       </div>
 
@@ -361,6 +368,13 @@ function renderFormulaFields(card: BaseCardDefinition): string {
         <input type="checkbox" data-card-editor-field="effect.grantsHalfDamageOnResistance" ${checked(halfDamage)} />
         <span>Successful resistance still takes half damage</span>
       </label>
+      <div class="mapper-field mapper-field--wide">
+        <label for="damage-target-override">Damage Application</label>
+        <select id="damage-target-override" data-card-editor-field="effect.damageTargetOverride">
+          <option value="selected_targets" ${selected(damageTargetOverride, "selected_targets")}>Damage selected target(s)</option>
+          <option value="all_opponents" ${selected(damageTargetOverride, "all_opponents")}>Pick one opponent for formula, damage all opponents</option>
+        </select>
+      </div>
     `);
   }
 

@@ -17,6 +17,7 @@ import type {
   PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
   PendingActionResponseRequest,
+  FireObjectRequest,
   PlayCardRequest
 } from "../../../shared/types";
 
@@ -170,6 +171,20 @@ export async function playCard(
   request: PlayCardRequest
 ): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/play-card`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function fireObject(
+  instanceId: string,
+  playerSessionToken: string,
+  request: FireObjectRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/fire-object`, {
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify(request)

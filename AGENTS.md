@@ -141,6 +141,10 @@ Important paths:
 - `client/public/assets/cards/processed-manifest.json`
 - `docs/artifacts/card-bands/base/`
 
+External source data:
+
+- `C:\Users\Work\Desktop\Emerlaus_scraper\V2` contains extracted original cards, expansions, and card descriptions. Check this location when planning or importing new expansion data such as Communion.
+
 Related scripts:
 
 - `npm run import:base-cards`

@@ -10,6 +10,7 @@ import type {
   DiscordAuthTokenRequest,
   DevDrawCardRequest,
   JoinRequest,
+  FireObjectRequest,
   KickPlayerRequest,
   MatchConfigResponse,
   UpdateExpansionRequest,
@@ -59,6 +60,7 @@ import {
   joinMatch,
   kickPlayer,
   passMatchForcedFollowUp,
+  fireMatchObject,
   playMatchCard,
   resolveMatchBoardResetKeep,
   resolveMatchDeathSearch,
@@ -180,7 +182,7 @@ app.get("/api/dev/base-defense-band-mappings", (_request, response) => {
 app.get("/api/dev/base-cards", (_request, response) => {
   try {
     const catalogId = (_request.query.deck as DevCardCatalogId | undefined) ?? "base";
-    if (catalogId !== "base" && catalogId !== "abondance" && catalogId !== "puissance") {
+    if (catalogId !== "base" && catalogId !== "abondance" && catalogId !== "puissance" && catalogId !== "communion") {
       throw new Error(`Unknown card catalog: ${catalogId}`);
     }
     response.json(readBaseCardCatalog(catalogId));
@@ -195,7 +197,7 @@ app.post("/api/dev/base-cards/:cardId", (request, response) => {
   try {
     const body = request.body as SaveBaseCardDefinitionRequest;
     const catalogId = (request.query.deck as DevCardCatalogId | undefined) ?? "base";
-    if (catalogId !== "base" && catalogId !== "abondance" && catalogId !== "puissance") {
+    if (catalogId !== "base" && catalogId !== "abondance" && catalogId !== "puissance" && catalogId !== "communion") {
       throw new Error(`Unknown card catalog: ${catalogId}`);
     }
     response.json(writeBaseCardDefinition(catalogId, request.params.cardId, body.card));
@@ -499,6 +501,18 @@ app.post("/api/matches/:instanceId/play-card", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to play card"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/fire-object", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as FireObjectRequest;
+    response.json(fireMatchObject(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to fire object"
     });
   }
 });

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   abondanceCardDefinitions,
+  communionCardDefinitions,
   defaultDefenseBandByCategory,
   puissanceCardDefinitions,
   type BaseCardDefinition,
@@ -25,6 +26,11 @@ const CATALOG_CONFIG = {
   puissance: {
     path: path.resolve(process.cwd(), "shared/cards/catalog/puissance-cards.ts"),
     exportStart: "export const puissanceCardDefinitions = ",
+    format: "makecard_array"
+  },
+  communion: {
+    path: path.resolve(process.cwd(), "shared/cards/catalog/communion-cards.ts"),
+    exportStart: "export const communionCardDefinitions = ",
     format: "makecard_array"
   }
 } as const satisfies Record<DevCardCatalogId, {
@@ -274,7 +280,11 @@ function buildLiveMakeCardDefinition(
   sourceCard: SourceMakeCardInput
 ): BaseCardDefinition {
   const categoryLabel = CATEGORY_LABEL_BY_CODE[sourceCard.code];
-  const defaultIncludedDeck = catalogId === "abondance" ? "Abondance" : "Puissance";
+  const defaultIncludedDeck = catalogId === "abondance"
+    ? "Abondance"
+    : catalogId === "puissance"
+      ? "Puissance"
+      : "Communion";
 
   return {
     ...baseCard,
@@ -432,7 +442,11 @@ export function readBaseCardCatalog(catalogId: DevCardCatalogId = "base"): BaseC
     ? readJsonArrayCatalog(readCatalogSource(catalogId), config.exportStart)
     : readLiveMakeCardCatalog(
         catalogId,
-        catalogId === "puissance" ? puissanceCardDefinitions : abondanceCardDefinitions
+        catalogId === "communion"
+          ? communionCardDefinitions
+          : catalogId === "puissance"
+            ? puissanceCardDefinitions
+            : abondanceCardDefinitions
       );
 }
 

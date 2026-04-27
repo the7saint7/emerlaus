@@ -2,7 +2,7 @@
   "tool": "process_card_images.py",
   "scriptVersion": "1",
   "settingsFingerprint": "3ddd51c7f8015c2cd70b649aa4079c88101e3ee4e28a1d5150ceb32c06c92b38",
-  "generatedAt": "2026-04-16T20:39:57.702340+00:00",
+  "generatedAt": "2026-04-27T01:40:18.067819+00:00",
   "entries": {
     "base-en/AD_Points_de_vie.png": {
       "sourceHash": "cb384a8e50a8f4e7e771638527ebaab822fdc0ef5fb76c9fb7c3d525681b0cb8",
@@ -6766,6 +6766,44 @@
         "width": 400,
         "height": 600,
         "sizeBytes": 66618
+      }
+    },
+    "base/Lampe_magique.png": {
+      "sourceHash": "47dcd5ded1b2508d41f15ae9333e173e82869903772d575b8d5766f50ad54c2e",
+      "sourceBytes": 277704,
+      "sourceWidth": 322,
+      "sourceHeight": 482,
+      "settingsFingerprint": "3ddd51c7f8015c2cd70b649aa4079c88101e3ee4e28a1d5150ceb32c06c92b38",
+      "full": {
+        "path": "base-webp/Lampe_magique.webp",
+        "width": 322,
+        "height": 482,
+        "sizeBytes": 56988
+      },
+      "thumb": {
+        "path": "base-thumb/Lampe_magique.webp",
+        "width": 322,
+        "height": 482,
+        "sizeBytes": 59978
+      }
+    },
+    "base/Lapidation.png": {
+      "sourceHash": "e40225294abada94c6bb3319c4056d33ddc477c7bc8ef3dfd30e6d6dedb0c00c",
+      "sourceBytes": 312351,
+      "sourceWidth": 322,
+      "sourceHeight": 482,
+      "settingsFingerprint": "3ddd51c7f8015c2cd70b649aa4079c88101e3ee4e28a1d5150ceb32c06c92b38",
+      "full": {
+        "path": "base-webp/Lapidation.webp",
+        "width": 322,
+        "height": 482,
+        "sizeBytes": 70902
+      },
+      "thumb": {
+        "path": "base-thumb/Lapidation.webp",
+        "width": 322,
+        "height": 482,
+        "sizeBytes": 73596
       }
     },
     "base/Le_duel.png": {

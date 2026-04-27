@@ -181,10 +181,23 @@ export function canLoadMassAttackStaff(
   ownerSeatNumber: number,
   localSeatNumber: number
 ): boolean {
-  void selectedCard;
-  void objectCard;
-  void ownerSeatNumber;
-  void localSeatNumber;
+  if (
+    selectedCard == null
+    || selectedCard.zone !== "hand"
+    || objectCard.zone !== "object"
+    || ownerSeatNumber !== localSeatNumber
+  ) {
+    return false;
+  }
+
+  if (objectCard.cardId === "baton-dattaque") {
+    return selectedCard.categoryCode === "AD";
+  }
+
+  if (objectCard.cardId === "baton-dattaque-massive") {
+    return selectedCard.categoryCode === "AM";
+  }
+
   return false;
 }
 
