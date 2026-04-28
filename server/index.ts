@@ -641,8 +641,28 @@ if (builtClientDir != null) {
   const builtIndexHtml = path.join(builtClientDir, "index.html");
   const builtTermsHtml = path.join(builtClientDir, "terms.html");
   const builtPrivacyHtml = path.join(builtClientDir, "privacy.html");
+  const builtChangelogJson = path.join(builtClientDir, "changelog.json");
+  const builtVersionJson = path.join(builtClientDir, "version.json");
 
   app.use("/assets", express.static(builtAssetsDir));
+
+  app.get("/changelog.json", (_request, response) => {
+    if (existsSync(builtChangelogJson)) {
+      response.sendFile(builtChangelogJson);
+      return;
+    }
+
+    response.status(404).json({ error: "Changelog not found" });
+  });
+
+  app.get("/version.json", (_request, response) => {
+    if (existsSync(builtVersionJson)) {
+      response.sendFile(builtVersionJson);
+      return;
+    }
+
+    response.status(404).json({ error: "Version not found" });
+  });
 
   app.get(["/terms", "/terms.html"], (_request, response) => {
     if (existsSync(builtTermsHtml)) {
