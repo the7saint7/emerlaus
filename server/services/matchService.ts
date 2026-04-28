@@ -42,6 +42,7 @@ import {
   resolvePendingPublicHandReveal,
   passTurnWithoutPlaying,
   fireObjectAtTarget,
+  finishMatch,
   playCardFromHand,
   resolvePendingBoardResetKeep,
   resolvePendingDeathSearch,
@@ -821,6 +822,7 @@ export function startMatch(instanceId: string, userId: string, _request: StartMa
 
   match.status = "in_progress";
   match.startedAt = new Date().toISOString();
+  match.finishedAt = undefined;
   seedSkeletonStats(match);
   initializeMatchGame(match);
   appendServerDebugLog(match, "session", `Match session started by ${userId} with ${match.seats.length} seats`);
@@ -942,7 +944,7 @@ export function disconnectPlayer(instanceId: string, userId: string, _request: D
       const winnerSeatNumber = aliveSeatNumbersBeforeDisconnect.find((seatNumber) => seatNumber !== seat.seatNumber);
       if (winnerSeatNumber != null && match.internalGame != null) {
         match.internalGame.winnerSeatNumber = winnerSeatNumber;
-        match.status = "finished";
+        finishMatch(match);
       }
     }
   }
@@ -952,7 +954,7 @@ export function disconnectPlayer(instanceId: string, userId: string, _request: D
   }
 
   if (match.seats.every((candidate) => candidate.controllerType === "bot")) {
-    match.status = "finished";
+    finishMatch(match);
   }
 
   saveMatch(match);
