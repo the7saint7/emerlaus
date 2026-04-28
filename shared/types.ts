@@ -419,6 +419,7 @@ export interface MatchState {
   game?: GameState;
   createdAt: string;
   startedAt?: string;
+  finishedAt?: string;
 }
 
 export interface JoinRequest {

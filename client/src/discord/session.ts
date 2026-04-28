@@ -1,4 +1,4 @@
-import { DiscordSDK, Events } from "@discord/embedded-app-sdk";
+import { DiscordSDK, Events, RPCCloseCodes } from "@discord/embedded-app-sdk";
 import { buildAvatarDataUrl, isLegacyExternalAvatarUrl } from "../../../shared/avatar.js";
 import type { LocalUserProfile } from "../../../shared/types";
 import { fetchConfig } from "../api/gameApi";
@@ -12,6 +12,7 @@ interface ActivitySession {
   mode: "browser" | "discord";
   enableDevTools: boolean;
   subscribeToParticipantUpdates(onChange: () => void): () => void;
+  closeActivity(): void;
 }
 
 function isEmbeddedInDiscord(): boolean {
@@ -101,7 +102,8 @@ export async function createDiscordSession(): Promise<ActivitySession> {
       currentUser: browserUser,
       mode: "browser",
       enableDevTools: config.enableDevTools,
-      subscribeToParticipantUpdates: () => () => undefined
+      subscribeToParticipantUpdates: () => () => undefined,
+      closeActivity: () => undefined
     };
   }
 
@@ -131,6 +133,9 @@ export async function createDiscordSession(): Promise<ActivitySession> {
     currentUser: authenticated.currentUser,
     mode: "discord",
     enableDevTools: config.enableDevTools,
+    closeActivity: () => {
+      sdk.close(RPCCloseCodes.CLOSE_NORMAL, "Emerlaus match finished");
+    },
     subscribeToParticipantUpdates(onChange: () => void) {
       const handler = () => onChange();
       void sdk.subscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, handler);

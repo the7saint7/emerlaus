@@ -3833,7 +3833,7 @@ function checkForWinner(match: StoredMatchState): boolean {
   const alive = aliveSeatNumbers(game);
   if (alive.length <= 1) {
     game.winnerSeatNumber = alive[0];
-    match.status = "finished";
+    finishMatch(match);
     if (alive[0] != null) {
       appendDealerMessage(match, `${getPublicSeat(match, alive[0]).displayName} is the last wizard standing.`);
     }
@@ -3841,6 +3841,13 @@ function checkForWinner(match: StoredMatchState): boolean {
   }
 
   return false;
+}
+
+export function finishMatch(match: StoredMatchState): void {
+  if (match.status !== "finished" || match.finishedAt == null) {
+    match.finishedAt = new Date().toISOString();
+  }
+  match.status = "finished";
 }
 
 function applyDamage(
@@ -7066,7 +7073,8 @@ export function buildPublicMatchState(match: StoredMatchState, viewerUserId?: st
     spectators: match.spectators.map((spectator) => ({ ...spectator })),
     game: buildPublicGameState(match, viewerSeatNumber),
     createdAt: match.createdAt,
-    startedAt: match.startedAt
+    startedAt: match.startedAt,
+    finishedAt: match.finishedAt
   };
 }
 

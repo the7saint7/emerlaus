@@ -350,6 +350,7 @@ const OBJECT_DRAG_SNAP_DISTANCE = 110;
 const CURSOR_THROTTLE_MS = 50;
 const GHOST_TIMEOUT_MS = 500;
 const TURN_PASTILLE_MOVE_MS = 540;
+const POST_VICTORY_ACTIVITY_CLOSE_MS = 60_000;
 const HAND_DEAL_ANIMATION_MS = 950;
 const HAND_FOCUS_TRANSITION_MS = 150;
 const HAND_DEAL_START_ROTATION = (-8 * Math.PI) / 180;
@@ -4754,6 +4755,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let victoryCelebrationVisible = false;
   let victoryRevealTimer: number | null = null;
   let victoryRevealWinnerSeatNumber: number | null = null;
+  let postVictoryCloseTimer: number | null = null;
+  let postVictoryCloseFinishedAt = "";
   let opponentCursors: Record<number, OpponentCursorState> = {};
   let turnPastilleState: TurnPastilleAnimationState = {
     displayedSeatNumber: match.game?.currentTurnSeatNumber ?? null,
@@ -5405,6 +5408,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
   };
 
+  const clearPostVictoryCloseTimer = (): void => {
+    if (postVictoryCloseTimer != null) {
+      window.clearTimeout(postVictoryCloseTimer);
+      postVictoryCloseTimer = null;
+    }
+    postVictoryCloseFinishedAt = "";
+  };
+
   const clearInteractionState = (): void => {
     handHoverLockedCardInstanceId = "";
     handHoverLockedUntil = 0;
@@ -5948,6 +5959,36 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }, 1000);
   };
 
+  const updatePostVictoryCloseTimer = (): void => {
+    if (match.status !== "finished") {
+      clearPostVictoryCloseTimer();
+      return;
+    }
+
+    const finishedAt = match.finishedAt ?? "";
+    if (finishedAt === "") {
+      return;
+    }
+
+    if (postVictoryCloseTimer != null && postVictoryCloseFinishedAt === finishedAt) {
+      return;
+    }
+
+    clearPostVictoryCloseTimer();
+    postVictoryCloseFinishedAt = finishedAt;
+    const finishedAtMs = Date.parse(finishedAt);
+    const remainingMs = Number.isFinite(finishedAtMs)
+      ? Math.max(0, finishedAtMs + POST_VICTORY_ACTIVITY_CLOSE_MS - Date.now())
+      : POST_VICTORY_ACTIVITY_CLOSE_MS;
+
+    postVictoryCloseTimer = window.setTimeout(() => {
+      postVictoryCloseTimer = null;
+      if (match.status === "finished" && match.finishedAt === finishedAt) {
+        session.closeActivity();
+      }
+    }, remainingMs);
+  };
+
   const addCardFlight = async (
     card: CardView | null,
     from: StagePoint,
@@ -6139,6 +6180,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
   rememberPendingActionSnapshot(match);
   updateVictoryCelebrationState();
+  updatePostVictoryCloseTimer();
 
   const replayActionStartPresentation = async (event: ActionStartEvent, runId: number): Promise<boolean> => {
     centerResponseCards = [];
@@ -6862,6 +6904,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       centerResponseCards = [];
     }
     updateVictoryCelebrationState();
+    updatePostVictoryCloseTimer();
     redraw();
     if (syncQueued && !syncInFlight) {
       syncQueued = false;
@@ -7189,6 +7232,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         clearReplayPresentationState();
         pendingReplayBatchCount = 0;
         updateVictoryCelebrationState();
+        updatePostVictoryCloseTimer();
         redraw();
       });
   };
@@ -7203,6 +7247,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     pendingReplayBatchCount = 0;
     clearReplayPresentationState();
     updateVictoryCelebrationState();
+    updatePostVictoryCloseTimer();
     redraw();
     eventReplayChain = Promise.resolve();
     queueReplayBatch(latestReplayBatch, latestReplayPreUpdateLocalizedSeatsBySeat);
@@ -7656,6 +7701,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       confirmingCurseReleaseStatusInstanceId = "";
     }
     updateVictoryCelebrationState();
+    updatePostVictoryCloseTimer();
     replayCombatPresentationEvents();
   };
 
@@ -8089,6 +8135,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         sacrificeAmountInput = "";
       }
       updateVictoryCelebrationState();
+      updatePostVictoryCloseTimer();
       replayCombatPresentationEvents();
       const localHandIds = new Set(getLocalHand().map((card) => card.instanceId));
       if (
@@ -9274,6 +9321,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
     void persistClientLogNow();
     clearVictoryRevealTimer();
+    clearPostVictoryCloseTimer();
     resizeObserver.disconnect();
     if (pollInterval != null) {
       window.clearInterval(pollInterval);
@@ -9283,7 +9331,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     window.removeEventListener("pointermove", handleCanvasPointerMove);
     window.removeEventListener("pointerup", handleWindowPointerUp);
     unsubscribe();
-    if (session.mode === "discord" && leftMessage === "") {
+    if (session.mode === "discord" && leftMessage === "" && match.status !== "finished") {
       void disconnectFromMatch(session.instanceId, playerSessionToken);
     }
     app.destroy(undefined, { children: true, context: true, style: true });
