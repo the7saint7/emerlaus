@@ -155,6 +155,7 @@ select {
   justify-content: space-between;
   gap: 16px;
   padding: 22px;
+  z-index: 28;
 }
 
 .pixi-frame-topbar__left {
@@ -162,6 +163,7 @@ select {
   flex-direction: column;
   gap: 8px;
   max-width: min(62vw, 860px);
+  min-width: 0;
 }
 
 .pixi-frame-meta {
@@ -268,6 +270,30 @@ select {
   flex-wrap: wrap;
   gap: 10px;
   pointer-events: auto;
+}
+
+.pixi-frame-actions {
+  justify-content: flex-end;
+  max-width: min(52vw, 720px);
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .pixi-frame-topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .pixi-frame-topbar__left,
+  .pixi-frame-actions {
+    max-width: 100%;
+  }
+
+  .pixi-frame-actions {
+    justify-content: flex-start;
+  }
 }
 
 .pixi-frame-pill,
