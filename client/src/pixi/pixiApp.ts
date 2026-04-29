@@ -212,6 +212,12 @@ interface PendingHandPress {
   startY: number;
 }
 
+interface PendingObjectPress {
+  cardInstanceId: string;
+  startX: number;
+  startY: number;
+}
+
 interface PendingAnnulationChoiceState {
   cardInstanceId: string;
   maxCount: number;
@@ -1216,6 +1222,7 @@ function renderObjectRow(
     const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber, seat.objects);
     const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
     isAmLoadHover = !isStatus && hovered && canLoadMassAttackStaff(selectedCard, card, seat.seatNumber, localSeatNumber);
+    const playableObject = !isStatus && card.canPlay === true;
 
     if (isAmLoadHover && batonLoadScale != null && batonLoadScale > 1) {
       dW = cardWidth * batonLoadScale;
@@ -1242,6 +1249,11 @@ function renderObjectRow(
         centerX: x + cardWidth / 2,
         centerY: y + cardHeight / 2
       });
+    }
+
+    if (playableObject) {
+      scene.addChild(createRect(dX - 8, dY - 8, dW + 16, dH + 16, "#ffd34d", hovered ? 0.52 : 0.34, 18));
+      scene.addChild(createRect(dX - 4, dY - 4, dW + 8, dH + 8, "#fff1a8", hovered ? 0.38 : 0.22, 14));
     }
 
     inspectTargets.push({
@@ -2445,6 +2457,7 @@ function renderTableScene(
       )
         || (
           isAttackStaffObjectCard(activeObjectArrowCard)
+          && activeObjectArrowCard.canPlay === true
           && activeObjectArrowCard.usedThisTurn !== true
           && playerSeat?.seatNumber === currentTurnSeatNumber
           && pendingAction == null
@@ -4653,6 +4666,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let inspectLayerActive = false;
   let inspectCloseTimer: number | null = null;
   let pendingHandPress: PendingHandPress | null = null;
+  let pendingObjectPress: PendingObjectPress | null = null;
+  const modalDragOffsets = new Map<string, { x: number; y: number }>();
+  let modalDragActive = false;
+  let modalDragRedrawQueued = false;
   let handHoverLockedUntil = 0;
   let handHoverLockedCardInstanceId = "";
   let confirmingLeave = false;
@@ -5419,6 +5436,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   const clearInteractionState = (): void => {
     handHoverLockedCardInstanceId = "";
     handHoverLockedUntil = 0;
+    pendingObjectPress = null;
     interactionState = {
       hoveredCardInstanceId: "",
       draggingCardInstanceId: "",
@@ -5592,9 +5610,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   };
 
   const hasActiveLocalInteraction = (): boolean =>
-    interactionState.draggingCardInstanceId !== "" || interactionState.arrowDrag != null || overlayInteractionLocked || eventPlaybackActive;
+    interactionState.draggingCardInstanceId !== ""
+    || interactionState.arrowDrag != null
+    || overlayInteractionLocked
+    || eventPlaybackActive
+    || modalDragActive;
 
   const scheduleRedraw = (): void => {
+    if (modalDragActive) {
+      modalDragRedrawQueued = true;
+      return;
+    }
     if (redrawQueued) {
       return;
     }
@@ -7573,6 +7599,22 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
   };
 
+  const beginObjectCardInteraction = (target: InspectTargetGeometry, point: StagePoint): void => {
+    closeCardInspect();
+    interactionState.arrowDrag = {
+      source: "object",
+      cardInstanceId: target.card.instanceId,
+      originX: target.x + target.width / 2,
+      originY: target.y + target.height / 2,
+      pointerX: point.x,
+      pointerY: point.y,
+      nearestSeatNumber: resolveArrowNearestSeatNumber(point, target.card),
+      nearestObjectInstanceId: null
+    };
+    interactionState.draggingCardInstanceId = "";
+    interactionState.dragHoverTarget = null;
+  };
+
   const resolveDragHoverTarget = (point: StagePoint, card: CardView): PixiDragHoverTarget | null => {
     if (currentGeometry == null) {
       return null;
@@ -8171,10 +8213,181 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
   };
 
+  const bindDraggableModalCards = (): void => {
+    const resolveModalDragKey = (card: HTMLElement, index: number): string => {
+      const title = card.querySelector("h2")?.textContent?.trim() ?? "";
+      const eyebrow = card.querySelector(".eyebrow")?.textContent?.trim() ?? "";
+      const classKey = Array.from(card.classList).sort().join(".");
+      return `${classKey}|${eyebrow}|${title}|${index}`;
+    };
+
+    const clampModalOffset = (
+      card: HTMLElement,
+      offsetX: number,
+      offsetY: number
+    ): { x: number; y: number } => {
+      const boundsElement = card.closest<HTMLElement>(".pixi-modal-backdrop, .modal-backdrop, .object-choice-overlay, .telepathy-overlay")
+        ?? frameElement;
+      const boundsRect = boundsElement.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const currentOffsetX = Number(card.dataset.dragOffsetX ?? "0") || 0;
+      const currentOffsetY = Number(card.dataset.dragOffsetY ?? "0") || 0;
+      const baseLeft = cardRect.left - currentOffsetX;
+      const baseTop = cardRect.top - currentOffsetY;
+      const margin = 8;
+      const minX = boundsRect.left + margin - baseLeft;
+      const maxX = boundsRect.right - margin - cardRect.width - baseLeft;
+      const minY = boundsRect.top + margin - baseTop;
+      const maxY = boundsRect.bottom - margin - cardRect.height - baseTop;
+      const clampAxis = (value: number, min: number, max: number): number => {
+        if (min > max) {
+          return (min + max) / 2;
+        }
+        return Math.min(Math.max(value, min), max);
+      };
+      return {
+        x: clampAxis(offsetX, minX, maxX),
+        y: clampAxis(offsetY, minY, maxY)
+      };
+    };
+
+    const applyModalOffset = (card: HTMLElement, offsetX: number, offsetY: number): void => {
+      card.dataset.dragOffsetX = String(offsetX);
+      card.dataset.dragOffsetY = String(offsetY);
+      card.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0)`;
+    };
+
+    frameElement.querySelectorAll<HTMLElement>("[data-pixi-modal-card='true']").forEach((card, index) => {
+      const dragKey = resolveModalDragKey(card, index);
+      card.dataset.pixiModalDragKey = dragKey;
+      const savedOffset = modalDragOffsets.get(dragKey);
+      if (savedOffset != null) {
+        const nextOffset = clampModalOffset(card, savedOffset.x, savedOffset.y);
+        modalDragOffsets.set(dragKey, nextOffset);
+        applyModalOffset(card, nextOffset.x, nextOffset.y);
+      }
+
+      if (card.dataset.pixiModalDragBound === "true") {
+        return;
+      }
+      card.dataset.pixiModalDragBound = "true";
+
+      card.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) {
+          return;
+        }
+
+        const target = event.target as HTMLElement | null;
+        if (
+          target?.closest([
+            "button",
+            "input",
+            "select",
+            "textarea",
+            "a",
+            "[role='button']",
+            "[contenteditable='true']",
+            "[data-modal-list-scroll='true']",
+            ".telepathy-list",
+            ".object-choice-grid",
+            ".pixi-seat-fx__body"
+          ].join(", ")) != null
+        ) {
+          return;
+        }
+
+        const boundsElement = card.closest<HTMLElement>(".pixi-modal-backdrop, .modal-backdrop, .object-choice-overlay, .telepathy-overlay")
+          ?? frameElement;
+        const boundsRect = boundsElement.getBoundingClientRect();
+        const startRect = card.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const initialOffsetX = Number(card.dataset.dragOffsetX ?? "0") || 0;
+        const initialOffsetY = Number(card.dataset.dragOffsetY ?? "0") || 0;
+        const baseLeft = startRect.left - initialOffsetX;
+        const baseTop = startRect.top - initialOffsetY;
+        const margin = 8;
+        let moved = false;
+        let stopped = false;
+
+        const clampOffset = (nextOffsetX: number, nextOffsetY: number): { x: number; y: number } => {
+          const minX = boundsRect.left + margin - baseLeft;
+          const maxX = boundsRect.right - margin - startRect.width - baseLeft;
+          const minY = boundsRect.top + margin - baseTop;
+          const maxY = boundsRect.bottom - margin - startRect.height - baseTop;
+          const clampAxis = (value: number, min: number, max: number): number => {
+            if (min > max) {
+              return (min + max) / 2;
+            }
+            return Math.min(Math.max(value, min), max);
+          };
+          return {
+            x: clampAxis(nextOffsetX, minX, maxX),
+            y: clampAxis(nextOffsetY, minY, maxY)
+          };
+        };
+
+        const applyOffset = (offsetX: number, offsetY: number): void => {
+          applyModalOffset(card, offsetX, offsetY);
+          const activeDragKey = card.dataset.pixiModalDragKey;
+          if (activeDragKey != null && activeDragKey !== "") {
+            modalDragOffsets.set(activeDragKey, { x: offsetX, y: offsetY });
+          }
+        };
+
+        const handlePointerMove = (moveEvent: PointerEvent): void => {
+          const dx = moveEvent.clientX - startX;
+          const dy = moveEvent.clientY - startY;
+          if (!moved && Math.hypot(dx, dy) < 4) {
+            return;
+          }
+          moved = true;
+          moveEvent.preventDefault();
+          const next = clampOffset(initialOffsetX + dx, initialOffsetY + dy);
+          applyOffset(next.x, next.y);
+        };
+
+        const stopDragging = (): void => {
+          if (stopped) {
+            return;
+          }
+          stopped = true;
+          modalDragActive = false;
+          card.classList.remove("pixi-modal-dragging");
+          if (card.hasPointerCapture?.(event.pointerId) === true) {
+            card.releasePointerCapture(event.pointerId);
+          }
+          card.removeEventListener("pointermove", handlePointerMove);
+          card.removeEventListener("pointerup", stopDragging);
+          card.removeEventListener("pointercancel", stopDragging);
+          card.removeEventListener("lostpointercapture", stopDragging);
+          if (modalDragRedrawQueued) {
+            modalDragRedrawQueued = false;
+            scheduleRedraw();
+          }
+          if (syncQueued && !syncInFlight) {
+            syncQueued = false;
+            void requestSync();
+          }
+        };
+
+        modalDragActive = true;
+        card.classList.add("pixi-modal-dragging");
+        card.setPointerCapture?.(event.pointerId);
+        card.addEventListener("pointermove", handlePointerMove);
+        card.addEventListener("pointerup", stopDragging);
+        card.addEventListener("pointercancel", stopDragging);
+        card.addEventListener("lostpointercapture", stopDragging);
+      });
+    });
+  };
+
   const bindOverlayEvents = (): void => {
     if (leftMessage !== "") {
       return;
     }
+
+    bindDraggableModalCards();
 
     frameElement.querySelectorAll<HTMLButtonElement>("[data-action='set-language']").forEach((button) => {
       button.onclick = () => {
@@ -8982,6 +9195,35 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       return;
     }
 
+    if (pendingObjectPress != null) {
+      const activeObjectPress = pendingObjectPress;
+      const localSeat = getLocalSeat(match, localSeatNumber);
+      const pendingTarget = currentGeometry?.inspectTargets.find((target) =>
+        target.group === "object"
+        && target.card.instanceId === activeObjectPress.cardInstanceId
+      );
+      const canStartObjectDrag =
+        localSeat != null
+        && match.status === "in_progress"
+        && match.game?.currentTurnSeatNumber === localSeatNumber
+        && match.game.pendingAction == null
+        && match.game.pendingObjectChoice == null
+        && pendingTarget != null
+        && isAttackStaffObjectCard(pendingTarget.card)
+        && pendingTarget.card.canPlay === true
+        && pendingTarget.card.usedThisTurn !== true
+        && (localSeat.objects ?? []).some((card) => card.instanceId === pendingTarget.card.instanceId);
+      if (canStartObjectDrag) {
+        const movement = Math.hypot(point.x - activeObjectPress.startX, point.y - activeObjectPress.startY);
+        if (movement >= HAND_DRAG_START_DISTANCE) {
+          beginObjectCardInteraction(pendingTarget, point);
+          pendingObjectPress = null;
+          scheduleRedraw();
+          return;
+        }
+      }
+    }
+
     if (pendingHandPress != null) {
       const activeHandPress = pendingHandPress;
       const pendingLayout = currentGeometry?.handLayouts.find((layout) => layout.card.instanceId === activeHandPress.cardInstanceId);
@@ -9069,24 +9311,16 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       && match.game.pendingObjectChoice == null
       && inspectTarget?.group === "object"
       && isAttackStaffObjectCard(inspectTarget.card)
+      && inspectTarget.card.canPlay === true
       && inspectTarget.card.usedThisTurn !== true
       && (localSeat.objects ?? []).some((card) => card.instanceId === inspectTarget.card.instanceId)
     ) {
       event.preventDefault();
-      closeCardInspect();
-      interactionState.arrowDrag = {
-        source: "object",
+      pendingObjectPress = {
         cardInstanceId: inspectTarget.card.instanceId,
-        originX: inspectTarget.x + inspectTarget.width / 2,
-        originY: inspectTarget.y + inspectTarget.height / 2,
-        pointerX: point.x,
-        pointerY: point.y,
-        nearestSeatNumber: resolveArrowNearestSeatNumber(point, inspectTarget.card),
-        nearestObjectInstanceId: null
+        startX: point.x,
+        startY: point.y
       };
-      interactionState.draggingCardInstanceId = "";
-      interactionState.dragHoverTarget = null;
-      scheduleRedraw();
       return;
     }
 
@@ -9179,6 +9413,17 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     }
 
     if (interactionState.draggingCardInstanceId === "") {
+      if (pendingObjectPress != null) {
+        const inspectTarget = currentGeometry?.inspectTargets.find((target) =>
+          target.group === "object"
+          && target.card.instanceId === pendingObjectPress?.cardInstanceId
+        );
+        pendingObjectPress = null;
+        if (inspectTarget != null) {
+          openCardInspect(inspectTarget);
+          return;
+        }
+      }
       if (pendingHandPress != null) {
         const inspectTarget = getHandInspectTarget(pendingHandPress.cardInstanceId);
         pendingHandPress = null;

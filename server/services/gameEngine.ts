@@ -1901,6 +1901,21 @@ function canAttackStaffTargetSeat(
   return !isProtectedFromAttack(match, targetSeatNumber, definition, actorSeatNumber);
 }
 
+function canFireAttackStaffObject(match: StoredMatchState, actorSeatNumber: number, staffCard: StoredCardInstance): boolean {
+  if (staffCard.cardId === ATTACK_STAFF_CARD_ID) {
+    return (
+      staffCard.usedThisTurn !== true
+      && getMassAttackStaffTargetSeatNumbers(match, actorSeatNumber, staffCard).length > 0
+    );
+  }
+
+  if (staffCard.cardId === MASS_ATTACK_STAFF_CARD_ID) {
+    return getMassAttackStaffTargetSeatNumbers(match, actorSeatNumber, staffCard).length > 0;
+  }
+
+  return false;
+}
+
 function beginMassAttackStaffFire(
   match: StoredMatchState,
   seatNumber: number,
@@ -1932,6 +1947,27 @@ function beginMassAttackStaffFire(
     `Seat ${seatNumber}'s ${definition.name} fired with ${getMassAttackStaffLoadedCount(staffCard)} stored ${getAttackStaffConfig(staffCard.cardId)?.loadCategory ?? "AM"} card(s)`
   );
   return true;
+}
+
+export function buildBotFireObjectRequest(match: StoredMatchState, seatNumber: number): FireObjectRequest | undefined {
+  const game = match.internalGame;
+  if (game == null || game.currentTurnSeatNumber !== seatNumber || game.pendingAction != null || game.pendingObjectChoice != null) {
+    return undefined;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  const staffCard = getSeatAttackStaff(seatState);
+  if (staffCard == null || staffCard.cardId !== ATTACK_STAFF_CARD_ID || !canFireAttackStaffObject(match, seatNumber, staffCard)) {
+    return undefined;
+  }
+
+  const targetSeatNumber = getMassAttackStaffTargetSeatNumbers(match, seatNumber, staffCard)[0];
+  return targetSeatNumber == null
+    ? undefined
+    : {
+        objectInstanceId: staffCard.instanceId,
+        targetSeatNumber
+      };
 }
 
 export function fireObjectAtTarget(match: StoredMatchState, userId: string, request: FireObjectRequest): void {
@@ -2010,6 +2046,30 @@ function getActiveExtraPlayMode(match: StoredMatchState, actorSeatNumber: number
   return game.extraPlayMode;
 }
 
+function isAttackMassiveFollowUp(match: StoredMatchState, actorSeatNumber: number, sourceDefinition: BaseCardDefinition): boolean {
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  return (
+    extraPlayMode?.sourceCardId === "attaque-massive"
+    && (extraPlayMode.allowedCategories === "any" || extraPlayMode.allowedCategories.includes(sourceDefinition.category.code))
+  );
+}
+
+function getMultiplicationPersistentDurationMultiplier(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceDefinition: BaseCardDefinition
+): number {
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  return (
+    PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[sourceDefinition.id] != null
+    && extraPlayMode?.sourceCardId === "multiplication"
+    && extraPlayMode.repeatFollowUp === true
+    && (extraPlayMode.allowedCategories === "any" || extraPlayMode.allowedCategories.includes(sourceDefinition.category.code))
+  )
+    ? 2
+    : 1;
+}
+
 function autoSkipOptionalExtraPlayIfUnavailable(match: StoredMatchState, actorSeatNumber: number): void {
   const game = match.internalGame;
   const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
@@ -2032,6 +2092,19 @@ function autoSkipOptionalExtraPlayIfUnavailable(match: StoredMatchState, actorSe
     match,
     "turn",
     `Seat ${actorSeatNumber} has no remaining eligible follow-up for ${requireDefinition(extraPlayMode.sourceCardId).name}; optional extra play skipped`
+  );
+}
+
+function hasEligibleExtraPlayFollowUpCard(match: StoredMatchState, actorSeatNumber: number): boolean {
+  const game = match.internalGame;
+  const extraPlayMode = getActiveExtraPlayMode(match, actorSeatNumber);
+  if (game == null || extraPlayMode == null) {
+    return false;
+  }
+
+  return getStoredSeat(game, actorSeatNumber).hand.some((card) =>
+    extraPlayMode.allowedCategories === "any"
+    || extraPlayMode.allowedCategories.includes(requireDefinition(card.cardId).category.code)
   );
 }
 
@@ -2267,6 +2340,10 @@ function isTemporalStopTurnActiveForActor(match: StoredMatchState, actorSeatNumb
   return match.internalGame?.temporalStopActiveSeatNumber === actorSeatNumber;
 }
 
+function isTemporalStopTurnActiveForActorInGame(game: StoredGameState, actorSeatNumber: number): boolean {
+  return game.temporalStopActiveSeatNumber === actorSeatNumber;
+}
+
 function isOrdreDemmerlausDefinition(definition?: BaseCardDefinition): boolean {
   return definition?.id === ORDRE_DEMMERLAUS_CARD_ID;
 }
@@ -2338,6 +2415,16 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
   const hasMiroir = seatState.hand.some((card) => card.cardId === "miroir");
   const hasOrdreDemmerlaus = seatState.hand.some((card) => card.cardId === ORDRE_DEMMERLAUS_CARD_ID);
   const temporalStopSuppressed = isTemporalStopResponseSuppressed(match, pendingAction, seatNumber);
+  if (temporalStopSuppressed) {
+    return [
+      {
+        choice: "pass",
+        label: "Pass",
+        description: "Opponents cannot respond during this stopped-time turn."
+      }
+    ];
+  }
+
   if (
     seatState.noRiposteTurnsRemaining > 0 &&
     pendingAction.targetSeatNumbers.includes(seatNumber) &&
@@ -2391,20 +2478,6 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
       label: "Pass",
       description: "Do not play a defense card. Resolve the normal resistance roll."
     };
-  } else if (
-    pendingAction.targetSeatNumbers.includes(seatNumber) &&
-    temporalStopSuppressed &&
-    pendingDefinition.rules.requiresResistanceCheck
-  ) {
-    options[0] = {
-      choice: "pass",
-      label: "Pass",
-      description: "Do not play a defense card. Resistance is suppressed during this stopped-time turn."
-    };
-  }
-
-  if (pendingAction.targetSeatNumbers.includes(seatNumber) && temporalStopSuppressed) {
-    return options;
   }
 
   if (
@@ -2589,10 +2662,10 @@ function isProtectedFromAttack(
     return true;
   }
 
-  if (
+  const blockedByAntiMassAttackAmulet =
     sourceDefinition.category.code === "AM"
-    && targetSeat.objects.some((objectCard) => objectCard.cardId === "amulette-anti-attaque-de-masse")
-  ) {
+    || (sourceSeatNumber != null && isAttackMassiveFollowUp(match, sourceSeatNumber, sourceDefinition));
+  if (blockedByAntiMassAttackAmulet && targetSeat.objects.some((objectCard) => objectCard.cardId === "amulette-anti-attaque-de-masse")) {
     return true;
   }
 
@@ -4080,6 +4153,7 @@ function swapSeatOrderPreservingPlayerState(
     userId: leftSeat.userId,
     displayName: leftSeat.displayName,
     avatarUrl: leftSeat.avatarUrl,
+    hp: leftSeat.hp,
     connected: leftSeat.connected,
     isHost: leftSeat.isHost,
     difficulty: leftSeat.difficulty,
@@ -4090,6 +4164,7 @@ function swapSeatOrderPreservingPlayerState(
     userId: rightSeat.userId,
     displayName: rightSeat.displayName,
     avatarUrl: rightSeat.avatarUrl,
+    hp: rightSeat.hp,
     connected: rightSeat.connected,
     isHost: rightSeat.isHost,
     difficulty: rightSeat.difficulty,
@@ -4311,6 +4386,10 @@ function getResponderSeatNumbers(
   targetSeatNumbers: number[]
 ): number[] {
   if (!shouldOpenResponseWindow(definition)) {
+    return [];
+  }
+
+  if (isTemporalStopTurnActiveForActorInGame(game, actorSeatNumber)) {
     return [];
   }
 
@@ -5292,6 +5371,79 @@ function resolvePersistentOwnerTurnMassDamageTick(
   checkForWinner(match);
 }
 
+function beginPersistentOwnerTurnMassDamageStatusAction(
+  match: StoredMatchState,
+  ownerSeatNumber: number,
+  status: StoredSeatStatus,
+  skipAfterAction: boolean
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const definition = requireDefinition(status.cardId);
+  if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] == null || !shouldOpenResponseWindow(definition)) {
+    return false;
+  }
+
+  const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, ownerSeatNumber);
+  const responderSeatNumbers = getResponderSeatNumbers(game, ownerSeatNumber, definition, targetSeatNumbers);
+  if (responderSeatNumbers.length === 0 || definition.defenseBand == null) {
+    return false;
+  }
+
+  const boxId = randomUUID();
+  const summary = `${getPublicSeat(match, ownerSeatNumber).displayName}'s ${definition.name} triggers against everyone.`;
+  appendDealerMessage(match, summary);
+  pushGameEvent(match, {
+    id: randomUUID(),
+    boxId,
+    type: "action_start",
+    createdAt: new Date().toISOString(),
+    actorSeatNumber: ownerSeatNumber,
+    targetSeatNumbers: [...targetSeatNumbers],
+    card: buildCardView(status, definition, "status", false),
+    summary
+  });
+  appendServerDebugLog(
+    match,
+    "box",
+    `Opened box ${boxId} for seat ${ownerSeatNumber} using ${definition.name} status trigger with responders ${responderSeatNumbers.length > 0 ? responderSeatNumbers.join(", ") : "none"}`
+  );
+
+  status.activatesNextTurn = true;
+  game.pendingAction = {
+    boxId,
+    actorSeatNumber: ownerSeatNumber,
+    targetSeatNumbers: [...targetSeatNumbers],
+    responderSeatNumbers,
+    storedCard: { instanceId: status.instanceId, cardId: status.cardId },
+    presentationCard: buildCardView(status, definition, "status", false),
+    summary,
+    responseMode: "collective",
+    responders: responderSeatNumbers.map((seatNumber) => ({
+      seatNumber,
+      state: "pending",
+      choice: "pending",
+      consumedCards: []
+    })),
+    sourceZone: "object",
+    skipStoredCardResolution: true,
+    continuation: {
+      mode: "continue_turn_start",
+      seatNumber: ownerSeatNumber,
+      skipAfterAction,
+      persistentStatusInstanceId: status.instanceId
+    },
+    createdAt: new Date().toISOString()
+  };
+
+  refreshSeatSummaries(match);
+  autoRespondIfNeeded(match);
+  return true;
+}
+
 function consumeHandCardsById(source: StoredCardInstance[], cardId: string, count: number): StoredCardInstance[] {
   const removed: StoredCardInstance[] = [];
 
@@ -5625,12 +5777,13 @@ function movePersistentCard(
       cardId: card.cardId,
       sourceSeatNumber: actorSeatNumber,
       remainingTurnTriggers: Math.max(1, actorSeat.powerLevel ?? 1),
-      bodyBound: true
+      bodyBound: true,
+      activatesNextTurn: true
     });
     appendServerDebugLog(
       match,
       "status",
-      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves for ${Math.max(1, actorSeat.powerLevel ?? 1)} turn(s)`
+      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves for ${Math.max(1, actorSeat.powerLevel ?? 1)} turn(s), starting next turn`
     );
     return false;
   }
@@ -5732,7 +5885,8 @@ function movePersistentCard(
   if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null) {
     const seat = getStoredSeat(game, actorSeatNumber);
     const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
-    const remainingTurnTriggers = Math.max(0, (actorSeat.powerLevel ?? 1) - 1);
+    const durationMultiplier = getMultiplicationPersistentDurationMultiplier(match, actorSeatNumber, definition);
+    const remainingTurnTriggers = Math.max(0, (actorSeat.powerLevel ?? 1) - 1) * durationMultiplier;
     if (remainingTurnTriggers === 0) {
       discardInstances(game, [card]);
       appendServerDebugLog(match, "status", `Seat ${actorSeatNumber}'s ${definition.name} resolved immediately and was discarded`);
@@ -5749,7 +5903,7 @@ function movePersistentCard(
     appendServerDebugLog(
       match,
       "status",
-      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves with ${remainingTurnTriggers} remaining turn trigger(s)`
+      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves with ${remainingTurnTriggers} remaining turn trigger(s)${durationMultiplier > 1 ? " after Multiplication" : ""}`
     );
     return false;
   }
@@ -5848,6 +6002,20 @@ function resolveTimedPotionTurnStart(match: StoredMatchState, seatNumber: number
   }
 }
 
+function resolveTotalPowerOverrideTurnStart(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
+  for (const status of seatState.statuses) {
+    if (TOTAL_POWER_OVERRIDE_STATUS_CARD_IDS.has(status.cardId) && status.activatesNextTurn === true) {
+      status.activatesNextTurn = false;
+    }
+  }
+}
+
 function resolveAbundanceTurnEnd(match: StoredMatchState, seatNumber: number): void {
   const game = match.internalGame;
   if (game == null) {
@@ -5895,6 +6063,16 @@ function resolveTimedPotionTurnEnd(match: StoredMatchState, seatNumber: number):
         match,
         "status",
         `Seat ${seatNumber}'s ${definition.name} has ${nextRemainingTurnTriggers} affected turn(s) remaining`
+      );
+      continue;
+    }
+
+    if (seatState.skipTurnsRemaining > 0) {
+      status.remainingTurnTriggers = 1;
+      appendServerDebugLog(
+        match,
+        "status",
+        `Seat ${seatNumber}'s ${definition.name} remains active for ${seatState.skipTurnsRemaining} skipped turn(s)`
       );
       continue;
     }
@@ -6629,45 +6807,87 @@ function maybeQueueMassAttackStaffTurnAction(
   return true;
 }
 
-function resolvePersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, seatNumber: number): void {
+function completePersistentOwnerTurnMassDamageStatusTrigger(
+  match: StoredMatchState,
+  seatNumber: number,
+  statusInstanceId: string
+): void {
   const game = match.internalGame;
   if (game == null) {
     return;
   }
 
   const seatState = getStoredSeat(game, seatNumber);
+  const status = seatState.statuses.find((candidate) => candidate.instanceId === statusInstanceId);
+  if (status == null || PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[status.cardId] == null) {
+    return;
+  }
+
+  const definition = requireDefinition(status.cardId);
+  const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
+  if (nextRemainingTurnTriggers > 0) {
+    status.remainingTurnTriggers = nextRemainingTurnTriggers;
+    appendServerDebugLog(
+      match,
+      "status",
+      `Seat ${seatNumber}'s ${definition.name} will trigger ${nextRemainingTurnTriggers} more time(s)`
+    );
+    return;
+  }
+
+  seatState.statuses = seatState.statuses.filter((candidate) => candidate.instanceId !== status.instanceId);
+  discardInstances(game, [{ instanceId: status.instanceId, cardId: status.cardId }]);
+  appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} ends.`);
+  appendServerDebugLog(match, "status", `Seat ${seatNumber}'s ${definition.name} expired after its final trigger`);
+}
+
+function clearProcessedPersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  for (const status of getStoredSeat(game, seatNumber).statuses) {
+    if (PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[status.cardId] != null && status.activatesNextTurn === true) {
+      status.activatesNextTurn = false;
+    }
+  }
+}
+
+function resolvePersistentOwnerTurnMassDamageStatuses(match: StoredMatchState, seatNumber: number, skipAfterAction: boolean): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  const seatState = getStoredSeat(game, seatNumber);
   const persistentStatuses = seatState.statuses.filter((status) =>
     PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[status.cardId] != null
+    && status.activatesNextTurn !== true
+    && (status.remainingTurnTriggers ?? 0) > 0
   );
 
   for (const status of persistentStatuses) {
     const definition = requireDefinition(status.cardId);
+    if (beginPersistentOwnerTurnMassDamageStatusAction(match, seatNumber, status, skipAfterAction)) {
+      return true;
+    }
+
     resolvePersistentOwnerTurnMassDamageTick(match, seatNumber, definition, status);
 
     if (match.status === "finished") {
-      return;
+      return true;
     }
 
-    const nextRemainingTurnTriggers = Math.max(0, (status.remainingTurnTriggers ?? 0) - 1);
-    if (nextRemainingTurnTriggers > 0) {
-      status.remainingTurnTriggers = nextRemainingTurnTriggers;
-      appendServerDebugLog(
-        match,
-        "status",
-        `Seat ${seatNumber}'s ${definition.name} will trigger ${nextRemainingTurnTriggers} more time(s)`
-      );
-      continue;
-    }
-
-    seatState.statuses = seatState.statuses.filter((candidate) => candidate.instanceId !== status.instanceId);
-    discardInstances(game, [{ instanceId: status.instanceId, cardId: status.cardId }]);
-    appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName}'s ${definition.name} ends.`);
-    appendServerDebugLog(match, "status", `Seat ${seatNumber}'s ${definition.name} expired after its final trigger`);
+    completePersistentOwnerTurnMassDamageStatusTrigger(match, seatNumber, status.instanceId);
 
     if (checkForWinner(match)) {
-      return;
+      return true;
     }
   }
+
+  clearProcessedPersistentOwnerTurnMassDamageStatuses(match, seatNumber);
+  return false;
 }
 
 function resolveAgonieTurnStart(match: StoredMatchState, seatNumber: number): void {
@@ -6691,6 +6911,51 @@ function resolveAgonieTurnStart(match: StoredMatchState, seatNumber: number): vo
       return;
     }
   }
+}
+
+function finishSkippedTurnAfterStartEffects(match: StoredMatchState, seatNumber: number): void {
+  const game = match.internalGame;
+  if (game == null) {
+    return;
+  }
+
+  if (game.temporalStopActiveSeatNumber === seatNumber) {
+    game.temporalStopActiveSeatNumber = undefined;
+    appendServerDebugLog(match, "turn", `Seat ${seatNumber} consumed the stopped-time extra turn by skipping it`);
+  }
+  resolveAbundanceTurnEnd(match, seatNumber);
+  resolveTimedPotionTurnEnd(match, seatNumber);
+  resolveTotalPowerOverrideTurnEnd(match, seatNumber);
+  resolveTemporaryExpulsionTurnEnd(match, seatNumber);
+  resolveInvisibilityTurnEnd(match, seatNumber);
+  appendDealerMessage(match, `${getPublicSeat(match, seatNumber).displayName} loses a turn.`);
+  appendServerDebugLog(match, "turn", `Seat ${seatNumber} skipped turn (${getStoredSeat(game, seatNumber).skipTurnsRemaining} skips remaining)`);
+  startNextTurn(match, seatNumber);
+}
+
+function continueTurnStartAfterPersistentOwnerTurnMassDamageStatuses(
+  match: StoredMatchState,
+  seatNumber: number,
+  skipAfterAction: boolean
+): void {
+  if (resolvePersistentOwnerTurnMassDamageStatuses(match, seatNumber, skipAfterAction)) {
+    return;
+  }
+
+  if (checkForWinner(match)) {
+    return;
+  }
+
+  if (maybeQueueMassAttackStaffTurnAction(match, seatNumber, skipAfterAction)) {
+    return;
+  }
+
+  if (skipAfterAction) {
+    finishSkippedTurnAfterStartEffects(match, seatNumber);
+    return;
+  }
+
+  refreshSeatSummaries(match);
 }
 
 function startNextTurn(match: StoredMatchState, previousSeatNumber: number): void {
@@ -6781,9 +7046,23 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
     }
     candidateSeat.pendingExtraPlays = 0;
     candidateSeat.handInspectionTargetSeatNumber = undefined;
+    const losesTurn = candidateSeat.skipTurnsRemaining > 0;
+    if (losesTurn) {
+      candidateSeat.skipTurnsRemaining -= 1;
+    }
+
+    game.pendingCurseRelease = undefined;
+    appendServerDebugLog(match, "turn", `Turn advanced to seat ${candidateSeat.seatNumber} (turn ${game.turnNumber})`);
+
+    if (losesTurn) {
+      finishSkippedTurnAfterStartEffects(match, candidateSeat.seatNumber);
+      return;
+    }
+
     resolveAbundanceTurnStart(match, candidateSeat.seatNumber);
     resolveVitalityRingTurnStart(match, candidateSeat.seatNumber);
     resolveTimedPotionTurnStart(match, candidateSeat.seatNumber);
+    resolveTotalPowerOverrideTurnStart(match, candidateSeat.seatNumber);
     resolveAgonieTurnStart(match, candidateSeat.seatNumber);
     if (match.status === "finished") {
       return;
@@ -6801,38 +7080,15 @@ function startNextTurn(match: StoredMatchState, previousSeatNumber: number): voi
       }
     }
 
-    const losesTurn = candidateSeat.skipTurnsRemaining > 0;
-    if (losesTurn) {
-      candidateSeat.skipTurnsRemaining -= 1;
+    if (resolvePersistentOwnerTurnMassDamageStatuses(match, candidateSeat.seatNumber, losesTurn)) {
+      return;
     }
-
-    game.pendingCurseRelease = undefined;
-    appendServerDebugLog(match, "turn", `Turn advanced to seat ${candidateSeat.seatNumber} (turn ${game.turnNumber})`);
-
-    resolvePersistentOwnerTurnMassDamageStatuses(match, candidateSeat.seatNumber);
     if (checkForWinner(match)) {
       return;
     }
 
     if (maybeQueueMassAttackStaffTurnAction(match, candidateSeat.seatNumber, losesTurn)) {
       return;
-    }
-
-    if (losesTurn) {
-      if (game.temporalStopActiveSeatNumber === candidateSeat.seatNumber) {
-        game.temporalStopActiveSeatNumber = undefined;
-        appendServerDebugLog(match, "turn", `Seat ${candidateSeat.seatNumber} consumed the stopped-time extra turn by skipping it`);
-      }
-      resolveAbundanceTurnEnd(match, candidateSeat.seatNumber);
-      resolveTimedPotionTurnEnd(match, candidateSeat.seatNumber);
-      resolveTotalPowerOverrideTurnEnd(match, candidateSeat.seatNumber);
-      resolveTemporaryExpulsionTurnEnd(match, candidateSeat.seatNumber);
-      resolveInvisibilityTurnEnd(match, candidateSeat.seatNumber);
-      appendDealerMessage(match, `${getPublicSeat(match, candidateSeat.seatNumber).displayName} loses a turn.`);
-      appendServerDebugLog(match, "turn", `Seat ${candidateSeat.seatNumber} skipped turn (${candidateSeat.skipTurnsRemaining} skips remaining)`);
-      nextIndex = (nextIndex + 1) % ordered.length;
-      safety += 1;
-      continue;
     }
 
     return;
@@ -6941,9 +7197,28 @@ function buildPublicSeat(match: StoredMatchState, seat: SeatState, viewerSeatNum
   publicSeat.handCount = storedSeat.hand.length;
   publicSeat.powerLevel = computePowerLevel(match, seat.seatNumber);
   publicSeat.isAlive = storedSeat.alive;
-  publicSeat.objects = storedSeat.objects.map((objectCard) =>
-    buildCardView(objectCard, requireDefinition(objectCard.cardId), "object", false)
-  );
+  publicSeat.objects = storedSeat.objects.map((objectCard) => {
+    const isManualOwnTurnObject =
+      viewerSeatNumber === seat.seatNumber
+      && game.currentTurnSeatNumber === seat.seatNumber
+      && game.pendingAction == null
+      && game.pendingObjectChoice == null
+      && game.forcedFollowUp == null
+      && objectCard.cardId === ATTACK_STAFF_CARD_ID;
+    const isPendingMassStaffChoice =
+      viewerSeatNumber === seat.seatNumber
+      && game.pendingObjectChoice?.mode === "mass_attack_staff_turn"
+      && game.pendingObjectChoice.chooserSeatNumber === seat.seatNumber
+      && game.pendingObjectChoice.sourceCard.instanceId === objectCard.instanceId;
+    const canPlayObject = (isManualOwnTurnObject || isPendingMassStaffChoice) && canFireAttackStaffObject(match, seat.seatNumber, objectCard);
+    return buildCardView(
+      objectCard,
+      requireDefinition(objectCard.cardId),
+      "object",
+      canPlayObject,
+      canPlayObject ? undefined : undefined
+    );
+  });
   publicSeat.statuses = storedSeat.statuses.map((statusCard) =>
     buildCardView(statusCard, requireDefinition(statusCard.cardId), "status", false)
   );
@@ -7670,18 +7945,15 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
     return;
   }
 
-  // Check if the player has any playable CA cards
+  // Check if the player has any playable response cards. Most are CA, but
+  // Ordre d'Emmerlaus is an E card that can still cancel pending actions.
   const seatState = getStoredSeat(game, currentResponder.seatNumber);
-  const hasPlayableCA = seatState.hand.some((card) => {
-    const def = requireDefinition(card.cardId);
-    if (def.category.code !== "CA") {
-      return false;
-    }
-    return canPlayCardAsPendingResponse(match, currentResponder.seatNumber, card).canPlay;
-  });
+  const hasPlayableResponseCard = seatState.hand.some((card) =>
+    canPlayCardAsPendingResponse(match, currentResponder.seatNumber, card).canPlay
+  );
 
-  if (hasPlayableCA) {
-    return; // Wait for the player to drag a CA card
+  if (hasPlayableResponseCard) {
+    return; // Wait for the player to drag a response card.
   }
 
   const options = getResponseOptionChoices(match, currentResponder.seatNumber);
@@ -7698,12 +7970,12 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
     );
 
   if (canUseNormalResistance) {
-    appendDealerMessage(match, `${playerName} had no CA card and relied on normal resistance.`);
-    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed into normal resistance (no CA cards)`);
+    appendDealerMessage(match, `${playerName} had no playable response card and relied on normal resistance.`);
+    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed into normal resistance (no playable response cards)`);
     respondToPendingAction(match, responderSeat.userId, { choice: "pass" });
   } else {
     appendDealerMessage(match, `${playerName} had no defense — passed automatically.`);
-    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed (no CA cards, no resist)`);
+    appendServerDebugLog(match, "auto_respond", `Seat ${currentResponder.seatNumber} auto-passed (no playable response cards, no resist)`);
     respondToPendingAction(match, responderSeat.userId, { choice: "pass" });
   }
 }
@@ -7915,6 +8187,20 @@ function resolvePendingActionContinuation(
       "turn",
       `Seat ${continuation.seatNumber} resumes their turn after ${requireDefinition(pendingAction.storedCard.cardId).name}`
     );
+  } else if (continuation.mode === "continue_turn_start") {
+    if (continuation.persistentStatusInstanceId != null) {
+      completePersistentOwnerTurnMassDamageStatusTrigger(
+        match,
+        continuation.seatNumber,
+        continuation.persistentStatusInstanceId
+      );
+    }
+    continueTurnStartAfterPersistentOwnerTurnMassDamageStatuses(
+      match,
+      continuation.seatNumber,
+      continuation.skipAfterAction === true
+    );
+    return true;
   } else {
     appendDealerMessage(match, `${getPublicSeat(match, continuation.seatNumber).displayName} loses a turn.`);
     appendServerDebugLog(
@@ -10118,8 +10404,8 @@ function resolveRemovedCardPlay(
     ? []
     : forcedFollowUp != null
       ? [forcedFollowUp.targetSeatNumber]
-      : forceAllOpponents
-        ? lapidationForcedTargetSeatNumbers ?? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
+    : forceAllOpponents
+        ? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
         : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const powerSourceSeatNumber =
     request.mode === "active" && isSelectedPowerSourceMassAttack(definition)
@@ -10144,6 +10430,7 @@ function resolveRemovedCardPlay(
   } else if (
     request.mode === "active"
     && definition.category.code === "AD"
+    && !forceAllOpponents
     && forcedFollowUp == null
     && lapidationForcedTargetSeatNumbers != null
     && (
@@ -10745,7 +11032,7 @@ function validateActionRequestBeforeHandRemoval(
   const targetSeatNumbers = forcedFollowUp != null
     ? [forcedFollowUp.targetSeatNumber]
     : forceAllOpponents
-      ? lapidationForcedTargetSeatNumbers ?? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
+      ? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
       : getTargetSeatNumbers(game, actorSeatNumber, request, definition.rules.targets, definition);
   const powerSourceSeatNumber = isSelectedPowerSourceMassAttack(definition)
     ? targetSeatNumbers[0]
@@ -10777,6 +11064,7 @@ function validateActionRequestBeforeHandRemoval(
 
   if (
     definition.category.code === "AD"
+    && !forceAllOpponents
     && forcedFollowUp == null
     && lapidationForcedTargetSeatNumbers != null
     && (
@@ -10929,8 +11217,15 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
 
   const extraPlayMode = getActiveExtraPlayMode(match, actorSeat.seatNumber);
   if (extraPlayMode != null && request.mode === "inactive" && extraPlayMode.requiredActivePlaysRemaining > 0) {
-    const requiredCategories = extraPlayMode.allowedCategories === "any" ? "allowed" : extraPlayMode.allowedCategories.join("/");
-    throw new Error(`Play a ${requiredCategories} card for ${requireDefinition(extraPlayMode.sourceCardId).name} first`);
+    if (hasEligibleExtraPlayFollowUpCard(match, actorSeat.seatNumber)) {
+      const requiredCategories = extraPlayMode.allowedCategories === "any" ? "allowed" : extraPlayMode.allowedCategories.join("/");
+      throw new Error(`Play a ${requiredCategories} card for ${requireDefinition(extraPlayMode.sourceCardId).name} first`);
+    }
+    appendServerDebugLog(
+      match,
+      "turn",
+      `Seat ${actorSeat.seatNumber} has no eligible ${requireDefinition(extraPlayMode.sourceCardId).name} follow-up; allowing inactive discard`
+    );
   }
   if (forcedFollowUp != null && request.mode === "inactive") {
     throw new Error("Play an AD card for Colère du magicien or pass the forced follow-up");
@@ -11024,6 +11319,7 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     && (extraPlayMode.allowedCategories === "any" || extraPlayMode.allowedCategories.includes(definition.category.code))
     && request.targetObjectInstanceId == null
     && game.pendingRepeatedPlay == null
+    && PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] == null
   ) {
     game.pendingRepeatedPlay = {
       sourceCardId: extraPlayMode.sourceCardId,

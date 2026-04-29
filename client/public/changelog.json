@@ -1,20 +1,36 @@
 {
-  "version": "2026.04.28-1248",
-  "releasedAt": "2026-04-28T12:48:37.108Z",
+  "version": "2026.04.29-2124",
+  "releasedAt": "2026-04-29T21:24:41.734Z",
   "en": {
     "title": "Latest Update",
     "items": [
-      "New expansion cards and gameplay fixes.",
-      "Improved card targeting and table animations.",
-      "More visible resolution steps for complex card effects."
+      "Ordre d'Emmerlaus can now be offered as a cancel response against cards such as Tornade.",
+      "Ongoing AM cards such as Grele, Tremblement de terre, Vent du Nord, and Pluie acide now offer defense chances on each start-of-turn activation.",
+      "Cards canceled during a start-of-turn activation now skip only that activation instead of being removed from effect slots.",
+      "Arret temporaire d'Emmerlaus now prevents opponents from responding during the extra turn, and Multiplication no longer allows Annulation.",
+      "Attaque massive now handles transformed AD attacks correctly, including anti-AM protection, Lapidation, and hands without an eligible AD follow-up.",
+      "Expulsion temporaire now keeps expelled players untargetable and skips their start-of-turn plays until the expulsion is really over.",
+      "Baton d'attaque objects are easier to notice, can be inspected before dragging to target, and can now be used by bots.",
+      "Changement vital now swaps player positions only, while Transfert d'energie remains the card that swaps HP.",
+      "Multiplication now doubles ongoing AM cards on the table instead of resolving the duration card twice immediately.",
+      "Puissance now lasts for the next turn like other one-turn boosts.",
+      "Modal dialogs no longer blur the table and can be dragged without snapping back during redraws."
     ]
   },
   "fr": {
     "title": "Derniere mise a jour",
     "items": [
-      "Nouvelles cartes d'extension et corrections de jeu.",
-      "Ciblage des cartes et animations de table ameliores.",
-      "Etapes de resolution plus visibles pour les effets de cartes complexes."
+      "Ordre d'Emmerlaus peut maintenant etre propose comme reponse d'annulation contre des cartes comme Tornade.",
+      "Les cartes AM a duree comme Grele, Tremblement de terre, Vent du Nord et Pluie acide offrent maintenant une chance de defense a chaque activation de debut de tour.",
+      "Les cartes annulees pendant une activation de debut de tour sautent seulement cette activation au lieu d'etre retirees des emplacements d'effet.",
+      "Arret temporaire d'Emmerlaus empeche maintenant les adversaires de repondre pendant le tour supplementaire, et Multiplication ne permet plus Annulation.",
+      "Attaque massive gere maintenant correctement les attaques AD transformees, incluant la protection anti-AM, Lapidation et les mains sans AD admissible.",
+      "Expulsion temporaire garde maintenant les joueurs expulses non ciblables et saute leurs actions de debut de tour jusqu'a la vraie fin de l'expulsion.",
+      "Les objets Baton d'attaque sont plus visibles, peuvent etre inspectes avant de glisser pour cibler et peuvent maintenant etre utilises par les bots.",
+      "Changement vital echange maintenant seulement les positions des joueurs, tandis que Transfert d'energie reste la carte qui echange les PV.",
+      "Multiplication double maintenant les cartes AM a duree sur la table au lieu de resoudre la carte a duree deux fois immediatement.",
+      "Puissance dure maintenant jusqu'au prochain tour comme les autres bonus d'un tour.",
+      "Les fenetres modales ne brouillent plus la table et peuvent etre deplacees sans revenir en place pendant les rafraichissements."
     ]
   }
 }

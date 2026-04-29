@@ -491,32 +491,45 @@ export const communionCardDefinitions = [
     }
   }),
   makeCard({
-    id: "pulsion-malefique",
-    name: "Pulsion maléfique",
-    description: "Tous les adversaires reçoivent des dégâts.\nDégâts : 1D100",
-    code: "AM",
-    file: "Pulsion_malefique.png",
-    rules: {
-      selectionMode: "confirm",
-      targets: "all_opponents",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "damage",
-          amount: {
-            kind: "dice",
-            notation: "1D100"
+      id: "pulsion-malefique",
+      name: "Pulsion maléfique",
+      enName: "Pulsion maléfique",
+      description: "Tous les adversaires reçoivent des dégâts.\nDégâts : 1D100",
+      enDescription: "Tous les adversaires reçoivent des dégâts.\nDégâts : 1D100",
+      code: "AM",
+      file: "Pulsion_malefique.png",
+      rules: {
+        selectionMode: "confirm",
+        targets: "all_opponents",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            amount: {
+              kind: "dice",
+              notation: "1D100"
+            }
           }
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Standard fixed-dice mass attack."
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Standard fixed-dice mass attack."
+      }
     }
-  }),
+  ),
   makeCard({
     id: "suprematie",
     name: "Suprématie",
@@ -872,7 +885,7 @@ export const communionCardDefinitions = [
       },
       defenseBand: {
         resistance: {
-          color: "blue",
+          color: "red",
           rollsRequired: 1
         },
         resistanceAccrueAllowed: false,
@@ -1153,7 +1166,7 @@ export const communionCardDefinitions = [
           rollsRequired: 0
         },
         resistanceAccrueAllowed: false,
-        annulationAllowed: true,
+        annulationAllowed: false,
         annulationCardsRequired: 0,
         mirrorAllowed: false
       },

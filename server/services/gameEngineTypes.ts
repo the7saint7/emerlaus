@@ -66,8 +66,10 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   corruptionPowerRingChooserSeatNumber?: number;
   deferredMirrorHits?: Array<{ sourceSeatNumber: number; targetSeatNumber: number }>;
   continuation?: {
-    mode: "resume_turn" | "advance_turn_without_play";
+    mode: "resume_turn" | "advance_turn_without_play" | "continue_turn_start";
     seatNumber: number;
+    skipAfterAction?: boolean;
+    persistentStatusInstanceId?: string;
   };
 }
 
