@@ -33,6 +33,7 @@ import {
   acknowledgePendingHandInspection,
   acknowledgePendingPublicHandReveal,
   appendServerDebugLog,
+  buildBotFireObjectRequest,
   buildBotPendingResponse,
   buildBotPlayRequest,
   buildPublicMatchState,
@@ -742,8 +743,13 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
         return;
       }
 
-      const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
-      if (botRequest != null) {
+      const botObjectRequest = buildBotFireObjectRequest(latestMatch, latestCurrentSeat.seatNumber);
+      if (botObjectRequest != null) {
+        attemptedBotCardName = baseCardDefinitionById["baton-dattaque"]?.name ?? "Bâton d’attaque";
+        fireObjectAtTarget(latestMatch, latestCurrentSeat.userId, botObjectRequest);
+      } else {
+        const botRequest = buildBotPlayRequest(latestMatch, latestCurrentSeat.seatNumber);
+        if (botRequest != null) {
         const actorSeatState = latestMatch.internalGame?.seatStates.find(
           (seatState) => seatState.seatNumber === latestCurrentSeat.seatNumber
         );
@@ -754,13 +760,14 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
           ? undefined
           : (baseCardDefinitionById[attemptedCardId]?.name ?? attemptedCardId);
         playCardFromHand(latestMatch, latestCurrentSeat.userId, botRequest);
-      } else {
+        } else {
         appendServerDebugLog(
           latestMatch,
           "bot_ai",
           `Seat ${latestCurrentSeat.seatNumber} had no playable bot action; forcing turn advance`
         );
         passTurnWithoutPlaying(latestMatch, latestCurrentSeat.seatNumber, "bot had no playable action");
+        }
       }
     } catch (error) {
       const attemptedCardLabel = attemptedBotCardName == null ? "" : ` with ${attemptedBotCardName}`;
