@@ -121,12 +121,15 @@ select {
 .pixi-session-id {
   position: absolute;
   right: 18px;
-  top: 12px;
-  font-family: monospace;
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  top: 4px;
+  font-family: Consolas, "Cascadia Mono", "Lucida Console", "Courier New", monospace;
+  font-size: 13px;
+  letter-spacing: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   text-transform: uppercase;
-  color: rgba(52, 110, 60, 0.85);
+  color: rgba(221, 244, 222, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
   pointer-events: none;
   user-select: none;
 }
@@ -164,6 +167,7 @@ select {
   gap: 8px;
   max-width: min(62vw, 860px);
   min-width: 0;
+  transform: translateY(-18px);
 }
 
 .pixi-frame-meta {

@@ -462,34 +462,47 @@ export const communionCardDefinitions = [
     }
   ),
   makeCard({
-    id: "puits-malefique",
-    name: "Puits maléfique",
-    description: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour soustraire des points de vie à tous les adversaires.\nDégâts : 1D10 par niveau de puissance de l'adversaire",
-    code: "AM",
-    file: "Puits_malefique.png",
-    rules: {
-      selectionMode: "target",
-      targets: "single_opponent",
-      requiresDefenseWindow: true,
-      requiresResistanceCheck: true,
-      staysInPlay: false,
-      effects: [
-        {
-          type: "damage",
-          targetOverride: "all_opponents",
-          amount: {
-            kind: "dice_per_power",
-            notation: "1D10",
-            powerSource: "target"
+      id: "puits-malefique",
+      name: "Puits maléfique",
+      enName: "Puits maléfique",
+      description: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour soustraire des points de vie à tous les adversaires.\nDégâts : 1D10 par niveau de puissance de l'adversaire",
+      enDescription: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour soustraire des points de vie à tous les adversaires.\nDégâts : 1D10 par niveau de puissance de l'adversaire",
+      code: "AM",
+      file: "Puits_malefique.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: true,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "damage",
+            targetOverride: "all_opponents",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D10",
+              powerSource: "target"
+            }
           }
-        }
-      ]
-    },
-    implementation: {
-      status: "generic",
-      notes: "Mass attack damage applies to all opponents while using the chosen opponent as the power source."
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "blue",
+          rollsRequired: 1
+        },
+        resistanceAccrueAllowed: true,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: true
+      },
+      implementation: {
+        status: "manual",
+        notes: "Mass attack damage applies to all opponents while using the chosen opponent as the power source."
+      }
     }
-  }),
+  ),
   makeCard({
       id: "pulsion-malefique",
       name: "Pulsion maléfique",
@@ -726,20 +739,90 @@ export const communionCardDefinitions = [
       }
     }
   ),
-  makeOpponentPowerHealCard({
-    id: "puissance-rivale",
-    name: "Puissance rivale",
-    description: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour se rajouter des points de vie.\nPoints de vie : 1D6 par niveau de puissance de l'adversaire",
-    file: "Puissance_rivale.png",
-    notation: "1D6"
-  }),
-  makeOpponentPowerHealCard({
-    id: "puissance-rivale-majeure",
-    name: "Puissance rivale majeure",
-    description: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour se rajouter des points de vie.\nPoints de vie : 1D8 par niveau de puissance de l'adversaire",
-    file: "Puissance_rivale_majeure.png",
-    notation: "1D8"
-  }),
+  makeCard({
+      id: "puissance-rivale",
+      name: "Puissance rivale",
+      enName: "Puissance rivale",
+      description: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour se rajouter des points de vie.\nPoints de vie : 1D6 par niveau de puissance de l'adversaire",
+      enDescription: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour se rajouter des points de vie.\nPoints de vie : 1D6 par niveau de puissance de l'adversaire",
+      code: "A",
+      file: "Puissance_rivale.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "heal",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D6",
+              powerSource: "target"
+            },
+            target: "self"
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Self-heal scaled by the selected opponent's power level."
+      }
+    }
+  ),
+  makeCard({
+      id: "puissance-rivale-majeure",
+      name: "Puissance rivale majeure",
+      enName: "Puissance rivale majeure",
+      description: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour se rajouter des points de vie.\nPoints de vie : 1D8 par niveau de puissance de l'adversaire",
+      enDescription: "Le magicien utilise le niveau de puissance de l'adversaire de son choix pour se rajouter des points de vie.\nPoints de vie : 1D8 par niveau de puissance de l'adversaire",
+      code: "A",
+      file: "Puissance_rivale_majeure.png",
+      rules: {
+        selectionMode: "target",
+        targets: "single_opponent",
+        requiresDefenseWindow: true,
+        requiresResistanceCheck: false,
+        staysInPlay: false,
+        effects: [
+          {
+            type: "heal",
+            amount: {
+              kind: "dice_per_power",
+              notation: "1D8",
+              powerSource: "target"
+            },
+            target: "self"
+          }
+        ]
+      },
+      defenseBand: {
+        resistance: {
+          color: "red",
+          rollsRequired: 0
+        },
+        resistanceAccrueAllowed: false,
+        annulationAllowed: true,
+        annulationCardsRequired: 1,
+        mirrorAllowed: false
+      },
+      implementation: {
+        status: "manual",
+        notes: "Self-heal scaled by the selected opponent's power level."
+      }
+    }
+  ),
   makeCard({
       id: "puissance-rivale-superieure",
       name: "Puissance rivale supérieure",

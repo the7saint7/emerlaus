@@ -11,9 +11,9 @@ import {
   getEffectiveInteractionTargets,
   getCollectiveAnnulationPrompt,
   getResponseChoiceForCard,
-  isObjectTargetable,
   isSeatTargetable,
-  objectCardMatchesSelectedTargeting
+  objectCardMatchesSelectedTargeting,
+  shouldHighlightOrdreDemmerlausResponse
 } from "../gameplay/interactionRules";
 import { getCardImageVariantUrl, getImportedCardImageUrl, getLocalizedCardImageUrl, getLocalizedCategoryLabel, loadStoredLanguage, localizeCardDisabledReason, localizeMatchState, localizeSeatState, persistLanguage, t, type AppLanguage, type CardImageVariant } from "../i18n";
 import { diceController, type DiceStagePlacement } from "../features/dice/diceController";
@@ -1057,13 +1057,26 @@ function createCardFace(
   dimmed: boolean,
   imageVariant: CardImageVariant = "full",
   onTextureReady?: () => void,
-  viergeReplayCard?: CardView | null
+  viergeReplayCard?: CardView | null,
+  goldGlow = false,
+  goldGlowPulse = 0
 ): Container {
   const cardContainer = new Container();
   cardContainer.position.set(layout.x, layout.y);
   cardContainer.rotation = layout.rotation;
   cardContainer.scale.set(layout.scale);
   cardContainer.alpha = (dimmed ? 0.42 : 1) * (layout.opacity ?? 1);
+
+  if (goldGlow) {
+    const pulse = Math.max(0, Math.min(1, goldGlowPulse));
+    const glowExpand = 8 + pulse * 7;
+    const innerExpand = 4 + pulse * 3;
+    cardContainer.addChild(
+      createRect(-layout.width / 2 - glowExpand, -layout.height / 2 - glowExpand, layout.width + glowExpand * 2, layout.height + glowExpand * 2, "#f5c842", 0.14 + pulse * 0.14, 24),
+      createRect(-layout.width / 2 - innerExpand, -layout.height / 2 - innerExpand, layout.width + innerExpand * 2, layout.height + innerExpand * 2, "#ffd96a", 0.22 + pulse * 0.2, 20),
+      createRect(-layout.width / 2 - 4, -layout.height / 2 - 4, layout.width + 8, layout.height + 8, "#f6b73c", 0.72 + pulse * 0.2, 18)
+    );
+  }
 
   const outer = createRect(-layout.width / 2, -layout.height / 2, layout.width, layout.height, "#eadbb8", 1, 16);
   const inner = createRect(-layout.width / 2 + 5, -layout.height / 2 + 5, layout.width - 10, layout.height - 10, "#271914", 1, 12);
@@ -1219,7 +1232,14 @@ function renderObjectRow(
     let dH = cardHeight;
     let isAmLoadHover = false;
 
-    const targetable = objectCardMatchesSelectedTargeting(selectedCard, card, seat.seatNumber, localSeatNumber, seat.objects);
+    const targetable = objectCardMatchesSelectedTargeting(
+      selectedCard,
+      card,
+      seat.seatNumber,
+      localSeatNumber,
+      seat.objects,
+      viergeReplayCard ?? undefined
+    );
     const hovered = hoverTarget?.kind === "object" && hoverTarget.objectInstanceId === card.instanceId;
     isAmLoadHover = !isStatus && hovered && canLoadMassAttackStaff(selectedCard, card, seat.seatNumber, localSeatNumber);
     const playableObject = !isStatus && card.canPlay === true;
@@ -2315,6 +2335,7 @@ function renderTableScene(
   viergeReplayCard?: CardView | null
 ): TableInteractionGeometry {
   const now = Date.now();
+  const ordreGlowPulse = 0.5 + Math.sin(now / 260) * 0.5;
   const playerSeat = getLocalSeat(match, playerSeatNumber);
   const layoutSeat = getLocalSeat(match, layoutSeatNumber);
   const spectatorMode = playerSeat == null && match.status === "in_progress";
@@ -2968,7 +2989,15 @@ function renderTableScene(
         continue;
       }
 
-      handContainer.addChild(createCardFace(layout, false, "full", onTextureReady, viergeReplayCard));
+      handContainer.addChild(createCardFace(
+        layout,
+        false,
+        "full",
+        onTextureReady,
+        viergeReplayCard,
+        shouldHighlightOrdreDemmerlausResponse(match, playerSeatNumber, layout.card),
+        ordreGlowPulse
+      ));
     }
 
     if (interactionState.draggingCardInstanceId !== "") {
@@ -2985,7 +3014,15 @@ function renderTableScene(
           rotation: 0,
           scale: 1.14
         };
-        scene.addChild(createCardFace(floatingLayout, false, "full", onTextureReady, viergeReplayCard));
+        scene.addChild(createCardFace(
+          floatingLayout,
+          false,
+          "full",
+          onTextureReady,
+          viergeReplayCard,
+          shouldHighlightOrdreDemmerlausResponse(match, playerSeatNumber, floatingLayout.card),
+          ordreGlowPulse
+        ));
       }
     }
 
@@ -7630,10 +7667,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       }
     }
 
-    if (
-      card.targets === "target_object"
-      || card.targets === "single_player_or_object"
-    ) {
+    const effectiveTargets = getEffectiveInteractionTargets(card, match.game?.viergeReplayCard);
+    if (effectiveTargets === "target_object" || effectiveTargets === "single_player_or_object") {
       let nearestObjectTarget: ObjectTargetGeometry | null = null;
       let nearestDistance = Number.POSITIVE_INFINITY;
       for (const objectTarget of currentGeometry.objectTargets) {
@@ -8129,6 +8164,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       || combatVisualsActive
       || turnPastilleAnimating
       || sleepOverlayActive
+      || getLocalSeat(match, localSeatNumber)?.hand?.some((card) => shouldHighlightOrdreDemmerlausResponse(match, localSeatNumber, card)) === true
       || (batonLoadHoverTs != null && (Date.now() - batonLoadHoverTs) < 220)
     ) {
       scheduleRedraw();
@@ -9393,7 +9429,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         });
         return;
       }
-      if (nearestSeatNumber != null) {
+      const effectiveTargets = draggedCard == null
+        ? null
+        : getEffectiveInteractionTargets(draggedCard, match.game?.viergeReplayCard);
+      if (nearestSeatNumber != null && effectiveTargets !== "target_object") {
         if (draggedCard != null && !draggedCard.canPlay) {
           showBlockedCardMessage(draggedCard);
           return;

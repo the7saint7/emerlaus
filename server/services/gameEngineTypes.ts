@@ -61,6 +61,7 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   skipStoredCardResolution?: boolean;
   sharedSacrificeAmount?: number;
   powerSourceSeatNumber?: number;
+  forceAllOpponents?: boolean;
   corruptionPowerRingDamage?: number;
   corruptionPowerRingCard?: StoredCardInstance;
   corruptionPowerRingChooserSeatNumber?: number;
