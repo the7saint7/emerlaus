@@ -14,11 +14,7 @@ function cardUsesRedArrowSelfTargeting(card: CardView): boolean {
 }
 
 export function getEffectiveInteractionTargets(card: CardView, viergeReplayCard?: CardView): CardView["targets"] {
-  if (
-    card.cardId === "vierge"
-    && viergeReplayCard != null
-    && viergeReplayCard.categoryCode === "AD"
-  ) {
+  if (card.cardId === "vierge" && viergeReplayCard != null) {
     return viergeReplayCard.targets;
   }
 
@@ -37,6 +33,7 @@ export function cardNeedsArrow(card: CardView, viergeReplayCard?: CardView): boo
 
 export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView): boolean {
   const targets = getEffectiveInteractionTargets(card, viergeReplayCard);
+  const usesViergeReplayTargets = card.cardId === "vierge" && viergeReplayCard != null;
   return (
     card.categoryCode === "O"
     || targets === "self"
@@ -44,7 +41,7 @@ export function cardIsLiftPlayable(card: CardView, viergeReplayCard?: CardView):
     || targets === "all_opponents"
     || targets === "left_opponent"
     || targets === "none"
-    || card.selectionMode === "confirm"
+    || (!usesViergeReplayTargets && card.selectionMode === "confirm")
   );
 }
 
@@ -106,6 +103,24 @@ export function canDropIntoResponseSlot(
   }
 
   return (match.game.pendingResponseOptions ?? []).some((option) => option.choice === choice);
+}
+
+export function shouldHighlightOrdreDemmerlausResponse(
+  match: MatchState,
+  localSeatNumber: number,
+  card: CardView | undefined
+): boolean {
+  if (card?.cardId !== "ordre-demmerlaus" || card.canPlay !== true) {
+    return false;
+  }
+
+  const localResponder = getLocalPendingResponder(match, localSeatNumber);
+  if (match.game?.pendingAction == null || localResponder?.state !== "pending") {
+    return false;
+  }
+
+  const responseChoices = new Set((match.game.pendingResponseOptions ?? []).map((option) => option.choice));
+  return responseChoices.has("ordre-demmerlaus") && !responseChoices.has("annulation");
 }
 
 export function getCollectiveAnnulationPrompt(
@@ -238,7 +253,8 @@ export function isObjectTargetable(
   objectCard: CardView,
   ownerSeatNumber: number,
   localSeatNumber: number,
-  ownerObjects?: CardView[]
+  ownerObjects?: CardView[],
+  viergeReplayCard?: CardView
 ): boolean {
   if (selectedCard == null) {
     return false;
@@ -259,9 +275,10 @@ export function isObjectTargetable(
     return false;
   }
 
+  const targets = getEffectiveInteractionTargets(selectedCard, viergeReplayCard);
   return canLoadMassAttackStaff(selectedCard, objectCard, ownerSeatNumber, localSeatNumber)
-    || selectedCard.targets === "target_object"
-    || selectedCard.targets === "single_player_or_object";
+    || targets === "target_object"
+    || targets === "single_player_or_object";
 }
 
 export function objectCardMatchesSelectedTargeting(
@@ -269,9 +286,10 @@ export function objectCardMatchesSelectedTargeting(
   objectCard: CardView,
   ownerSeatNumber: number,
   localSeatNumber: number,
-  ownerObjects?: CardView[]
+  ownerObjects?: CardView[],
+  viergeReplayCard?: CardView
 ): boolean {
-  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber, ownerObjects)) {
+  if (!isObjectTargetable(selectedCard, objectCard, ownerSeatNumber, localSeatNumber, ownerObjects, viergeReplayCard)) {
     return false;
   }
 
