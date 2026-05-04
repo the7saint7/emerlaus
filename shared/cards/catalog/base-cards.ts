@@ -2283,7 +2283,7 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
           "type": "damage",
           "amount": {
             "kind": "dice_per_power",
-            "notation": "1D12",
+            "notation": "1D6",
             "powerSource": "self",
             "powerBonus": 0
           }
