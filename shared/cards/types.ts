@@ -1,4 +1,4 @@
-export type CardCategoryCode = "AD" | "AM" | "A" | "O" | "E" | "S" | "CA" | "CO" | "ST" | "SO";
+export type CardCategoryCode = "AD" | "AM" | "A" | "O" | "E" | "S" | "CA" | "CO" | "ST" | "SO" | "SC";
 
 export type ResistanceColor = "blue" | "red" | "yellow";
 
@@ -19,7 +19,7 @@ export interface SaveBaseDefenseBandMappingRequest {
   mapping: DefenseBandRules;
 }
 
-export type DevCardCatalogId = "base" | "abondance" | "puissance" | "communion";
+export type DevCardCatalogId = "base" | "abondance" | "puissance" | "communion" | "sorcellerie";
 
 export type RollScaleMode = "power" | "target_power" | "multiply_power" | "multiply_target_power";
 
@@ -32,6 +32,7 @@ export type RollExpression =
   | { kind: "total_active_players_times"; amount: number };
 
 export type CardEffect =
+  | { type: "pay_hp"; amount: RollExpression }
   | { type: "damage"; amount: RollExpression; grantsHalfDamageOnResistance?: boolean; targetOverride?: "all_opponents" }
   | { type: "heal"; amount: RollExpression; target: "self" | "all_opponents" }
   | { type: "share_hp"; participants: "actor_and_target" }

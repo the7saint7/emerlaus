@@ -4,6 +4,7 @@
   "en": {
     "title": "Latest Update",
     "items": [
+      "The Sorcellerie expansion has been added and is enabled by default in new lobbies.",
       "Ordre d'Emmerlaus can now be used from the response pile when it is offered as a legal counter, including against cards that would otherwise require 2 Annulations.",
       "Ordre d'Emmerlaus is now available in reflected-action windows, so players can cancel a Miroir-reflected attack when that response is legal.",
       "Response debug logs now record which counter cards each player or bot was offered for future bug reports.",
@@ -23,6 +24,7 @@
   "fr": {
     "title": "Derniere mise a jour",
     "items": [
+      "L'extension Sorcellerie a ete ajoutee et elle est activee par defaut dans les nouveaux salons.",
       "Ordre d'Emmerlaus peut maintenant etre joue dans la pile de reponse lorsqu'il est offert comme contre legal, incluant contre les cartes qui demanderaient autrement 2 Annulations.",
       "Ordre d'Emmerlaus est maintenant disponible dans les fenetres d'action refletee, pour annuler une attaque renvoyee par Miroir lorsque cette reponse est legale.",
       "Les logs de reponse indiquent maintenant quelles cartes de contre chaque joueur ou bot pouvait jouer, pour aider les prochains rapports de bug.",

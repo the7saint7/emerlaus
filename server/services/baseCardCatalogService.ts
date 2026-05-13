@@ -5,6 +5,7 @@ import {
   communionCardDefinitions,
   defaultDefenseBandByCategory,
   puissanceCardDefinitions,
+  sorcellerieCardDefinitions,
   type BaseCardDefinition,
   type CardCategoryCode,
   type CardRules,
@@ -32,6 +33,11 @@ const CATALOG_CONFIG = {
     path: path.resolve(process.cwd(), "shared/cards/catalog/communion-cards.ts"),
     exportStart: "export const communionCardDefinitions = ",
     format: "makecard_array"
+  },
+  sorcellerie: {
+    path: path.resolve(process.cwd(), "shared/cards/catalog/sorcellerie-cards.ts"),
+    exportStart: "export const sorcellerieCardDefinitions = ",
+    format: "makecard_array"
   }
 } as const satisfies Record<DevCardCatalogId, {
   path: string;
@@ -49,7 +55,8 @@ const CATEGORY_LABEL_BY_CODE: Record<CardCategoryCode, string> = {
   CA: "Contre-attaques",
   CO: "Contre-objets",
   ST: "Stratégies",
-  SO: "Sortilèges"
+  SO: "Sortilèges",
+  SC: "Sorcellerie"
 };
 
 interface CatalogArrayBounds {
@@ -284,7 +291,9 @@ function buildLiveMakeCardDefinition(
     ? "Abondance"
     : catalogId === "puissance"
       ? "Puissance"
-      : "Communion";
+      : catalogId === "communion"
+        ? "Communion"
+        : "Sorcellerie";
 
   return {
     ...baseCard,
@@ -446,7 +455,9 @@ export function readBaseCardCatalog(catalogId: DevCardCatalogId = "base"): BaseC
           ? communionCardDefinitions
           : catalogId === "puissance"
             ? puissanceCardDefinitions
-            : abondanceCardDefinitions
+            : catalogId === "sorcellerie"
+              ? sorcellerieCardDefinitions
+              : abondanceCardDefinitions
       );
 }
 

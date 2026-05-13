@@ -2,7 +2,8 @@ import {
   abondanceDeckCardQuantities,
   baseCardDefinitions,
   communionDeckCardQuantities,
-  puissanceDeckCardQuantities
+  puissanceDeckCardQuantities,
+  sorcellerieDeckCardQuantities
 } from "./cards/index.js";
 import type { MatchExpansionSettings } from "./types.js";
 
@@ -12,6 +13,10 @@ function sumQuantities(quantities: Record<string, number>): number {
 
 export function determineDeckSize(enabledExpansions: MatchExpansionSettings): number {
   let deckSize = baseCardDefinitions.reduce((total, card) => total + card.baseDeckQuantity, 0);
+
+  if (enabledExpansions.sorcellerie) {
+    deckSize += sumQuantities(sorcellerieDeckCardQuantities);
+  }
 
   if (enabledExpansions.abondance) {
     deckSize += sumQuantities(abondanceDeckCardQuantities);
