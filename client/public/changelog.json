@@ -1,36 +1,42 @@
 {
-  "version": "2026.05.04-1426",
-  "releasedAt": "2026-05-04T14:26:49.414Z",
+  "version": "2026.05.13-1518",
+  "releasedAt": "2026-05-13T15:18:41.643Z",
   "en": {
     "title": "Latest Update",
     "items": [
-      "Vierge now uses the target rules of the copied card, including object-targeting cards such as Transfert de ceinture.",
-      "Bots now use Vierge only when the copied card can be played meaningfully, with a fresh valid target or object.",
-      "Multiplication now repeats duration AM cards immediately and also doubles their stored duration.",
-      "Duration AM cards such as Pluie acide can now be played even when no opponent is currently targetable.",
-      "Mirror no longer gives the defender a duplicate duration AM effect when reflecting cards such as Pluie acide.",
-      "Attaque massive now resolves converted AD cards as one collective AM-style attack with shared damage rolls.",
-      "Bots no longer play Colere du magicien unless they have a playable AD follow-up for the paralyzed target.",
-      "La main qui vole now lets human players choose which ring to discard when stealing a ring above the ring limit.",
-      "Ordre d'Emmerlaus now receives a pulsing gold glow when it is the reason a normally uncancelable action can be answered.",
-      "Communion is now enabled by default when creating a match.",
-      "The short session id is easier to read and is less likely to overlap the dev card picker."
+      "Ordre d'Emmerlaus can now be used from the response pile when it is offered as a legal counter, including against cards that would otherwise require 2 Annulations.",
+      "Ordre d'Emmerlaus is now available in reflected-action windows, so players can cancel a Miroir-reflected attack when that response is legal.",
+      "Response debug logs now record which counter cards each player or bot was offered for future bug reports.",
+      "Persistent mass attacks such as Tremblement de terre and Pluie acide now count the initial hit as the first duration trigger instead of adding an extra turn.",
+      "Mirrored persistent cards can now stay in play when appropriate, while repeated duration ticks no longer duplicate the stored card.",
+      "Baton d'attaque massive now lets the owner fire or load the staff at the start of the turn, then continue to their regular turn when appropriate.",
+      "Loading a compatible card onto an attack staff no longer counts as the card played for that turn.",
+      "Baton d'attaque massive and bot all-opponent attacks no longer consume a turn by trying to resolve when there are no valid targets.",
+      "Bots no longer play Espoir diabolique or other all-opponent attacks when there are no valid targets.",
+      "Bots no longer play Multiplication unless they have a playable A, AD, or AM follow-up card.",
+      "AD > Points de vie now converts more AD cards correctly, including set-HP, instant-kill, and Corruption d'un anneau effects, with the correct x2 rule for cards that do not use power level.",
+      "Puissance vitale majeure now rolls 1D8 per power level.",
+      "Amulette anti-miroir now only prevents Miroir against its wearer and no longer rolls 1D10 to reflect attacks.",
+      "When zooming a card from your hand, you can now use previous/next arrows or swipe on mobile to inspect the rest of your hand."
     ]
   },
   "fr": {
     "title": "Derniere mise a jour",
     "items": [
-      "Vierge utilise maintenant les regles de ciblage de la carte copiee, incluant les cartes qui ciblent un objet comme Transfert de ceinture.",
-      "Les bots utilisent maintenant Vierge seulement si la carte copiee peut etre jouee utilement, avec une nouvelle cible ou un nouvel objet valide.",
-      "Multiplication repete maintenant les cartes AM a duree immediatement et double aussi leur duree stockee.",
-      "Les cartes AM a duree comme Pluie acide peuvent maintenant etre jouees meme si aucun adversaire n'est ciblable pour le moment.",
-      "Miroir ne donne plus un effet AM a duree en double au defenseur lorsqu'il reflete des cartes comme Pluie acide.",
-      "Attaque massive resout maintenant les cartes AD converties comme une seule attaque collective de type AM avec des jets de degats partages.",
-      "Les bots ne jouent plus Colere du magicien sans AD jouable contre la cible paralysee.",
-      "La main qui vole permet maintenant aux joueurs humains de choisir quel anneau jeter lorsqu'ils volent un anneau au-dessus de la limite.",
-      "Ordre d'Emmerlaus recoit maintenant une lueur doree animee lorsqu'il est la raison pour laquelle une action normalement non annulable peut recevoir une reponse.",
-      "Communion est maintenant active par defaut lors de la creation d'une partie.",
-      "L'identifiant court de session est plus lisible et risque moins de chevaucher le selecteur de cartes dev."
+      "Ordre d'Emmerlaus peut maintenant etre joue dans la pile de reponse lorsqu'il est offert comme contre legal, incluant contre les cartes qui demanderaient autrement 2 Annulations.",
+      "Ordre d'Emmerlaus est maintenant disponible dans les fenetres d'action refletee, pour annuler une attaque renvoyee par Miroir lorsque cette reponse est legale.",
+      "Les logs de reponse indiquent maintenant quelles cartes de contre chaque joueur ou bot pouvait jouer, pour aider les prochains rapports de bug.",
+      "Les attaques massives a duree comme Tremblement de terre et Pluie acide comptent maintenant le coup initial comme le premier declenchement, au lieu d'ajouter un tour de trop.",
+      "Les cartes persistantes refletees par Miroir peuvent maintenant rester en jeu lorsque c'est approprie, sans dupliquer la carte lors des declenchements repetes.",
+      "Le Baton d'attaque massive permet maintenant d'utiliser ou de charger le baton au debut du tour, puis de continuer le tour normal lorsque c'est approprie.",
+      "Charger une carte compatible sur un baton d'attaque ne compte plus comme la carte jouee du tour.",
+      "Le Baton d'attaque massive et les attaques de bot contre tous les adversaires ne consomment plus un tour en essayant de se resoudre sans cible valide.",
+      "Les bots ne jouent plus Espoir diabolique ni les autres attaques contre tous les adversaires lorsqu'il n'y a aucune cible valide.",
+      "Les bots ne jouent plus Multiplication sans carte A, AD ou AM jouable pour la suite.",
+      "AD > Points de vie convertit maintenant correctement plus de cartes AD, incluant les effets qui fixent les PV, tuent instantanement, et Corruption d'un anneau, avec la regle x2 pour les cartes qui n'utilisent pas le niveau de puissance.",
+      "Puissance vitale majeure lance maintenant 1D8 par niveau de puissance.",
+      "Amulette anti-miroir empeche maintenant seulement Miroir contre son porteur et ne lance plus 1D10 pour refleter les attaques.",
+      "Quand vous zoomez une carte de votre main, vous pouvez maintenant utiliser les fleches precedent/suivant ou glisser sur mobile pour consulter le reste de votre main."
     ]
   }
 }

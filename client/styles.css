@@ -853,6 +853,39 @@ select {
   background: #111;
 }
 
+.pixi-inspect-nav {
+  position: absolute;
+  top: 50%;
+  width: 48px;
+  height: 64px;
+  border: 1px solid rgba(248, 240, 222, 0.34);
+  border-radius: 8px;
+  color: rgba(248, 240, 222, 0.96);
+  background: rgba(9, 15, 10, 0.72);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  font: 700 34px/1 system-ui, sans-serif;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 180ms ease, background 160ms ease;
+  pointer-events: auto;
+}
+
+.pixi-inspect-nav:hover {
+  background: rgba(22, 42, 28, 0.86);
+}
+
+.pixi-inspect-nav--prev {
+  left: max(18px, calc(50% - min(38vw, 280px) - 76px));
+}
+
+.pixi-inspect-nav--next {
+  right: max(18px, calc(50% - min(38vw, 280px) - 76px));
+}
+
+.pixi-inspect-layer--active.pixi-inspect-layer--hand-nav .pixi-inspect-nav {
+  opacity: 1;
+}
+
 .pixi-inspect-meta {
   position: absolute;
   left: 50%;

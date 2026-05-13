@@ -187,14 +187,14 @@ export const communionCardDefinitions = [
   makeCard({
     id: "amulette-anti-miroir",
     name: "Amulette anti-miroir",
-    description: "Cette carte doit être déposée devant soi pour être active. Contre chaque attaque réussie dirigée contre lui, le magicien lance 1D10. S'il obtient 1, l'attaque se retourne contre l'adversaire (comme le miroir). Cette carte fonctionne seulement contre les sorts où le miroir est permis.",
+    description: "Cette carte doit etre deposee devant soi pour etre active. Le miroir est impossible contre le magicien aussi longtemps qu'il portera l'amulette.",
     code: "O",
     file: "Amulette_anti-miroir.png",
     rules: stubRules("self", { staysInPlay: true }),
     implementation: {
       status: "manual",
-      handler: "anti-mirror-amulet-reflect",
-      notes: "Persistent object; successful incoming mirror-eligible attacks have a 1D10 chance to reflect back to the attacker."
+      handler: "anti-mirror-amulet",
+      notes: "Persistent object; opponents cannot use Miroir against the wearer."
     }
   }),
   makeCard({

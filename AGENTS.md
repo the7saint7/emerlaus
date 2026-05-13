@@ -152,6 +152,11 @@ Related scripts:
 - `npm run process:english-card-alpha`
 - `npm run process:card-images`
 
+Card formula notation:
+
+- In source card text, `X` means multiply a single roll by the level or value. Example: `1D8 X NP` means roll `1D8` once, then multiply by NP.
+- In source card text, `*` means roll per level or value. Example: `1D8 * NP` means roll `1D8` once per NP, encoded as `dice_per_power`.
+
 Be careful with large checked-in image directories. Do not churn generated card assets unless the task explicitly requires it.
 
 ## Runtime Data
