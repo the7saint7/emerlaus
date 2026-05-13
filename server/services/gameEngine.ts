@@ -222,6 +222,22 @@ function canPlayWithoutImmediateTargets(definition: BaseCardDefinition, request?
     && PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] != null;
 }
 
+function shouldPlacePersistentCardAfterPendingAction(
+  definition: BaseCardDefinition,
+  pendingAction: StoredPendingActionState,
+  landed = true
+): boolean {
+  if (!definition.rules.staysInPlay || !landed || pendingAction.skipStoredCardResolution === true) {
+    return false;
+  }
+
+  if (pendingAction.fromMirror !== true) {
+    return true;
+  }
+
+  return PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[definition.id] == null;
+}
+
 const FULL_TURN_NO_RIPOSTE_STATUS_CARD_IDS = new Set<string>([
   "sommeil",
   "engelure",
@@ -1765,6 +1781,30 @@ function getResistanceDiminueePenalty(definitionId: string): number {
   }
 }
 
+function rollExpressionUsesPowerLevel(expression: RollExpression): boolean {
+  if (expression.kind === "dice_per_power") {
+    return true;
+  }
+
+  return "scaleBy" in expression && (
+    expression.scaleBy === "power"
+    || expression.scaleBy === "target_power"
+    || expression.scaleBy === "multiply_power"
+    || expression.scaleBy === "multiply_target_power"
+  );
+}
+
+function getAdPointsCorruptionRingDamage(match: StoredMatchState, actorSeatNumber: number): number {
+  const game = match.internalGame;
+  if (game == null) {
+    return 0;
+  }
+
+  const bestRingLevel = getEquippedPowerRings(getStoredSeat(game, actorSeatNumber))
+    .reduce((bestLevel, ring) => Math.max(bestLevel, getPowerRingLevel(ring.cardId) ?? 0), 0);
+  return bestRingLevel * 25;
+}
+
 function resolveFollowUpCategoryHeal(
   match: StoredMatchState,
   sourceDefinition: BaseCardDefinition,
@@ -1784,26 +1824,25 @@ function resolveFollowUpCategoryHeal(
 
   const actorSeat = getPublicSeat(match, actorSeatNumber);
   const followUpDefinition = requireDefinition(followUpCard.cardId);
-  const damageEffects = followUpDefinition.rules.effects.filter(
-    (effect): effect is Extract<CardEffect, { type: "damage" }> => effect.type === "damage"
-  );
-  if (damageEffects.length === 0) {
-    return 0;
-  }
 
   let totalHeal = 0;
-  for (const effect of damageEffects) {
-    let healAmount = evaluateRoll(match, effect.amount, actorSeat, undefined, actorSeatNumber, boxId, {
-      seatNumber: actorSeatNumber,
-      highIsGood: true
-    });
-    const usesPowerLevel =
-      effect.amount.kind === "dice_per_power"
-      || ("scaleBy" in effect.amount && (effect.amount.scaleBy === "power" || effect.amount.scaleBy === "multiply_power"));
-    if (!usesPowerLevel) {
-      healAmount *= 2;
+  for (const effect of followUpDefinition.rules.effects) {
+    if (effect.type === "damage" || effect.type === "lifesteal" || effect.type === "set_target_hp") {
+      let healAmount = evaluateRoll(match, effect.amount, actorSeat, actorSeat, actorSeatNumber, boxId, {
+        seatNumber: actorSeatNumber,
+        highIsGood: true
+      });
+      if (!rollExpressionUsesPowerLevel(effect.amount)) {
+        healAmount *= 2;
+      }
+      totalHeal += healAmount;
+    } else if (effect.type === "instant_kill") {
+      totalHeal += actorSeat.hp * 2;
     }
-    totalHeal += healAmount;
+  }
+
+  if (followUpDefinition.id === "corruption-dun-anneau") {
+    totalHeal += getAdPointsCorruptionRingDamage(match, actorSeatNumber) * 2;
   }
 
   return totalHeal;
@@ -2178,6 +2217,30 @@ function hasPlayableResistanceReductionFollowUp(
 
     const definition = requireDefinition(handCard.cardId);
     if (!allowsNormalResistance(definition)) {
+      return false;
+    }
+
+    return canPlayCardActively(match, actorSeatNumber, handCard).canPlay;
+  });
+}
+
+function hasPlayableMultiplicationFollowUp(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceCardInstanceId: string
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  return getStoredSeat(game, actorSeatNumber).hand.some((handCard) => {
+    if (handCard.instanceId === sourceCardInstanceId) {
+      return false;
+    }
+
+    const definition = requireDefinition(handCard.cardId);
+    if (!["A", "AD", "AM"].includes(definition.category.code)) {
       return false;
     }
 
@@ -2645,6 +2708,54 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
   return options;
 }
 
+function getResponseOptionCardName(choice: PendingActionOption["choice"]): string | undefined {
+  switch (choice) {
+    case "annulation":
+      return requireDefinition("annulation").name;
+    case "ordre-demmerlaus":
+      return requireDefinition(ORDRE_DEMMERLAUS_CARD_ID).name;
+    case "resistance_accrue":
+      return requireDefinition("resistance-accrue").name;
+    case "mirror":
+      return requireDefinition("miroir").name;
+    case "resist":
+    case "pass":
+      return undefined;
+    default:
+      const exhaustiveChoice: never = choice;
+      return exhaustiveChoice;
+  }
+}
+
+function formatResponseOptionsForDebugLog(options: PendingActionOption[]): string {
+  const choices = options.map((option) => option.choice).join(",") || "none";
+  const cards = options
+    .map((option) => getResponseOptionCardName(option.choice))
+    .filter((name): name is string => name != null)
+    .join(",") || "none";
+  return `choices=${choices} cards=${cards}`;
+}
+
+function appendResponseOptionsDebugLog(
+  match: StoredMatchState,
+  seatNumber: number,
+  options: PendingActionOption[],
+  reason: string
+): void {
+  const pendingAction = match.internalGame?.pendingAction;
+  if (pendingAction == null) {
+    return;
+  }
+  const definition = requireDefinition(pendingAction.storedCard.cardId);
+  const mirrorSuffix = pendingAction.fromMirror === true ? " mirrored" : "";
+  const boxSuffix = pendingAction.boxId != null ? ` [box ${pendingAction.boxId}]` : "";
+  appendServerDebugLog(
+    match,
+    "response_options",
+    `Seat ${seatNumber} ${reason} options for${mirrorSuffix} ${definition.name}${boxSuffix}: ${formatResponseOptionsForDebugLog(options)}`
+  );
+}
+
 function canPlayCardAsPendingResponse(match: StoredMatchState, seatNumber: number, card: StoredCardInstance): { canPlay: boolean; reason?: string } {
   if (match.internalGame?.pendingObjectChoice != null) {
     return { canPlay: false, reason: "Choose the pending object first" };
@@ -2927,51 +3038,6 @@ function triggerCounterattackRobe(
     `Seat ${targetSeatNumber}'s ${counterattackDefinition.name} dealt ${roll.total} to seat ${sourceSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
   );
   applyDamage(match, sourceSeatNumber, roll.total, counterattackDefinition, false, boxId, targetSeatNumber);
-}
-
-function computeAntiMirrorAmuletReflection(
-  match: StoredMatchState,
-  targetSeatNumber: number,
-  incomingAmount: number,
-  sourceDefinition: BaseCardDefinition,
-  sourceSeatNumber?: number,
-  boxId?: string
-): number {
-  const game = match.internalGame;
-  if (
-    game == null
-    || incomingAmount <= 0
-    || sourceSeatNumber == null
-    || sourceSeatNumber === targetSeatNumber
-    || !isAttackLikeDefinition(sourceDefinition)
-    || sourceDefinition.defenseBand?.mirrorAllowed !== true
-    || isRobeOriginDamageSource(sourceDefinition)
-    || !getStoredSeat(game, targetSeatNumber).objects.some((objectCard) => objectCard.cardId === "amulette-anti-miroir")
-  ) {
-    return 0;
-  }
-
-  const amuletDefinition = requireDefinition("amulette-anti-miroir");
-  if (isProtectedFromAttack(match, sourceSeatNumber, amuletDefinition, targetSeatNumber)) {
-    return 0;
-  }
-
-  const roll = rollDiceNotationDetailed("1D10");
-  publishSeatDiceRoll(match, targetSeatNumber, "1D10", roll.total, roll.values, boxId);
-  if (roll.total !== 1) {
-    return 0;
-  }
-
-  appendDealerMessage(
-    match,
-    `${getPublicSeat(match, targetSeatNumber).displayName}'s ${amuletDefinition.name} turns ${sourceDefinition.name} back on ${getPublicSeat(match, sourceSeatNumber).displayName}.`
-  );
-  appendServerDebugLog(
-    match,
-    "object",
-    `Seat ${targetSeatNumber}'s ${amuletDefinition.name} reflected ${incomingAmount} from ${sourceDefinition.name} to seat ${sourceSeatNumber}${boxId != null ? ` [box ${boxId}]` : ""}`
-  );
-  return incomingAmount;
 }
 
 function triggerVampiricRobe(
@@ -4054,13 +4120,6 @@ function applyDamage(
 
   const absorbedAmount = damageReductionFromObjects(match, targetSeatNumber, sourceDefinition);
   const reflectedAmount = computeMirrorRobeReflection(
-    match,
-    targetSeatNumber,
-    amount,
-    sourceDefinition,
-    sourceSeatNumber,
-    boxId
-  ) + computeAntiMirrorAmuletReflection(
     match,
     targetSeatNumber,
     amount,
@@ -6068,10 +6127,11 @@ function movePersistentCard(
     const seat = getStoredSeat(game, actorSeatNumber);
     const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, sourceZone);
     const durationMultiplier = getMultiplicationPersistentDurationMultiplier(match, actorSeatNumber, definition);
-    const remainingTurnTriggers = Math.max(1, actorSeat.powerLevel ?? 1) * durationMultiplier;
+    const totalTurnTriggers = Math.max(1, actorSeat.powerLevel ?? 1) * durationMultiplier;
+    const remainingTurnTriggers = Math.max(0, totalTurnTriggers - 1);
     if (remainingTurnTriggers === 0) {
       discardInstances(game, [card]);
-      appendServerDebugLog(match, "status", `Seat ${actorSeatNumber}'s ${definition.name} resolved immediately and was discarded`);
+      appendServerDebugLog(match, "status", `Seat ${actorSeatNumber}'s ${definition.name} used its final turn trigger on play and was discarded`);
       return false;
     }
 
@@ -6085,7 +6145,7 @@ function movePersistentCard(
     appendServerDebugLog(
       match,
       "status",
-      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves with ${remainingTurnTriggers} remaining turn trigger(s)${durationMultiplier > 1 ? " after Multiplication" : ""}`
+      `Seat ${actorSeatNumber} placed ${definition.name} in front of themselves with ${remainingTurnTriggers} of ${totalTurnTriggers} turn trigger(s) remaining${durationMultiplier > 1 ? " after Multiplication" : ""}`
     );
     return false;
   }
@@ -8142,6 +8202,9 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
     return;
   }
 
+  const options = getResponseOptionChoices(match, currentResponder.seatNumber);
+  appendResponseOptionsDebugLog(match, currentResponder.seatNumber, options, "offered");
+
   // Check if the player has any playable response cards. Most are CA, but
   // Ordre d'Emmerlaus is an E card that can still cancel pending actions.
   const seatState = getStoredSeat(game, currentResponder.seatNumber);
@@ -8153,7 +8216,6 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
     return; // Wait for the player to drag a response card.
   }
 
-  const options = getResponseOptionChoices(match, currentResponder.seatNumber);
   const playerName = responderSeat.displayName;
 
   const canUseNormalResistance = options.some((option) => option.choice === "pass")
@@ -8534,7 +8596,7 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
 
   discardInstances(game, responder.consumedCards);
 
-  if (definition.rules.staysInPlay && anyEffectLanded && pendingAction.fromMirror !== true && pendingAction.skipStoredCardResolution !== true) {
+  if (shouldPlacePersistentCardAfterPendingAction(definition, pendingAction, anyEffectLanded)) {
     movePersistentCard(
       match,
       pendingAction.actorSeatNumber,
@@ -8875,7 +8937,7 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
   discardInstances(game, responder.consumedCards);
 
-  if (definition.rules.staysInPlay && !resisted && pendingAction.fromMirror !== true && pendingAction.skipStoredCardResolution !== true) {
+  if (shouldPlacePersistentCardAfterPendingAction(definition, pendingAction, !resisted)) {
     movePersistentCard(
       match,
       pendingAction.actorSeatNumber,
@@ -9550,7 +9612,7 @@ function resolvePendingAction(match: StoredMatchState): void {
 
   if (pendingAction.skipStoredCardResolution === true) {
     appendServerDebugLog(match, "pending_action", `Skipped stored-card resolution for ${definition.name} after repeated use`);
-  } else if (definition.rules.staysInPlay && pendingAction.fromMirror !== true) {
+  } else if (shouldPlacePersistentCardAfterPendingAction(definition, pendingAction)) {
     if (pendingAction.sourceZone !== "object") {
       const ringOverflow = movePersistentCard(
         match,
@@ -9618,7 +9680,9 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
   }
 
   const seatState = getStoredSeat(game, responderSeat.seatNumber);
-  const allowedChoices = new Set(getResponseOptionChoices(match, responderSeat.seatNumber).map((option) => option.choice));
+  const responseOptions = getResponseOptionChoices(match, responderSeat.seatNumber);
+  appendResponseOptionsDebugLog(match, responderSeat.seatNumber, responseOptions, `submitted ${request.choice}; available`);
+  const allowedChoices = new Set(responseOptions.map((option) => option.choice));
   if (!allowedChoices.has(request.choice)) {
     throw new Error("That response is not legal for the current action");
   }
@@ -9909,7 +9973,6 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
     const removedCard = moveCardFromHand(owner.hand, selectedHandCard.instanceId);
     const removedDefinition = requireDefinition(removedCard.cardId);
     staffCard.attachedCards = [...(staffCard.attachedCards ?? []), removedCard];
-    recordCardsPlayed(match, chooserSeat.seatNumber, "active");
     const summary = `${chooserSeat.displayName} loaded ${removedDefinition.name} onto ${requireDefinition(staffCard.cardId).name}.`;
     appendDealerMessage(match, summary);
     appendServerDebugLog(
@@ -9927,7 +9990,11 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
       resolvedAt: new Date().toISOString()
     };
     game.pendingObjectChoice = undefined;
-    finalizeResolvedAction(match, chooserSeat.seatNumber);
+    if (pendingObjectChoice.continuationMode === "advance_turn_without_play") {
+      finalizeResolvedAction(match, chooserSeat.seatNumber);
+      return;
+    }
+    refreshSeatSummaries(match);
     return;
   }
 
@@ -11506,7 +11573,6 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     }
 
     const removedCard = moveCardFromHand(actorState.hand, handCard.instanceId);
-    recordCardsPlayed(match, actorSeat.seatNumber, "active");
     targetOwnedMassAttackStaff.attachedCards = [...(targetOwnedMassAttackStaff.attachedCards ?? []), removedCard];
     const summary = `${actorSeat.displayName} loaded ${definition.name} onto ${requireDefinition(targetOwnedMassAttackStaff.cardId).name}.`;
     appendDealerMessage(match, summary);
@@ -11524,7 +11590,7 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
       summary,
       resolvedAt: new Date().toISOString()
     };
-    finalizeResolvedAction(match, actorSeat.seatNumber);
+    refreshSeatSummaries(match);
     return;
   }
 
@@ -11713,6 +11779,15 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
       continue;
     }
 
+    if (definition.id === "multiplication" && !hasPlayableMultiplicationFollowUp(match, seatNumber, handCard.instanceId)) {
+      appendServerDebugLog(
+        match,
+        "bot_ai",
+        `Seat ${seatNumber} skipped ${definition.name}; no playable A/AD/AM follow-up is available`
+      );
+      continue;
+    }
+
     if (getPowerRingLevel(handCard.cardId) != null && !wouldPowerRingImproveEquippedSet(seatState, handCard.cardId)) {
       appendServerDebugLog(
         match,
@@ -11729,6 +11804,19 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
     const preferredTargetSeatNumber = priorityByCardId.get(handCard.instanceId)?.preferredTargetSeatNumber;
 
     switch (definition.rules.targets) {
+      case "all_opponents": {
+        const targetSeatNumbers = nextLivingOpponentSeatNumbers(game, seatNumber)
+          .filter((targetSeatNumber) => !isProtectedFromAttack(match, targetSeatNumber, definition, seatNumber));
+        if (targetSeatNumbers.length === 0 && !canPlayWithoutImmediateTargets(definition, request)) {
+          appendServerDebugLog(
+            match,
+            "bot_ai",
+            `Seat ${seatNumber} skipped ${definition.name}; no valid opponent target`
+          );
+          continue;
+        }
+        break;
+      }
       case "single_opponent":
         request.targetSeatNumber = definition.id === "colere-du-magicien"
           ? pickBotColereTarget(match, seatNumber, handCard.instanceId, preferredTargetSeatNumber)
@@ -11889,6 +11977,8 @@ export function buildBotPendingResponse(match: StoredMatchState, seatNumber: num
   if (options.length === 0) {
     return undefined;
   }
+
+  appendResponseOptionsDebugLog(match, seatNumber, options, "bot evaluated");
 
   const pendingAction = match.internalGame?.pendingAction;
   const availableChoices = new Set(options.map((option) => option.choice));

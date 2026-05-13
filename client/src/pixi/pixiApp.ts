@@ -178,7 +178,7 @@ interface RenderObjectRowResult {
 
 interface InspectTargetGeometry extends RectGeometry {
   card: CardView;
-  group: "center" | "response" | "object" | "status";
+  group: "center" | "response" | "object" | "status" | "hand";
 }
 
 interface TableInteractionGeometry {
@@ -4702,6 +4702,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let cardInspectState: CardInspectState | null = null;
   let inspectLayerActive = false;
   let inspectCloseTimer: number | null = null;
+  let inspectTouchStartX: number | null = null;
   let pendingHandPress: PendingHandPress | null = null;
   let pendingObjectPress: PendingObjectPress | null = null;
   const modalDragOffsets = new Map<string, { x: number; y: number }>();
@@ -7448,7 +7449,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     return {
       card: layout.card,
-      group: "center",
+      group: "hand",
       x: layout.x - (layout.width * layout.scale) / 2,
       y: layout.y - (layout.height * layout.scale) / 2,
       width: layout.width * layout.scale,
@@ -7532,6 +7533,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         <div class="pixi-inspect-card" data-action="close-inspect">
           <img alt="" />
         </div>
+        <button class="pixi-inspect-nav pixi-inspect-nav--prev" type="button" data-action="inspect-prev" aria-label="Previous card">‹</button>
+        <button class="pixi-inspect-nav pixi-inspect-nav--next" type="button" data-action="inspect-next" aria-label="Next card">›</button>
       `;
 
       inspectLayerElement.querySelectorAll<HTMLElement>("[data-action='close-inspect']").forEach((element) => {
@@ -7539,11 +7542,42 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           closeCardInspect();
         };
       });
+      inspectLayerElement.querySelectorAll<HTMLButtonElement>("[data-action='inspect-prev'], [data-action='inspect-next']").forEach((button) => {
+        button.onclick = (event) => {
+          event.stopPropagation();
+          navigateHandInspect(button.dataset.action === "inspect-prev" ? -1 : 1);
+        };
+      });
+      inspectLayerElement.ontouchstart = (event) => {
+        inspectTouchStartX = cardInspectState?.originGroup === "hand"
+          ? event.touches[0]?.clientX ?? null
+          : null;
+      };
+      inspectLayerElement.ontouchend = (event) => {
+        if (inspectTouchStartX == null || cardInspectState?.originGroup !== "hand") {
+          inspectTouchStartX = null;
+          return;
+        }
+        const endX = event.changedTouches[0]?.clientX;
+        if (endX == null) {
+          inspectTouchStartX = null;
+          return;
+        }
+        const deltaX = endX - inspectTouchStartX;
+        inspectTouchStartX = null;
+        if (Math.abs(deltaX) < 48) {
+          return;
+        }
+        navigateHandInspect(deltaX > 0 ? -1 : 1);
+      };
     }
 
-    inspectLayerElement.className = `pixi-inspect-layer pixi-inspect-layer--visible${inspectLayerActive ? " pixi-inspect-layer--active" : ""}`;
+    const handCards = getLocalHand();
+    const canNavigateHand = cardInspectState.originGroup === "hand" && handCards.length > 1;
+    inspectLayerElement.className = `pixi-inspect-layer pixi-inspect-layer--visible${inspectLayerActive ? " pixi-inspect-layer--active" : ""}${canNavigateHand ? " pixi-inspect-layer--hand-nav" : ""}`;
     const cardElement = inspectLayerElement.querySelector<HTMLElement>(".pixi-inspect-card");
     const imageElement = inspectLayerElement.querySelector<HTMLImageElement>(".pixi-inspect-card img");
+    const navButtons = inspectLayerElement.querySelectorAll<HTMLButtonElement>(".pixi-inspect-nav");
     if (cardElement != null) {
       cardElement.style.left = `${originRect.x}px`;
       cardElement.style.top = `${originRect.y}px`;
@@ -7554,6 +7588,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       imageElement.src = getCardTextureUrl(cardInspectState.card, "full");
       imageElement.alt = cardInspectState.card.name;
     }
+    navButtons.forEach((button) => {
+      button.hidden = !canNavigateHand;
+    });
   };
 
   const closeCardInspect = (): void => {
@@ -7585,6 +7622,34 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       inspectLayerActive = true;
       renderInspectOverlay();
     });
+  };
+
+  const navigateHandInspect = (direction: -1 | 1): void => {
+    if (cardInspectState?.originGroup !== "hand") {
+      return;
+    }
+
+    const handCards = getLocalHand();
+    if (handCards.length < 2) {
+      return;
+    }
+
+    const currentIndex = handCards.findIndex((card) => card.instanceId === cardInspectState?.card.instanceId);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const nextCard = handCards[(currentIndex + direction + handCards.length) % handCards.length];
+    if (nextCard == null) {
+      return;
+    }
+
+    const nextTarget = getHandInspectTarget(nextCard.instanceId);
+    showCardInspect(
+      nextCard,
+      nextTarget ?? cardInspectState.originRect,
+      "hand"
+    );
   };
 
   const openCardInspect = (target: InspectTargetGeometry): void => {
@@ -9519,7 +9584,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     if (interactionState.dragHoverTarget.kind === "response-slot") {
       const choice = getResponseChoiceForCard(draggedCard);
-      if (choice == null || !draggedCard.canPlay) {
+      if (choice == null || !canDropIntoResponseSlot(match, localSeatNumber, draggedCard)) {
         showBlockedCardMessage(draggedCard);
         return;
       }

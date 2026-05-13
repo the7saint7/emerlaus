@@ -93,7 +93,7 @@ export function canDropIntoResponseSlot(
   card: CardView | undefined
 ): boolean {
   const choice = getResponseChoiceForCard(card);
-  if (choice == null || card?.canPlay !== true) {
+  if (choice == null) {
     return false;
   }
 
@@ -110,7 +110,7 @@ export function shouldHighlightOrdreDemmerlausResponse(
   localSeatNumber: number,
   card: CardView | undefined
 ): boolean {
-  if (card?.cardId !== "ordre-demmerlaus" || card.canPlay !== true) {
+  if (card?.cardId !== "ordre-demmerlaus") {
     return false;
   }
 

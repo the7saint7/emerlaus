@@ -5006,9 +5006,10 @@ export const baseCardDefinitions = localizeBaseCardDefinitions([
         {
           "type": "heal",
           "amount": {
-            "kind": "dice",
+            "kind": "dice_per_power",
             "notation": "1D8",
-            "scaleBy": "multiply_power"
+            "powerSource": "self",
+            "powerBonus": 0
           },
           "target": "self"
         }
