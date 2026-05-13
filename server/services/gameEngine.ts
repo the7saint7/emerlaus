@@ -5,6 +5,7 @@ import {
   baseCardDefinitions,
   communionDeckCardQuantities,
   puissanceDeckCardQuantities,
+  sorcellerieDeckCardQuantities,
   type BaseCardDefinition,
   type CardCategoryCode,
   type CardEffect,
@@ -47,7 +48,7 @@ import type {
   StoredPendingActionState
 } from "./gameEngineTypes.js";
 
-const ATTACK_CATEGORIES = new Set<CardCategoryCode>(["AD", "AM", "S", "E", "CO"]);
+const ATTACK_CATEGORIES = new Set<CardCategoryCode>(["AD", "AM", "S", "E", "CO", "SC"]);
 const ATTACK_STAFF_CARD_ID = "baton-dattaque";
 const MASS_ATTACK_STAFF_CARD_ID = "baton-dattaque-massive";
 const CHOIX_HP_CHOICE_ID = "__choix_hp";
@@ -57,6 +58,8 @@ const DECISION_REDRAW_CHOICE_ID = "__decision_redraw";
 const OPTION_HAND_CHOICE_ID = "__option_hand";
 const OPTION_OBJECTS_CHOICE_ID = "__option_objects";
 const ORDRE_DEMMERLAUS_CARD_ID = "ordre-demmerlaus";
+const VITESSE_DU_VENT_CARD_ID = "vitesse-du-vent";
+const VITESSE_DU_VENT_REQUIRED_FOLLOW_UPS = 3;
 const ABUNDANCE_ALLOWED_CATEGORIES: CardCategoryCode[] = ["A", "AD", "AM"];
 const HUMAN_REFILL_TO_BOT_TURN_DELAY_MS = 2500;
 
@@ -324,6 +327,12 @@ function createDeck(enabledExpansions: MatchExpansionSettings): StoredCardInstan
 
   for (const card of baseCardDefinitions) {
     appendCardCopies(deck, card.id, card.baseDeckQuantity);
+  }
+
+  if (enabledExpansions.sorcellerie) {
+    for (const [cardId, count] of Object.entries(sorcellerieDeckCardQuantities)) {
+      appendCardCopies(deck, cardId, count);
+    }
   }
 
   if (enabledExpansions.abondance) {
@@ -2299,6 +2308,38 @@ function hasPlayableColereFollowUp(
   );
 }
 
+function hasPlayableVitesseDuVentFollowUps(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceCardInstanceId: string
+): boolean {
+  const game = match.internalGame;
+  if (game == null) {
+    return false;
+  }
+
+  let playableCount = 0;
+  for (const handCard of getStoredSeat(game, actorSeatNumber).hand) {
+    if (handCard.instanceId === sourceCardInstanceId) {
+      continue;
+    }
+
+    const definition = requireDefinition(handCard.cardId);
+    if (definition.id === VITESSE_DU_VENT_CARD_ID) {
+      continue;
+    }
+
+    if (canPlayCardActively(match, actorSeatNumber, handCard).canPlay) {
+      playableCount += 1;
+      if (playableCount >= VITESSE_DU_VENT_REQUIRED_FOLLOW_UPS) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function pickBotColereTarget(
   match: StoredMatchState,
   actorSeatNumber: number,
@@ -2370,6 +2411,13 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     )
   ) {
     return { canPlay: false, reason: "Puissance totale requires an A/AD/AM card in hand" };
+  }
+
+  if (
+    definition.id === VITESSE_DU_VENT_CARD_ID
+    && !hasPlayableVitesseDuVentFollowUps(match, actorSeatNumber, card.instanceId)
+  ) {
+    return { canPlay: false, reason: "Vitesse du vent requires 3 other playable cards in hand" };
   }
 
   if (definition.id === "vierge" && game.lastViergeReplay == null) {
@@ -6486,6 +6534,23 @@ function applyEffect(
   const timedPotionDamageMultiplier = getTimedPotionDamageMultiplier(match, actorSeatNumber);
 
   switch (effect.type) {
+    case "pay_hp": {
+      const amount = evaluateRoll(match, effect.amount, actorSeat, actorSeat, actorSeatNumber, boxId);
+      if (amount > 0) {
+        actorSeat.hp -= amount;
+        recordLowestHpSurvived(match, actorSeatNumber);
+        pushPresentationEvent(match, {
+          boxId,
+          type: "hp_loss",
+          seatNumber: actorSeatNumber,
+          cardName: definition.name,
+          amount
+        });
+        handleSeatDeath(match, actorSeatNumber, false, actorSeatNumber);
+        appendServerDebugLog(match, "effect", `${definition.name} costs seat ${actorSeatNumber} ${amount} HP${boxId != null ? ` [box ${boxId}]` : ""}`);
+      }
+      break;
+    }
     case "damage": {
       const effectTargetSeatNumbers = effect.targetOverride === "all_opponents"
         ? nextLivingOpponentSeatNumbers(game, actorSeatNumber)
@@ -8362,6 +8427,27 @@ function beginPendingAction(
     createdAt: new Date().toISOString()
   };
 
+  for (const effect of definition.rules.effects) {
+    if (effect.type !== "pay_hp") {
+      continue;
+    }
+
+    applyEffect(
+      match,
+      actorSeatNumber,
+      removedCard,
+      definition,
+      effect,
+      targetSeatNumbers,
+      request.targetObjectInstanceId,
+      boxId,
+      1,
+      undefined,
+      "hand",
+      powerSourceSeatNumber
+    );
+  }
+
   if (sharedSacrificeEffect != null) {
     const actorHp = getPublicSeat(match, actorSeatNumber).hp;
     if (queueSacrificeChoice(match, actorSeatNumber, removedCard, actorHp, boxId)) {
@@ -8506,6 +8592,10 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
   for (const effect of definition.rules.effects) {
     if (!getStoredSeat(game, targetSeatNumber).alive) {
       break;
+    }
+
+    if (effect.type === "pay_hp") {
+      continue;
     }
 
     if (effect.type !== "damage") {
@@ -8816,6 +8906,10 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
 
     for (const effect of definition.rules.effects) {
       if (effect.type !== "damage" && effect.type !== "lifesteal") {
+        if (effect.type === "pay_hp") {
+          continue;
+        }
+
         if (!resisted) {
           const pausedForObjectChoice = applyEffect(
             match,
@@ -9386,6 +9480,10 @@ function resolvePendingAction(match: StoredMatchState): void {
 
   for (const effect of definition.rules.effects) {
     if (effect.type !== "damage" && effect.type !== "lifesteal") {
+      if (effect.type === "pay_hp") {
+        continue;
+      }
+
       const remainingTargets = pendingAction.targetSeatNumbers.filter(
         (seatNumber) =>
           !canceledTargets.has(seatNumber) &&

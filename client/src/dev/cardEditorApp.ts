@@ -15,7 +15,8 @@ const EDITOR_DECK_OPTIONS = [
   { id: "base", label: "Jeu de base" },
   { id: "abondance", label: "Abondance" },
   { id: "puissance", label: "Puissance" },
-  { id: "communion", label: "Communion" }
+  { id: "communion", label: "Communion" },
+  { id: "sorcellerie", label: "Sorcellerie" }
 ] satisfies Array<{ id: DevCardCatalogId; label: string }>;
 
 interface EditorState {
@@ -36,7 +37,8 @@ const CATEGORY_LABELS: Record<CardCategoryCode, string> = {
   CA: "Contre-attaques",
   CO: "Contre-objets",
   ST: "Sortilèges",
-  SO: "Sorts objets"
+  SO: "Sorts objets",
+  SC: "Sorcellerie"
 };
 
 const SELECTED_DECK_STORAGE_KEY = "emerlaus.cardEditor.selectedDeck";
@@ -49,7 +51,7 @@ function rememberSelectedDeck(deck: DevCardCatalogId): void {
 
 function rememberedDeck(): DevCardCatalogId {
   const value = window.sessionStorage.getItem(SELECTED_DECK_STORAGE_KEY);
-  return value === "abondance" || value === "puissance" || value === "communion" ? value : "base";
+  return value === "abondance" || value === "puissance" || value === "communion" || value === "sorcellerie" ? value : "base";
 }
 
 function selectedCardStorageKey(deck: DevCardCatalogId): string {
@@ -463,7 +465,8 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
       base: initialDeck === "base" ? rememberedCardIndex("base", initialCards) : 0,
       abondance: initialDeck === "abondance" ? rememberedCardIndex("abondance", initialCards) : 0,
       puissance: initialDeck === "puissance" ? rememberedCardIndex("puissance", initialCards) : 0,
-      communion: initialDeck === "communion" ? rememberedCardIndex("communion", initialCards) : 0
+      communion: initialDeck === "communion" ? rememberedCardIndex("communion", initialCards) : 0,
+      sorcellerie: initialDeck === "sorcellerie" ? rememberedCardIndex("sorcellerie", initialCards) : 0
     },
     selectedDeck: initialDeck,
     statusMessage: `Edit a card and save it into the ${EDITOR_DECK_OPTIONS.find((option) => option.id === initialDeck)?.label ?? initialDeck} catalog.`,
@@ -510,7 +513,7 @@ export async function createCardEditorApp(rootElement: HTMLDivElement): Promise<
 
     rootElement.querySelector<HTMLSelectElement>("[data-card-editor-action='pick-deck']")?.addEventListener("change", async (event) => {
       const nextDeck = (event.currentTarget as HTMLSelectElement).value as DevCardCatalogId;
-      if (nextDeck !== "base" && nextDeck !== "abondance" && nextDeck !== "puissance" && nextDeck !== "communion") {
+      if (nextDeck !== "base" && nextDeck !== "abondance" && nextDeck !== "puissance" && nextDeck !== "communion" && nextDeck !== "sorcellerie") {
         return;
       }
 

@@ -18,6 +18,11 @@ import {
   communionCardDefinitions,
   communionDeckCardQuantities
 } from "./catalog/communion-cards.js";
+import {
+  sorcellerieCardDefinitionById,
+  sorcellerieCardDefinitions,
+  sorcellerieDeckCardQuantities
+} from "./catalog/sorcellerie-cards.js";
 
 export {
   baseCardDefinitions,
@@ -27,11 +32,14 @@ export {
   puissanceCardDefinitions,
   puissanceDeckCardQuantities,
   communionCardDefinitions,
-  communionDeckCardQuantities
+  communionDeckCardQuantities,
+  sorcellerieCardDefinitions,
+  sorcellerieDeckCardQuantities
 };
 
 export const allCardDefinitions = [
   ...baseCardDefinitions,
+  ...sorcellerieCardDefinitions,
   ...abondanceCardDefinitions,
   ...puissanceCardDefinitions,
   ...communionCardDefinitions
@@ -39,6 +47,7 @@ export const allCardDefinitions = [
 
 export const baseCardDefinitionById = {
   ...baseOnlyCardDefinitionById,
+  ...sorcellerieCardDefinitionById,
   ...abondanceCardDefinitionById,
   ...puissanceCardDefinitionById,
   ...communionCardDefinitionById

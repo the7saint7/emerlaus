@@ -154,6 +154,7 @@ type TranslationKey =
   | "reference.deckAbondance"
   | "reference.deckPuissance"
   | "reference.deckCommunion"
+  | "reference.deckSorcellerie"
   | "reference.empty"
   | "bugReport.title"
   | "bugReport.body"
@@ -351,7 +352,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.openSeat": "Open Seat",
     "lobby.seatAvailable": "Available for a player or a bot.",
     "lobby.expansions": "Expansion Decks",
-    "lobby.expansionsHint": "The host can toggle Abondance, Puissance, and Communion here. The other expansion decks remain disabled for now.",
+    "lobby.expansionsHint": "The host can toggle Sorcellerie, Abondance, Puissance, and Communion here. The other expansion decks remain disabled for now.",
     "lobby.expansionDisabled": "Disabled",
     "lobby.expansionEnabled": "Enabled",
     "lobby.expansionOff": "Off",
@@ -446,6 +447,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.deckAbondance": "Abondance",
     "reference.deckPuissance": "Puissance",
     "reference.deckCommunion": "Communion",
+    "reference.deckSorcellerie": "Sorcellerie",
     "reference.empty": "No cards match this search.",
     "bugReport.title": "Report A Bug",
     "bugReport.body": "Describe what happened. Session {shortId} will be attached automatically.",
@@ -632,7 +634,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "lobby.openSeat": "Siège libre",
     "lobby.seatAvailable": "Disponible pour un joueur ou un bot.",
     "lobby.expansions": "Extensions",
-    "lobby.expansionsHint": "L'hote peut activer Abondance, Puissance et Communion ici. Les autres extensions restent desactivees pour le moment.",
+    "lobby.expansionsHint": "L'hote peut activer Sorcellerie, Abondance, Puissance et Communion ici. Les autres extensions restent desactivees pour le moment.",
     "lobby.expansionDisabled": "Desactivee",
     "lobby.expansionEnabled": "Activee",
     "lobby.expansionOff": "Inactive",
@@ -727,6 +729,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "reference.deckAbondance": "Abondance",
     "reference.deckPuissance": "Puissance",
     "reference.deckCommunion": "Communion",
+    "reference.deckSorcellerie": "Sorcellerie",
     "reference.empty": "Aucune carte ne correspond a cette recherche.",
     "bugReport.title": "Signaler un bug",
     "bugReport.body": "Decrivez ce qui s'est passe. La session {shortId} sera jointe automatiquement.",
@@ -873,7 +876,8 @@ const categoryLabels: Record<AppLanguage, Record<CardCategoryCode, string>> = {
     CA: "Counterattacks",
     CO: "Counterspells",
     ST: "Status",
-    SO: "Ongoing Spells"
+    SO: "Ongoing Spells",
+    SC: "Witchcraft"
   },
   fr: {
     AD: "Attaques directes",
@@ -885,7 +889,8 @@ const categoryLabels: Record<AppLanguage, Record<CardCategoryCode, string>> = {
     CA: "Contre-attaques",
     CO: "Contresorts",
     ST: "Statuts",
-    SO: "Sorts continus"
+    SO: "Sorts continus",
+    SC: "Sorcellerie"
   }
 };
 

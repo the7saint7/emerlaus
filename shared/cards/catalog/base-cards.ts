@@ -397,6 +397,16 @@ export const defaultDefenseBandByCategory = {
     "annulationCardsRequired": 2,
     "mirrorAllowed": false
   },
+  "SC": {
+    "resistance": {
+      "color": "blue",
+      "rollsRequired": 1
+    },
+    "resistanceAccrueAllowed": true,
+    "annulationAllowed": true,
+    "annulationCardsRequired": 1,
+    "mirrorAllowed": true
+  },
   "ST": {
     "resistance": {
       "color": "red",

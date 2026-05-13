@@ -11,7 +11,8 @@ const CATEGORY_LABEL_BY_CODE: Record<CardCategoryCode, string> = {
   CA: "Contre-attaques",
   CO: "Contre-objets",
   ST: "Stratégies",
-  SO: "Sortilèges"
+  SO: "Sortilèges",
+  SC: "Sorcellerie"
 };
 
 const SELF_ATTRIBUTE_DEFENSE_BAND: DefenseBandRules = {

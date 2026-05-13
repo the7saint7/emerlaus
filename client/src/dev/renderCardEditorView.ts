@@ -28,7 +28,8 @@ const CATEGORY_OPTIONS: Array<{ code: CardCategoryCode; label: string }> = [
   { code: "CA", label: "Contre-attaques" },
   { code: "CO", label: "Contre-objets" },
   { code: "ST", label: "Sortilèges" },
-  { code: "SO", label: "Sorts objets" }
+  { code: "SO", label: "Sorts objets" },
+  { code: "SC", label: "Sorcellerie" }
 ];
 
 function escapeHtml(value: string): string {
@@ -85,6 +86,18 @@ function findPrimaryFormulaEffect(card: BaseCardDefinition): CardEffect | null {
     effect.type === "heal" ||
     effect.type === "lifesteal"
   ) ?? null;
+}
+
+function describeNonFormulaEffects(card: BaseCardDefinition): string {
+  const effectTypes = card.rules.effects
+    .map((effect) => effect.type)
+    .filter((type) => type !== "pay_hp");
+
+  if (effectTypes.length === 0) {
+    return "No generic damage/heal/lifesteal formula is configured. Use this for cards that need a special handler or non-formula effect.";
+  }
+
+  return `Non-formula effect${effectTypes.length === 1 ? "" : "s"}: ${effectTypes.join(", ")}. The formula editor only edits damage, heal, and lifesteal effects.`;
 }
 
 function getFormula(effect: CardEffect | null): RollExpression {
@@ -194,7 +207,7 @@ function renderFormulaFields(card: BaseCardDefinition): string {
   if (effectType === "none") {
     fields.push(`
       <p class="mapper-help mapper-help--wide">
-        No generic damage/heal/lifesteal formula is configured. Use this for cards that need a special handler or non-formula effect.
+        ${escapeHtml(describeNonFormulaEffects(card))}
       </p>
     `);
     return `<section class="mapper-fields mapper-fields--formula">${fields.join("")}</section>`;

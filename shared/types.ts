@@ -25,7 +25,7 @@ export interface MatchExpansionSettings {
 }
 
 export const defaultMatchExpansionSettings: MatchExpansionSettings = {
-  sorcellerie: false,
+  sorcellerie: true,
   invocation: false,
   abondance: true,
   puissance: true,

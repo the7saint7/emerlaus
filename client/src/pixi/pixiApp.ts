@@ -25,7 +25,8 @@ import {
   baseCardDefinitions,
   abondanceCardDefinitions,
   communionCardDefinitions,
-  puissanceCardDefinitions
+  puissanceCardDefinitions,
+  sorcellerieCardDefinitions
 } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
 import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingCurseReleaseState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingPublicHandRevealState, PendingSacrificeChoiceState, SeatSessionStats, SeatState, TelekinesieProjectCardEvent, TelekinesieSequenceEvent } from "../../../shared/types";
@@ -51,7 +52,6 @@ const FROZEN_STATUS_CARD_IDS = new Set<string>([
 function isAttackStaffObjectCard(card: CardView | undefined): card is CardView {
   return card?.cardId === ATTACK_STAFF_CARD_ID && card.zone === "object";
 }
-
 function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
   const defenseBand = card.defenseBand;
   if (defenseBand == null) {
@@ -77,7 +77,7 @@ function renderDefenseTooltip(card: CardView, language: AppLanguage): string {
 }
 
 const EXPANSION_DECKS: Array<{ key: ExpansionKey; label: string; available: boolean }> = [
-  { key: "sorcellerie", label: "Sorcellerie", available: false },
+  { key: "sorcellerie", label: "Sorcellerie", available: true },
   { key: "invocation", label: "Invocation", available: false },
   { key: "abondance", label: "Abondance", available: true },
   { key: "puissance", label: "Puissance", available: true },
@@ -90,6 +90,7 @@ const EXPANSION_DECKS: Array<{ key: ExpansionKey; label: string; available: bool
 const DEV_DRAW_SEPARATOR_PREFIX = "__separator__:";
 const DEV_DRAW_GROUPS = [
   { key: "base", label: "Base", cards: baseCardDefinitions },
+  { key: "sorcellerie", label: "Sorcellerie", cards: sorcellerieCardDefinitions },
   { key: "abondance", label: "Abondance", cards: abondanceCardDefinitions },
   { key: "puissance", label: "Puissance", cards: puissanceCardDefinitions },
   { key: "communion", label: "Communion", cards: communionCardDefinitions }
@@ -360,7 +361,7 @@ const POST_VICTORY_ACTIVITY_CLOSE_MS = 60_000;
 const HAND_DEAL_ANIMATION_MS = 950;
 const HAND_FOCUS_TRANSITION_MS = 150;
 const HAND_DEAL_START_ROTATION = (-8 * Math.PI) / 180;
-const LOCAL_HAND_CATEGORY_SORT_ORDER = ["A", "O", "CO", "AD", "AM", "SO", "ST", "S", "E", "CA"] as const;
+const LOCAL_HAND_CATEGORY_SORT_ORDER = ["A", "O", "CO", "AD", "AM", "SC", "SO", "ST", "S", "E", "CA"] as const;
 const DEV_SEAT_VISUAL_EFFECT_IDS: SeatVisualEffectId[] = ["frozen"];
 const MAX_RENDER_RESOLUTION = 1.25;
 const MAX_TEXTURE_CACHE_SIZE = 72;
@@ -3357,6 +3358,7 @@ function buildOverlayMarkup(
   cardReferencePreviewCardId: string,
   cardReferenceSearchQuery: string,
   cardReferenceShowBase: boolean,
+  cardReferenceShowSorcellerie: boolean,
   cardReferenceShowAbondance: boolean,
   cardReferenceShowPuissance: boolean,
   cardReferenceShowCommunion: boolean,
@@ -4524,10 +4526,11 @@ function buildOverlayMarkup(
           };
         }).filter((card) => {
           const inBase = card.includedDecks.includes("Jeu de base");
+          const inSorcellerie = card.includedDecks.includes("Sorcellerie");
           const inAbondance = card.includedDecks.includes("Abondance");
           const inPuissance = card.includedDecks.includes("Puissance");
           const inCommunion = card.includedDecks.includes("Communion");
-          if ((!cardReferenceShowBase || !inBase) && (!cardReferenceShowAbondance || !inAbondance) && (!cardReferenceShowPuissance || !inPuissance) && (!cardReferenceShowCommunion || !inCommunion)) return false;
+          if ((!cardReferenceShowBase || !inBase) && (!cardReferenceShowSorcellerie || !inSorcellerie) && (!cardReferenceShowAbondance || !inAbondance) && (!cardReferenceShowPuissance || !inPuissance) && (!cardReferenceShowCommunion || !inCommunion)) return false;
           if (normalizedSearch === "") return true;
           return card.name.toLocaleLowerCase(language).includes(normalizedSearch);
         }).sort((a, b) => {
@@ -4552,6 +4555,7 @@ function buildOverlayMarkup(
             <span class="card-reference-filters__label">${escapeHtml(t(language, "reference.decksLabel"))}</span>
             <div class="card-reference-filters__row">
               <button type="button" class="card-reference-filter ${cardReferenceShowBase ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="base">${escapeHtml(t(language, "reference.deckBase"))}</button>
+              <button type="button" class="card-reference-filter ${cardReferenceShowSorcellerie ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="sorcellerie">${escapeHtml(t(language, "reference.deckSorcellerie"))}</button>
               <button type="button" class="card-reference-filter ${cardReferenceShowAbondance ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="abondance">${escapeHtml(t(language, "reference.deckAbondance"))}</button>
               <button type="button" class="card-reference-filter ${cardReferenceShowPuissance ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="puissance">${escapeHtml(t(language, "reference.deckPuissance"))}</button>
               <button type="button" class="card-reference-filter ${cardReferenceShowCommunion ? "card-reference-filter--active" : ""}" data-action="toggle-reference-deck" data-reference-deck="communion">${escapeHtml(t(language, "reference.deckCommunion"))}</button>
@@ -4735,6 +4739,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
   let cardReferencePreviewCardId = "";
   let cardReferenceSearchQuery = "";
   let cardReferenceShowBase = true;
+  let cardReferenceShowSorcellerie = true;
   let cardReferenceShowAbondance = true;
   let cardReferenceShowPuissance = true;
   let cardReferenceShowCommunion = true;
@@ -8194,7 +8199,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, confirmingCurseReleaseStatusInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, localizedMatch.game?.pendingCurseRelease, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowAbondance, cardReferenceShowPuissance, cardReferenceShowCommunion, changelogOpen, publicChangelog, publicVersionInfo, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, canUseDevCardPicker, devCardPickerSeatNumber, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, confirmingCurseReleaseStatusInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, localizedMatch.game?.pendingCurseRelease, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowSorcellerie, cardReferenceShowAbondance, cardReferenceShowPuissance, cardReferenceShowCommunion, changelogOpen, publicChangelog, publicVersionInfo, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, canUseDevCardPicker, devCardPickerSeatNumber, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
@@ -8703,6 +8708,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       button.addEventListener("click", () => {
         const deck = button.dataset.referenceDeck;
         if (deck === "base") cardReferenceShowBase = !cardReferenceShowBase;
+        else if (deck === "sorcellerie") cardReferenceShowSorcellerie = !cardReferenceShowSorcellerie;
         else if (deck === "abondance") cardReferenceShowAbondance = !cardReferenceShowAbondance;
         else if (deck === "puissance") cardReferenceShowPuissance = !cardReferenceShowPuissance;
         else if (deck === "communion") cardReferenceShowCommunion = !cardReferenceShowCommunion;
