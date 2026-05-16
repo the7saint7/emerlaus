@@ -1,4 +1,5 @@
 import type { DiceRollResult } from "./diceTypes";
+import { createRandomId } from "../../utils/randomId";
 
 const SPIN_MS = 900;
 const RESULT_DELAY_MS = 200;
@@ -311,7 +312,7 @@ class DiceController {
       }
     }
 
-    const idSuffix = crypto.randomUUID();
+    const idSuffix = createRandomId();
     const overlay = buildOverlay(idSuffix);
     overlay.style.setProperty("--dice-spin-ms", `${spinMs}ms`);
     overlay.style.setProperty("--dice-fade-ms", `${hideFadeMs}ms`);
