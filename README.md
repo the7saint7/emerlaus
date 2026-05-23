@@ -60,3 +60,13 @@ cloudflared tunnel --url http://localhost:5173
 - The server exposes `POST /api/token` for the OAuth code exchange used by the Embedded App SDK flow.
 - After `npm run build`, `npm start` serves the built client and API from one origin.
 - See `docs/discord-activity-setup.md` for the exact local test and alpha publication flow for this repo.
+
+## Production release
+
+Production releases should start from the `develop` branch. From the repository root, run:
+
+```bash
+npm run release:prod
+```
+
+The release script runs typecheck/build, updates version metadata, commits and pushes `develop`, merges to `main`, and pushes `main` to trigger the Railway production rebuild.

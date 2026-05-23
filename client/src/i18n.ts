@@ -109,6 +109,7 @@ type TranslationKey =
   | "response.resistance_accrue"
   | "response.pass"
   | "response.mirror"
+  | "response.ordre_demmerlaus"
   | "response.waiting"
   | "defense.resist"
   | "defense.notAvailable"
@@ -234,6 +235,17 @@ type TranslationKey =
   | "sacrifice.label"
   | "sacrifice.hint"
   | "sacrifice.confirm"
+  | "sorcellerieSacrifice.title"
+  | "sorcellerieSacrifice.inProgress"
+  | "sorcellerieSacrifice.body"
+  | "sorcellerieSacrifice.waitingBody"
+  | "sorcellerieSacrifice.blocked"
+  | "sorcellerieSacrifice.discardAction"
+  | "sorcellerieSacrifice.payAction"
+  | "ordreInterrupt.title"
+  | "ordreInterrupt.body"
+  | "ordreInterrupt.cancelAction"
+  | "ordreInterrupt.passAction"
   | "curse.accept"
   | "curse.pass"
   | "forced.followUp"
@@ -274,6 +286,8 @@ type TranslationKey =
   | "error.resolvePickpocket"
   | "error.sacrificeRange"
   | "error.chooseSacrifice"
+  | "error.chooseSorcellerieSacrifice"
+  | "error.resolveOrdreInterrupt"
   | "error.kickPlayer"
   | "error.discardCard"
   | "error.startMatch"
@@ -402,6 +416,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "response.resistance_accrue": "Resistance Accrue",
     "response.pass": "Pass",
     "response.mirror": "Mirror",
+    "response.ordre_demmerlaus": "Ordre d'Emmerlaus",
     "response.waiting": "Waiting",
     "defense.resist": "Resist",
     "defense.notAvailable": "No",
@@ -525,8 +540,19 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "sacrifice.body": "Enter how many HP to sacrifice. Choose a whole number from 0 to {maxAmount}.",
     "sacrifice.waitingBody": "Waiting for {playerName} to choose how many HP to sacrifice.",
     "sacrifice.label": "HP to sacrifice",
-    "sacrifice.hint": "Maximum: {maxAmount} HP. You may reduce yourself to 0.",
+    "sacrifice.hint": "Maximum: {maxAmount} HP.",
     "sacrifice.confirm": "Confirm",
+    "sorcellerieSacrifice.title": "Waive HP Sacrifice",
+    "sorcellerieSacrifice.inProgress": "Sorcellerie sacrifice choice",
+    "sorcellerieSacrifice.body": "Discard your second {cardName} to cancel this card's HP sacrifice, or keep it and pay normally if the card lands.",
+    "sorcellerieSacrifice.waitingBody": "Waiting for {playerName} to choose whether to waive the Sorcellerie HP sacrifice.",
+    "sorcellerieSacrifice.blocked": "No other actions can continue until this choice is resolved.",
+    "sorcellerieSacrifice.discardAction": "Discard this copy and waive the HP cost",
+    "sorcellerieSacrifice.payAction": "Keep One and Pay the Cost",
+    "ordreInterrupt.title": "Ordre d'Emmerlaus",
+    "ordreInterrupt.body": "You may cancel {cardName} before it resolves.",
+    "ordreInterrupt.cancelAction": "Cancel this card",
+    "ordreInterrupt.passAction": "Let it resolve",
     "curse.accept": "Accept",
     "curse.pass": "Pass",
     "forced.followUp": "{actorName} must play {categories} on {targetName} for {cardName}.",
@@ -567,6 +593,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.resolvePickpocket": "Unable to resolve pickpocket",
     "error.sacrificeRange": "Enter a whole number between 0 and {maxAmount}.",
     "error.chooseSacrifice": "Unable to choose sacrifice amount",
+    "error.chooseSorcellerieSacrifice": "Unable to choose Sorcellerie sacrifice option",
+    "error.resolveOrdreInterrupt": "Unable to resolve Ordre d'Emmerlaus",
     "error.kickPlayer": "Unable to kick player",
     "error.discardCard": "Unable to discard card",
     "error.startMatch": "Unable to start match",
@@ -684,6 +712,7 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "response.resistance_accrue": "Résistance accrue",
     "response.pass": "Passer",
     "response.mirror": "Miroir",
+    "response.ordre_demmerlaus": "Ordre d'Emmerlaus",
     "response.waiting": "En attente",
     "defense.resist": "Résist.",
     "defense.notAvailable": "Non",
@@ -807,8 +836,19 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "sacrifice.body": "Entrez combien de PV sacrifier. Choisissez un nombre entier de 0 à {maxAmount}.",
     "sacrifice.waitingBody": "En attente que {playerName} choisisse combien de PV sacrifier.",
     "sacrifice.label": "PV à sacrifier",
-    "sacrifice.hint": "Maximum : {maxAmount} PV. Vous pouvez vous réduire à 0.",
+    "sacrifice.hint": "Maximum : {maxAmount} PV.",
     "sacrifice.confirm": "Confirmer",
+    "sorcellerieSacrifice.title": "Annuler le sacrifice de PV",
+    "sorcellerieSacrifice.inProgress": "Choix de sacrifice de Sorcellerie",
+    "sorcellerieSacrifice.body": "Défaussez votre deuxième {cardName} pour annuler le sacrifice de PV de cette carte, ou gardez-la et payez normalement si la carte touche.",
+    "sorcellerieSacrifice.waitingBody": "En attente que {playerName} choisisse s'il annule le sacrifice de PV de Sorcellerie.",
+    "sorcellerieSacrifice.blocked": "Aucune autre action ne peut continuer tant que ce choix n'est pas résolu.",
+    "sorcellerieSacrifice.discardAction": "Défausser cette copie et annuler le coût en PV",
+    "sorcellerieSacrifice.payAction": "Garder une copie et payer le coût",
+    "ordreInterrupt.title": "Ordre d'Emmerlaus",
+    "ordreInterrupt.body": "Vous pouvez annuler {cardName} avant sa résolution.",
+    "ordreInterrupt.cancelAction": "Annuler cette carte",
+    "ordreInterrupt.passAction": "Laisser résoudre",
     "curse.accept": "Accepter",
     "curse.pass": "Passer",
     "forced.followUp": "{actorName} doit jouer {categories} sur {targetName} à cause de {cardName}.",
@@ -849,6 +889,8 @@ const translations: Record<AppLanguage, TranslationTable> = {
     "error.resolvePickpocket": "Impossible de résoudre Pickpocket",
     "error.sacrificeRange": "Entrez un nombre entier entre 0 et {maxAmount}.",
     "error.chooseSacrifice": "Impossible de choisir le montant du sacrifice",
+    "error.chooseSorcellerieSacrifice": "Impossible de choisir l'option de sacrifice de Sorcellerie",
+    "error.resolveOrdreInterrupt": "Impossible de résoudre Ordre d'Emmerlaus",
     "error.kickPlayer": "Impossible d'expulser le joueur",
     "error.discardCard": "Impossible de défausser la carte",
     "error.startMatch": "Impossible de démarrer la partie",
@@ -1375,6 +1417,24 @@ export function localizeMatchState(match: MatchState, language: AppLanguage): Ma
             : {
                 ...match.game.pendingSacrificeChoice,
                 cardName: localizeCardName(match.game.pendingSacrificeChoice.cardName)
+              },
+          pendingSorcellerieSacrificeChoice: match.game.pendingSorcellerieSacrificeChoice == null
+            ? undefined
+            : {
+                ...match.game.pendingSorcellerieSacrificeChoice,
+                cardName: localizeCardName(match.game.pendingSorcellerieSacrificeChoice.cardName),
+                duplicateCard: localizeCardView(match.game.pendingSorcellerieSacrificeChoice.duplicateCard, language)
+              },
+          pendingOrdreInterrupt: match.game.pendingOrdreInterrupt == null
+            ? undefined
+            : {
+                ...match.game.pendingOrdreInterrupt,
+                cardName: match.game.pendingOrdreInterrupt.cardName == null
+                  ? undefined
+                  : localizeCardName(match.game.pendingOrdreInterrupt.cardName),
+                card: match.game.pendingOrdreInterrupt.card == null
+                  ? undefined
+                  : localizeCardView(match.game.pendingOrdreInterrupt.card, language)
               },
           pendingCurseRelease: match.game.pendingCurseRelease == null
             ? undefined

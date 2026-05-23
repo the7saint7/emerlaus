@@ -310,7 +310,7 @@ export const sorcellerieCardDefinitions = [
         },
         resistanceAccrueAllowed: true,
         annulationAllowed: true,
-        annulationCardsRequired: 0,
+        annulationCardsRequired: 2,
         mirrorAllowed: true
       },
       implementation: {
@@ -354,7 +354,7 @@ export const sorcellerieCardDefinitions = [
         },
         resistanceAccrueAllowed: true,
         annulationAllowed: true,
-        annulationCardsRequired: 0,
+        annulationCardsRequired: 2,
         mirrorAllowed: true
       },
       implementation: {
@@ -452,7 +452,7 @@ export const sorcellerieCardDefinitions = [
         },
         resistanceAccrueAllowed: true,
         annulationAllowed: true,
-        annulationCardsRequired: 0,
+        annulationCardsRequired: 2,
         mirrorAllowed: true
       },
       implementation: {
@@ -734,7 +734,7 @@ export const sorcellerieCardDefinitions = [
         },
         resistanceAccrueAllowed: true,
         annulationAllowed: true,
-        annulationCardsRequired: 1,
+        annulationCardsRequired: 2,
         mirrorAllowed: true
       },
       implementation: {

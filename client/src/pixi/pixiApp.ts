@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, fireObject, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingCurseRelease, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, respondToPendingAction, selectPendingObject, submitBugReport } from "../api/gameApi";
+import { acknowledgePendingHandInspection, acknowledgePendingPublicHandReveal, devDrawCard, disconnectFromMatch, fetchMatch, fireObject, joinMatch, passForcedFollowUp, persistClientLogSnapshot, playCard, requestAddBot, requestKickPlayer, requestStartMatch, requestUpdateExpansion, resolvePendingBoardResetKeep, resolvePendingCurseRelease, resolvePendingDeathSearch, resolvePendingPickpocket, resolvePendingSacrificeChoice, resolvePendingSorcellerieSacrificeChoice, resolvePendingOrdreInterrupt, respondToPendingAction, selectPendingObject, submitBugReport } from "../api/gameApi";
 import { createDiscordSession } from "../discord/session";
 import {
   canDiscardCard,
@@ -29,7 +29,7 @@ import {
   sorcellerieCardDefinitions
 } from "../../../shared/cards";
 import { getLocalSeat, getOpponentSeats } from "../../../shared/seating";
-import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingCurseReleaseState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingPublicHandRevealState, PendingSacrificeChoiceState, SeatSessionStats, SeatState, TelekinesieProjectCardEvent, TelekinesieSequenceEvent } from "../../../shared/types";
+import type { ActionStartEvent, CardView, CombatPresentationEvent, DiceRollPlaybackEvent, ExpansionKey, ForcedFollowUpState, GameEvent, MatchState, PendingBoardResetKeepState, PendingCurseReleaseState, PendingDeathSearchState, PendingHandInspectionState, PendingObjectChoiceState, PendingPickpocketState, PendingPublicHandRevealState, PendingSacrificeChoiceState, PendingSorcellerieSacrificeChoiceState, PendingOrdreInterruptState, SeatSessionStats, SeatState, TelekinesieProjectCardEvent, TelekinesieSequenceEvent } from "../../../shared/types";
 
 const STAGE_WIDTH = 1600;
 const STAGE_HEIGHT = 900;
@@ -3319,6 +3319,16 @@ interface LobbyOverlayLayout {
   expansionButtons: Array<{ key: string; leftPx: number; topPx: number; widthPx: number; heightPx: number; available: boolean; enabled: boolean }>;
 }
 
+interface OrdreInterruptArrowPath {
+  from: StagePoint;
+  to: StagePoint;
+}
+
+interface OrdreInterruptArrowLayout {
+  actor: OrdreInterruptArrowPath | null;
+  targets: OrdreInterruptArrowPath[];
+}
+
 function buildOverlayMarkup(
   match: MatchState,
   localSeatNumber: number,
@@ -3345,6 +3355,8 @@ function buildOverlayMarkup(
   pickpocketPreviewCardInstanceId: string,
   pickpocketSelectedCardInstanceIds: string[],
   pendingSacrificeChoice: PendingSacrificeChoiceState | null,
+  pendingSorcellerieSacrificeChoice: PendingSorcellerieSacrificeChoiceState | null,
+  pendingOrdreInterrupt: PendingOrdreInterruptState | null,
   pendingCurseRelease: PendingCurseReleaseState | undefined,
   sacrificeAmountInput: string,
   forcedFollowUp: ForcedFollowUpState | undefined,
@@ -3383,7 +3395,8 @@ function buildOverlayMarkup(
   playbackLockTopPx = 0,
   passButtonLeftPx = 0,
   passButtonTopPx = 0,
-  lobbyLayout: LobbyOverlayLayout | null = null
+  lobbyLayout: LobbyOverlayLayout | null = null,
+  ordreInterruptArrow: OrdreInterruptArrowLayout | null = null
 ): string {
   const localSeat = getLocalSeat(match, localSeatNumber);
   const spectatorMode = match.status === "in_progress" && localSeat == null;
@@ -3395,7 +3408,46 @@ function buildOverlayMarkup(
     1,
     confirmingCurseReleaseCard?.defenseBand?.annulationCardsRequired ?? 2
   );
-  const showPassButton = match.status === "in_progress" && localSeat != null && canPassPendingResponse(match);
+  const showPassButton =
+    match.status === "in_progress"
+    && localSeat != null
+    && pendingOrdreInterrupt == null
+    && canPassPendingResponse(match);
+  const pendingResponseChoices = new Set((match.game?.pendingResponseOptions ?? []).map((option) => option.choice));
+  const localResponder = match.game?.pendingAction?.responders.find((responder) => responder.seatNumber === localSeatNumber);
+  const showOrdreResponseButton =
+    match.status === "in_progress"
+    && localSeat != null
+    && pendingOrdreInterrupt == null
+    && localResponder?.state === "pending"
+    && pendingResponseChoices.has("ordre-demmerlaus")
+    && (localSeat.hand ?? []).some((card) => card.cardId === "ordre-demmerlaus");
+  const canResolveOrdreInterrupt =
+    pendingOrdreInterrupt != null
+    && (
+      pendingOrdreInterrupt.hidden !== true
+      || (localSeat?.hand ?? []).some((card) => card.cardId === "ordre-demmerlaus")
+    );
+  const showOrdreInterruptActions =
+    pendingOrdreInterrupt != null
+    && pendingOrdreInterrupt.hidden !== true
+    && canResolveOrdreInterrupt;
+  const ordreInterruptedActorName = pendingOrdreInterrupt?.actorSeatNumber == null
+    ? ""
+    : match.seats.find((seat) => seat.seatNumber === pendingOrdreInterrupt.actorSeatNumber)?.displayName
+      ?? t(language, "seat.label", { seatNumber: pendingOrdreInterrupt.actorSeatNumber });
+  const ordreTargetNames = (pendingOrdreInterrupt?.targetSeatNumbers ?? [])
+    .map((seatNumber) =>
+      match.seats.find((seat) => seat.seatNumber === seatNumber)?.displayName
+        ?? t(language, "seat.label", { seatNumber })
+    );
+  const ordreTargetsLabel = ordreTargetNames.length === 0
+    ? ""
+    : language === "fr"
+      ? `${ordreTargetNames.length === 1 ? "Cible" : "Cibles"} : ${ordreTargetNames.join(", ")}`
+      : `${ordreTargetNames.length === 1 ? "Target" : "Targets"}: ${ordreTargetNames.join(", ")}`;
+  const formatOrdreArrowPath = (path: OrdreInterruptArrowPath): string =>
+    `M ${path.from.x.toFixed(1)} ${path.from.y.toFixed(1)} Q ${((path.from.x + path.to.x) / 2).toFixed(1)} ${((path.from.y + path.to.y) / 2 - 42).toFixed(1)} ${path.to.x.toFixed(1)} ${path.to.y.toFixed(1)}`;
   const localForcedFollowUp = forcedFollowUp?.actorSeatNumber === localSeatNumber ? forcedFollowUp : null;
   const forcedFollowUpTargetName = localForcedFollowUp == null
     ? ""
@@ -3577,6 +3629,56 @@ function buildOverlayMarkup(
     </div>
     ${devSeatDrawModalMarkup}
     ${errorMessage === "" ? "" : `<div class="pixi-error-banner">${errorMessage}</div>`}
+    ${showOrdreInterruptActions
+      ? `
+        <div class="ordre-interrupt-panel" data-ordre-interrupt-panel="true">
+          ${ordreInterruptArrow == null
+            ? ""
+            : `
+              <svg class="ordre-interrupt-panel__arrow" viewBox="0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}" aria-hidden="true">
+                <defs>
+                  <marker id="ordre-interrupt-arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+                    <path d="M 0 0 L 8 4 L 0 8 z"></path>
+                  </marker>
+                  <marker id="ordre-interrupt-target-arrowhead" markerWidth="7" markerHeight="7" refX="6.2" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                    <path d="M 0 0 L 7 3.5 L 0 7 z"></path>
+                  </marker>
+                </defs>
+                ${ordreInterruptArrow.actor == null
+                  ? ""
+                  : `<path class="ordre-interrupt-panel__arrow-line ordre-interrupt-panel__arrow-line--actor" d="${formatOrdreArrowPath(ordreInterruptArrow.actor)}"></path>`}
+                ${ordreInterruptArrow.targets.map((targetArrow) =>
+                  `<path class="ordre-interrupt-panel__arrow-line ordre-interrupt-panel__arrow-line--target" d="${formatOrdreArrowPath(targetArrow)}"></path>`
+                ).join("")}
+              </svg>
+            `}
+          <article class="ordre-interrupt-panel__card">
+            ${pendingOrdreInterrupt.card == null
+              ? ""
+              : `
+                <div class="ordre-interrupt-panel__thumb">
+                  <img src="${escapeHtml(pendingOrdreInterrupt.card.imageUrl)}" alt="" />
+                </div>
+              `}
+            <div class="ordre-interrupt-panel__copy">
+              <p class="eyebrow">${escapeHtml(t(language, "ordreInterrupt.title"))}</p>
+              <h2>${escapeHtml(pendingOrdreInterrupt.cardName ?? "")}</h2>
+              ${ordreInterruptedActorName === ""
+                ? ""
+                : `<p class="ordre-interrupt-panel__actor">${escapeHtml(ordreInterruptedActorName)}</p>`}
+              ${ordreTargetsLabel === ""
+                ? ""
+                : `<p class="ordre-interrupt-panel__targets">${escapeHtml(ordreTargetsLabel)}</p>`}
+              <p>${escapeHtml(t(language, "ordreInterrupt.body", { cardName: pendingOrdreInterrupt.cardName ?? "" }))}</p>
+            </div>
+            <div class="ordre-interrupt-panel__actions">
+              <button type="button" class="pixi-overlay-button pixi-overlay-button--accent" data-action="ordre-interrupt-cancel">${escapeHtml(t(language, "ordreInterrupt.cancelAction"))}</button>
+              <button type="button" class="pixi-overlay-button" data-action="ordre-interrupt-pass">${escapeHtml(t(language, "ordreInterrupt.passAction"))}</button>
+            </div>
+          </article>
+        </div>
+      `
+      : ""}
     ${match.status === "lobby" && lobbyLayout != null ? `
       <button
         class="pixi-lobby-cell-btn"
@@ -3621,11 +3723,19 @@ function buildOverlayMarkup(
     ${playbackLocked && match.status === "in_progress"
       ? `<div class="pixi-playback-lock" style="left:${combatBannerLeftPx}px; top:${playbackLockTopPx}px;">${escapeHtml(t(language, "table.resolving"))}</div>`
       : ""}
+    ${pendingOrdreInterrupt?.hidden === true
+      ? `<div class="pixi-playback-lock" style="left:${combatBannerLeftPx}px; top:${playbackLockTopPx}px;">${escapeHtml(t(language, "table.resolving"))}</div>`
+      : ""}
     ${buildVictoryCelebrationMarkup(match, language, showVictoryCelebration)}
-    ${showPassButton
+    ${showPassButton || showOrdreResponseButton
       ? `
         <div class="pixi-center-actions" style="left:${passButtonLeftPx}px; top:${passButtonTopPx}px;">
-          <button type="button" class="pixi-overlay-button" data-action="pass-response">${t(language, "response.pass")}</button>
+          ${showOrdreResponseButton
+            ? `<button type="button" class="pixi-overlay-button pixi-overlay-button--accent" data-action="ordre-response">${escapeHtml(t(language, "response.ordre_demmerlaus"))}</button>`
+            : ""}
+          ${showPassButton
+            ? `<button type="button" class="pixi-overlay-button" data-action="pass-response">${escapeHtml(t(language, "response.pass"))}</button>`
+            : ""}
         </div>
       `
       : ""}
@@ -4499,6 +4609,43 @@ function buildOverlayMarkup(
                         data-action="confirm-sacrifice-amount"
                         ${isValidAmount ? "" : "disabled"}
                       >${escapeHtml(t(language, "sacrifice.confirm"))}</button>
+                    </div>
+                  `}
+              </article>
+            </div>
+          `;
+        })()}
+    ${pendingSorcellerieSacrificeChoice == null
+      ? ""
+      : (() => {
+          const isLocalActor = pendingSorcellerieSacrificeChoice.actorSeatNumber === localSeatNumber;
+          const actorSeat = match.seats.find((s) => s.seatNumber === pendingSorcellerieSacrificeChoice.actorSeatNumber);
+          return `
+            <div class="pixi-modal-backdrop">
+              <article class="telepathy-panel telepathy-panel--compact" data-pixi-modal-card="true">
+                <div class="telepathy-panel__header">
+                  <div>
+                    <p class="eyebrow">${escapeHtml(pendingSorcellerieSacrificeChoice.cardName)}</p>
+                    <h2>${escapeHtml(isLocalActor ? t(language, "sorcellerieSacrifice.title") : t(language, "sorcellerieSacrifice.inProgress"))}</h2>
+                    <p>${escapeHtml(isLocalActor
+                      ? t(language, "sorcellerieSacrifice.body", { cardName: pendingSorcellerieSacrificeChoice.cardName })
+                      : t(language, "sorcellerieSacrifice.waitingBody", { playerName: actorSeat?.displayName ?? "" }))}</p>
+                  </div>
+                </div>
+                ${!isLocalActor
+                  ? `<p class="telepathy-empty">${escapeHtml(t(language, "sorcellerieSacrifice.blocked"))}</p>`
+                  : `
+                    <div class="telepathy-card-grid">
+                      <button type="button" class="telepathy-card telepathy-card--active" data-action="sorcellerie-sacrifice-waive">
+                        <img src="${escapeHtml(pendingSorcellerieSacrificeChoice.duplicateCard.imageUrl)}" alt="" />
+                        <div>
+                          <strong>${escapeHtml(pendingSorcellerieSacrificeChoice.duplicateCard.name)}</strong>
+                          <span>${escapeHtml(t(language, "sorcellerieSacrifice.discardAction"))}</span>
+                        </div>
+                      </button>
+                    </div>
+                    <div class="modal-actions">
+                      <button type="button" class="action-button action-button--secondary" data-action="sorcellerie-sacrifice-pay">${escapeHtml(t(language, "sorcellerieSacrifice.payAction"))}</button>
                     </div>
                   `}
               </article>
@@ -5541,6 +5688,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     if (event.type === "response_choice") {
       return `${event.type}:seat=${event.seatNumber ?? "n/a"}:choice=${event.responseChoice ?? "n/a"}:box=${boxId}`;
     }
+    if (event.type === "ordre_interrupt") {
+      return `${event.type}:owner=${event.seatNumber ?? "n/a"}:actor=${event.actorSeatNumber ?? "n/a"}:card=${event.interruptedCard?.cardId ?? event.cardName ?? "n/a"}:box=${boxId}`;
+    }
     if (event.type === "turn_start") {
       return `${event.type}:seat=${event.seatNumber}:box=${boxId}`;
     }
@@ -5820,6 +5970,8 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     || match.game?.pendingDeathSearch != null
     || match.game?.pendingPickpocket != null
     || match.game?.pendingSacrificeChoice != null
+    || match.game?.pendingSorcellerieSacrificeChoice != null
+    || match.game?.pendingOrdreInterrupt != null
     || changelogOpen
     || cardReferenceOpen;
 
@@ -6500,6 +6652,66 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
     return messagePromise;
   };
 
+  const replayOrdreInterruptPresentation = async (event: CombatPresentationEvent, runId: number): Promise<boolean> => {
+    const ordreCard = event.ordreCard ?? buildPresentationCard("ordre-demmerlaus");
+    const interruptedCard = event.interruptedCard ?? null;
+    const responseSlotRect = getPlaybackResponseSlotRect();
+    const responseCenter = getRectCenter(responseSlotRect);
+    const discardTarget = getPlaybackDiscardTarget() ?? responseCenter;
+    const targetRect = currentGeometry?.discardZone ?? responseSlotRect;
+    const ordreStart = event.seatNumber == null
+      ? responseCenter
+      : getSeatEdgePointTowardRect(event.seatNumber, targetRect) ?? getSeatCenterPoint(event.seatNumber) ?? responseCenter;
+    const interruptedStart = event.actorSeatNumber == null
+      ? responseCenter
+      : getSeatEdgePointTowardRect(event.actorSeatNumber, targetRect) ?? getSeatCenterPoint(event.actorSeatNumber) ?? responseCenter;
+
+    const shownCards = [ordreCard, interruptedCard].filter((card): card is CardView => card != null);
+    if (shownCards.length > 0) {
+      centerResponseCards = shownCards;
+      redraw();
+    }
+
+    const messagePromise = showCombatFx(
+      t(language, "combat.response.ordre_demmerlaus", {
+        playerName: getSeatDisplayName(event.seatNumber),
+        cardName: event.cardName ?? interruptedCard?.name ?? "",
+        count: 1
+      }),
+      "info",
+      1050,
+      runId,
+      { seatNumber: event.seatNumber, showBanner: true }
+    );
+
+    const flights: Array<Promise<boolean>> = [];
+    if (ordreCard != null) {
+      flights.push(addCardFlight(ordreCard, ordreStart, { x: discardTarget.x - 26, y: discardTarget.y - 8 }, runId, {
+        durationMs: 660,
+        width: 100,
+        height: 140,
+        arcHeight: 76,
+        rotationFrom: -0.12,
+        rotationTo: -0.04,
+        tintColor: "#233553"
+      }));
+    }
+    if (interruptedCard != null) {
+      flights.push(addCardFlight(interruptedCard, interruptedStart, { x: discardTarget.x + 26, y: discardTarget.y + 8 }, runId, {
+        durationMs: 660,
+        width: 100,
+        height: 140,
+        arcHeight: 76,
+        rotationFrom: 0.12,
+        rotationTo: 0.04,
+        tintColor: "#4b2634"
+      }));
+    }
+
+    const [messageCompleted, ...flightCompleted] = await Promise.all([messagePromise, ...flights]);
+    return messageCompleted && flightCompleted.every((completed) => completed);
+  };
+
   const showCombatFx = async (
     message: string,
     tone: ActiveCombatFxState["tone"],
@@ -7090,6 +7302,14 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         continue;
       }
 
+      if (event.type === "ordre_interrupt") {
+        const completed = await replayOrdreInterruptPresentation(event, runId);
+        if (!completed) {
+          return;
+        }
+        continue;
+      }
+
       if (event.type === "resistance_start") {
         const bonus = event.bonus == null || event.bonus === 0 ? "" : ` ${event.bonus > 0 ? `+${event.bonus}` : `${event.bonus}`}`;
         const completed = await showCombatFx(
@@ -7338,6 +7558,7 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       event.type === "telekinesie_project_card" ||
       event.type === "turn_start" ||
       event.type === "response_choice" ||
+      event.type === "ordre_interrupt" ||
       event.type === "resistance_start" ||
       event.type === "resistance_result" ||
       event.type === "attack_impact" ||
@@ -7474,6 +7695,9 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
         return;
       case "response_choice":
         seenEventMessageIds.add(`response:${event.id}`);
+        return;
+      case "ordre_interrupt":
+        seenEventMessageIds.add(`ordre:${event.id}`);
         return;
       case "resistance_start":
         seenEventMessageIds.add(`resistance-start:${event.id}`);
@@ -7822,9 +8046,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
   const applyImmediateMatchUpdate = (nextMatch: MatchState): void => {
     const unseenCount = (nextMatch.game?.eventLog ?? []).filter((event) => !seenGameEventIds.has(event.id)).length;
+    const ordreInterrupt = nextMatch.game?.pendingOrdreInterrupt;
     logClient(
       "match_update",
-      `source=immediate unseen=${unseenCount} playback=${eventPlaybackActive} pending=${pendingReplayBatchCount} currentTurn=${nextMatch.game?.currentTurnSeatNumber ?? "n/a"}`
+      `source=immediate unseen=${unseenCount} playback=${eventPlaybackActive} pending=${pendingReplayBatchCount} currentTurn=${nextMatch.game?.currentTurnSeatNumber ?? "n/a"} localSeat=${localSeatNumber} hasLocal=${getLocalSeat(nextMatch, localSeatNumber) != null} ordre=${ordreInterrupt == null ? "none" : `hidden=${ordreInterrupt.hidden} card=${ordreInterrupt.cardName ?? "n/a"}`}`
     );
     preUpdateLocalizedSeatsBySeat = Object.fromEntries(
       localizeMatchState(match, language).seats.map((seat) => [seat.seatNumber, seat])
@@ -8190,6 +8415,63 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
           end: prevBugReportTextarea.selectionEnd ?? prevBugReportTextarea.value.length
         }
       : null;
+    const ordreInterruptArrow: OrdreInterruptArrowLayout | null = (() => {
+      const pendingInterrupt = localizedMatch.game?.pendingOrdreInterrupt;
+      const actorSeatNumber = pendingInterrupt?.hidden === false ? pendingInterrupt.actorSeatNumber : undefined;
+      if (pendingInterrupt?.hidden !== false || currentGeometry == null) {
+        return null;
+      }
+      const geometry = currentGeometry;
+      const actorRect = actorSeatNumber == null ? undefined : geometry.seatRects.get(actorSeatNumber);
+      const actorCenter = actorSeatNumber == null ? undefined : geometry.seatCenters.get(actorSeatNumber);
+
+      const panelRect = {
+        x: STAGE_WIDTH / 2 - 280,
+        y: STAGE_HEIGHT / 2 - 134,
+        width: 560,
+        height: 268
+      };
+      const panelCenter = getRectCenter(panelRect);
+      const panelEdgePointToward = (point: StagePoint): StagePoint => {
+        const dx = point.x - panelCenter.x;
+        const dy = point.y - panelCenter.y;
+        const sourceIsMoreHorizontal = Math.abs(dx) / panelRect.width > Math.abs(dy) / panelRect.height;
+        return sourceIsMoreHorizontal
+          ? {
+              x: dx >= 0 ? panelRect.x + panelRect.width + 10 : panelRect.x - 10,
+              y: Math.max(panelRect.y + 28, Math.min(panelRect.y + panelRect.height - 28, point.y))
+            }
+          : {
+              x: Math.max(panelRect.x + 28, Math.min(panelRect.x + panelRect.width - 28, point.x)),
+              y: dy >= 0 ? panelRect.y + panelRect.height + 10 : panelRect.y - 10
+            };
+      };
+      const actorPanelTarget = actorCenter == null ? null : panelEdgePointToward(actorCenter);
+      const targetArrows = [...new Set(pendingInterrupt.targetSeatNumbers ?? [])]
+        .filter((targetSeatNumber) => targetSeatNumber !== actorSeatNumber)
+        .map((targetSeatNumber): OrdreInterruptArrowPath | null => {
+          const targetRect = geometry.seatRects.get(targetSeatNumber);
+          const targetCenter = geometry.seatCenters.get(targetSeatNumber);
+          if (targetRect == null || targetCenter == null) {
+            return null;
+          }
+          const panelStart = panelEdgePointToward(targetCenter);
+          return {
+            from: panelStart,
+            to: rectEdgePoint(panelStart.x, panelStart.y, targetRect)
+          };
+        })
+        .filter((arrow): arrow is OrdreInterruptArrowPath => arrow != null);
+      return {
+        actor: actorRect == null || actorPanelTarget == null
+          ? null
+          : {
+              from: rectEdgePoint(actorPanelTarget.x, actorPanelTarget.y, actorRect),
+              to: actorPanelTarget
+            },
+        targets: targetArrows
+      };
+    })();
 
     const nextOverlayMarkup =
       leftMessage !== ""
@@ -8199,12 +8481,18 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
             <p>${leftMessage}</p>
           </div>
         `
-        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, confirmingCurseReleaseStatusInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, localizedMatch.game?.pendingCurseRelease, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowSorcellerie, cardReferenceShowAbondance, cardReferenceShowPuissance, cardReferenceShowCommunion, changelogOpen, publicChangelog, publicVersionInfo, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, canUseDevCardPicker, devCardPickerSeatNumber, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout);
+        : buildOverlayMarkup(localizedMatch, localSeatNumber, language, errorMessage, confirmingLeave, confirmingDiscardCardInstanceId, confirmingCurseReleaseStatusInstanceId, kickTarget, kickActionTarget, seatFxEditorOpen, devSeatVisualEffectsBySeat, pendingAnnulationChoice, presentationLockActive ? null : (localizedMatch.game?.pendingObjectChoice ?? null), localizedMatch.game?.pendingHandInspection ?? null, localizedMatch.game?.pendingPublicHandReveal ?? null, telepathyPreviewCardInstanceId, localizedMatch.game?.pendingBoardResetKeep ?? null, boardResetKeepPreviewCardInstanceId, presentationLockActive ? null : (localizedMatch.game?.pendingDeathSearch ?? null), deathSearchPreviewCardInstanceId, deathSearchSelectedCardInstanceIds, localizedMatch.game?.pendingPickpocket ?? null, pickpocketPreviewCardInstanceId, pickpocketSelectedCardInstanceIds, localizedMatch.game?.pendingSacrificeChoice ?? null, localizedMatch.game?.pendingSorcellerieSacrificeChoice ?? null, presentationLockActive ? null : (localizedMatch.game?.pendingOrdreInterrupt ?? null), localizedMatch.game?.pendingCurseRelease, sacrificeAmountInput, localizedMatch.game?.forcedFollowUp, consumePreviewCardInstanceId, seenEventMessageIds, eventLogExpanded, eventLogWidth, eventLogHeight, { speedMultiplier: replaySpeedMultiplier, paused: replayPaused, canRewind: latestReplayBatch.length > 0 }, cardReferenceOpen, cardReferencePreviewCardId, cardReferenceSearchQuery, cardReferenceShowBase, cardReferenceShowSorcellerie, cardReferenceShowAbondance, cardReferenceShowPuissance, cardReferenceShowCommunion, changelogOpen, publicChangelog, publicVersionInfo, bugReportOpen, bugReportDraft, bugReportSubmitting, bugReportErrorMessage, activeCombatFx, presentationLockActive, victoryCelebrationVisible, session.enableDevTools, canUseDevCardPicker, devCardPickerSeatNumber, session.mode, session.channelId, session.guildId, combatBannerLeftPx, combatBannerTopPx, playbackLockTopPx, passButtonLeftPx, passButtonTopPx, lobbyLayout, ordreInterruptArrow);
 
     if (nextOverlayMarkup !== lastOverlayMarkup) {
       frameElement.innerHTML = nextOverlayMarkup;
       lastOverlayMarkup = nextOverlayMarkup;
       bindOverlayEvents();
+      if (localizedMatch.game?.pendingOrdreInterrupt?.hidden === false) {
+        logClient(
+          "ordre_render",
+          `card=${localizedMatch.game.pendingOrdreInterrupt.cardName ?? "n/a"} panel=${frameElement.querySelectorAll("[data-ordre-interrupt-panel='true']").length} cancelButtons=${frameElement.querySelectorAll("[data-action='ordre-interrupt-cancel']").length} passButtons=${frameElement.querySelectorAll("[data-action='ordre-interrupt-pass']").length}`
+        );
+      }
 
       const newEventLogEl = frameElement.querySelector<HTMLElement>("[data-event-log-history='true']");
       if (newEventLogEl != null && savedEventLogScroll != null) {
@@ -8262,9 +8550,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       const nextMatch = await fetchMatch(session.instanceId, playerSessionToken);
       rememberPendingActionSnapshot(nextMatch);
       const unseenCount = (nextMatch.game?.eventLog ?? []).filter((event) => !seenGameEventIds.has(event.id)).length;
+      const ordreInterrupt = nextMatch.game?.pendingOrdreInterrupt;
       logClient(
         "match_update",
-        `source=sync unseen=${unseenCount} playback=${eventPlaybackActive} pending=${pendingReplayBatchCount} currentTurn=${nextMatch.game?.currentTurnSeatNumber ?? "n/a"}`
+        `source=sync unseen=${unseenCount} playback=${eventPlaybackActive} pending=${pendingReplayBatchCount} currentTurn=${nextMatch.game?.currentTurnSeatNumber ?? "n/a"} localSeat=${localSeatNumber} hasLocal=${getLocalSeat(nextMatch, localSeatNumber) != null} ordre=${ordreInterrupt == null ? "none" : `hidden=${ordreInterrupt.hidden} card=${ordreInterrupt.cardName ?? "n/a"}`}`
       );
       preUpdateLocalizedSeatsBySeat = Object.fromEntries(
         localizeMatchState(match, language).seats.map((s) => [s.seatNumber, s])
@@ -8307,11 +8596,11 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       errorMessage = error instanceof Error ? error.message : "Unable to refresh";
     } finally {
       syncInFlight = false;
-      if (hasActiveLocalInteraction() || hasBlockingModalOpen()) {
+      if (hasActiveLocalInteraction()) {
         syncQueued = true;
       } else {
         redraw();
-        if (syncQueued) {
+        if (syncQueued && !hasBlockingModalOpen()) {
           syncQueued = false;
           void requestSync();
         }
@@ -9105,6 +9394,50 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
       redraw();
     });
 
+    frameElement.querySelector<HTMLButtonElement>("[data-action='sorcellerie-sacrifice-waive']")?.addEventListener("click", async () => {
+      try {
+        applyImmediateMatchUpdate(await resolvePendingSorcellerieSacrificeChoice(session.instanceId, playerSessionToken, { waiveSacrifice: true }));
+        errorMessage = "";
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : t(language, "error.chooseSorcellerieSacrifice");
+      }
+      redraw();
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='sorcellerie-sacrifice-pay']")?.addEventListener("click", async () => {
+      try {
+        applyImmediateMatchUpdate(await resolvePendingSorcellerieSacrificeChoice(session.instanceId, playerSessionToken, { waiveSacrifice: false }));
+        errorMessage = "";
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : t(language, "error.chooseSorcellerieSacrifice");
+      }
+      redraw();
+    });
+
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='ordre-interrupt-cancel']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          applyImmediateMatchUpdate(await resolvePendingOrdreInterrupt(session.instanceId, playerSessionToken, { choice: "cancel" }));
+          errorMessage = "";
+        } catch (error) {
+          errorMessage = error instanceof Error ? error.message : t(language, "error.resolveOrdreInterrupt");
+        }
+        redraw();
+      });
+    });
+
+    frameElement.querySelectorAll<HTMLButtonElement>("[data-action='ordre-interrupt-pass']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          applyImmediateMatchUpdate(await resolvePendingOrdreInterrupt(session.instanceId, playerSessionToken, { choice: "pass" }));
+          errorMessage = "";
+        } catch (error) {
+          errorMessage = error instanceof Error ? error.message : t(language, "error.resolveOrdreInterrupt");
+        }
+        redraw();
+      });
+    });
+
     frameElement.querySelector<HTMLButtonElement>("[data-action='discard-cancel']")?.addEventListener("click", () => {
       confirmingDiscardCardInstanceId = "";
       redraw();
@@ -9151,6 +9484,10 @@ export async function createPixiApp(rootElement: HTMLDivElement): Promise<void> 
 
     frameElement.querySelector<HTMLButtonElement>("[data-action='pass-response']")?.addEventListener("click", async () => {
       await performPendingResponse({ choice: "pass" });
+    });
+
+    frameElement.querySelector<HTMLButtonElement>("[data-action='ordre-response']")?.addEventListener("click", async () => {
+      await performPendingResponse({ choice: "ordre-demmerlaus" });
     });
 
     frameElement.querySelector<HTMLElement>("[data-annulation-choice-card='true']")?.addEventListener("click", (event) => {

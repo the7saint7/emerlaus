@@ -126,6 +126,20 @@ export function buildEventLogEntries(match: MatchState, language: AppLanguage): 
       continue;
     }
 
+    if (event.type === "ordre_interrupt") {
+      entries.push({
+        id: `ordre:${event.id}`,
+        content: t(language, "combat.response.ordre_demmerlaus", {
+          playerName: getSeatDisplayName(match, event.seatNumber),
+          cardName: localizeCombatCardName(event.cardName ?? event.interruptedCard?.name, language),
+          count: 1
+        }),
+        createdAt: event.createdAt,
+        sortOrder: sortOrder++
+      });
+      continue;
+    }
+
     if (event.type === "resistance_start") {
       const bonus = event.bonus == null || event.bonus === 0 ? "" : ` ${event.bonus > 0 ? `+${event.bonus}` : `${event.bonus}`}`;
       entries.push({

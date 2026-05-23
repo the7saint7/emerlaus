@@ -1,44 +1,28 @@
 {
-  "version": "2026.05.13-1615",
-  "releasedAt": "2026-05-13T16:15:23.726Z",
+  "version": "2026.05.23-2109",
+  "releasedAt": "2026-05-23T21:09:49.443Z",
   "en": {
     "title": "Latest Update",
     "items": [
-      "The Sorcellerie expansion has been added and is enabled by default in new lobbies.",
-      "Ordre d'Emmerlaus can now be used from the response pile when it is offered as a legal counter, including against cards that would otherwise require 2 Annulations.",
-      "Ordre d'Emmerlaus is now available in reflected-action windows, so players can cancel a Miroir-reflected attack when that response is legal.",
-      "Response debug logs now record which counter cards each player or bot was offered for future bug reports.",
-      "Persistent mass attacks such as Tremblement de terre and Pluie acide now count the initial hit as the first duration trigger instead of adding an extra turn.",
-      "Mirrored persistent cards can now stay in play when appropriate, while repeated duration ticks no longer duplicate the stored card.",
-      "Baton d'attaque massive now lets the owner fire or load the staff at the start of the turn, then continue to their regular turn when appropriate.",
-      "Loading a compatible card onto an attack staff no longer counts as the card played for that turn.",
-      "Baton d'attaque massive and bot all-opponent attacks no longer consume a turn by trying to resolve when there are no valid targets.",
-      "Bots no longer play Espoir diabolique or other all-opponent attacks when there are no valid targets.",
-      "Bots no longer play Multiplication unless they have a playable A, AD, or AM follow-up card.",
-      "AD > Points de vie now converts more AD cards correctly, including set-HP, instant-kill, and Corruption d'un anneau effects, with the correct x2 rule for cards that do not use power level.",
-      "Puissance vitale majeure now rolls 1D8 per power level.",
-      "Amulette anti-miroir now only prevents Miroir against its wearer and no longer rolls 1D10 to reflect attacks.",
-      "When zooming a card from your hand, you can now use previous/next arrows or swipe on mobile to inspect the rest of your hand."
+      "Browser mock sessions now use a safer random ID fallback, improving LAN testing in browsers without full crypto support.",
+      "Telekinesie now reveals the target hand, plays only the AD cards, keeps the other cards, and draws only one replacement per AD card played.",
+      "Attack staffs now trigger at the start of every turn when they are ready, instead of only on some turn starts.",
+      "Pacte tenebreux now applies its -3 resistance modifier to Baton d'attaque massive fires as a special exception.",
+      "Several Sorcellerie spell cards now require the correct number of Annulation cards to cancel.",
+      "Sorcellerie HP sacrifices are now paid only when the attack successfully lands, and players can no longer sacrifice all of their HP.",
+      "Ordre d'Emmerlaus can now interrupt and cancel cards more broadly, shows a dedicated cancel prompt with card thumbnails, actor and target context, includes table animations, and bots can use it for targeted attacks or important object and effect removal."
     ]
   },
   "fr": {
     "title": "Derniere mise a jour",
     "items": [
-      "L'extension Sorcellerie a ete ajoutee et elle est activee par defaut dans les nouveaux salons.",
-      "Ordre d'Emmerlaus peut maintenant etre joue dans la pile de reponse lorsqu'il est offert comme contre legal, incluant contre les cartes qui demanderaient autrement 2 Annulations.",
-      "Ordre d'Emmerlaus est maintenant disponible dans les fenetres d'action refletee, pour annuler une attaque renvoyee par Miroir lorsque cette reponse est legale.",
-      "Les logs de reponse indiquent maintenant quelles cartes de contre chaque joueur ou bot pouvait jouer, pour aider les prochains rapports de bug.",
-      "Les attaques massives a duree comme Tremblement de terre et Pluie acide comptent maintenant le coup initial comme le premier declenchement, au lieu d'ajouter un tour de trop.",
-      "Les cartes persistantes refletees par Miroir peuvent maintenant rester en jeu lorsque c'est approprie, sans dupliquer la carte lors des declenchements repetes.",
-      "Le Baton d'attaque massive permet maintenant d'utiliser ou de charger le baton au debut du tour, puis de continuer le tour normal lorsque c'est approprie.",
-      "Charger une carte compatible sur un baton d'attaque ne compte plus comme la carte jouee du tour.",
-      "Le Baton d'attaque massive et les attaques de bot contre tous les adversaires ne consomment plus un tour en essayant de se resoudre sans cible valide.",
-      "Les bots ne jouent plus Espoir diabolique ni les autres attaques contre tous les adversaires lorsqu'il n'y a aucune cible valide.",
-      "Les bots ne jouent plus Multiplication sans carte A, AD ou AM jouable pour la suite.",
-      "AD > Points de vie convertit maintenant correctement plus de cartes AD, incluant les effets qui fixent les PV, tuent instantanement, et Corruption d'un anneau, avec la regle x2 pour les cartes qui n'utilisent pas le niveau de puissance.",
-      "Puissance vitale majeure lance maintenant 1D8 par niveau de puissance.",
-      "Amulette anti-miroir empeche maintenant seulement Miroir contre son porteur et ne lance plus 1D10 pour refleter les attaques.",
-      "Quand vous zoomez une carte de votre main, vous pouvez maintenant utiliser les fleches precedent/suivant ou glisser sur mobile pour consulter le reste de votre main."
+      "Les sessions navigateur en mode test utilisent maintenant un meilleur identifiant aleatoire, ce qui ameliore les tests LAN dans les navigateurs sans support crypto complet.",
+      "Telekinesie revele maintenant la main de la cible, joue seulement les cartes AD, garde les autres cartes, puis pioche seulement une carte de remplacement par carte AD jouee.",
+      "Les batons d'attaque se declenchent maintenant au debut de chaque tour lorsqu'ils sont prets, au lieu de seulement certains debuts de tour.",
+      "Pacte tenebreux applique maintenant son modificateur de -3 au jet de resistance des tirs de Baton d'attaque massive comme exception speciale.",
+      "Plusieurs cartes Sortilege de Sorcellerie demandent maintenant le bon nombre d'Annulations pour etre annulees.",
+      "Les sacrifices de PV de Sorcellerie sont maintenant payes seulement lorsque l'attaque touche avec succes, et il n'est plus possible de sacrifier tous ses PV.",
+      "Ordre d'Emmerlaus peut maintenant interrompre et annuler plus largement les cartes, affiche une fenetre dediee avec vignettes, joueur et cible, inclut les animations de table, et les bots peuvent l'utiliser contre les attaques qui les ciblent ou pour retirer des objets et effets importants."
     ]
   }
 }

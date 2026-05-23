@@ -8,6 +8,7 @@ import type {
   MatchState,
   PendingActionState,
   PendingActionResponderState,
+  PendingOrdreInterruptState,
   PlayCardRequest,
   PlayedCardState,
   ResponseChoiceType
@@ -60,6 +61,8 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   sourceZone?: "hand" | "object";
   skipStoredCardResolution?: boolean;
   sharedSacrificeAmount?: number;
+  deferredPayHpApplied?: boolean;
+  sorcellerieSacrificeWaived?: boolean;
   powerSourceSeatNumber?: number;
   forceAllOpponents?: boolean;
   corruptionPowerRingDamage?: number;
@@ -185,6 +188,42 @@ export interface StoredGameState {
     actorSeatNumber: number;
     sourceCard: StoredCardInstance;
     maxAmount: number;
+  };
+  pendingSorcellerieSacrificeChoice?: {
+    boxId?: string;
+    actorSeatNumber: number;
+    sourceCard: StoredCardInstance;
+    duplicateCard: StoredCardInstance;
+    directResolution?: {
+      request: PlayCardRequest;
+      forcedFollowUp?: StoredForcedFollowUpState;
+      skipStoredCardResolution?: boolean;
+      fizzleIfInvalid?: boolean;
+      summaryOverride?: string;
+      presentationCard?: CardView;
+    };
+  };
+  pendingOrdreInterrupt?: {
+    ownerSeatNumber: number;
+    interruptedActorSeatNumber: number;
+    interruptedTargetSeatNumbers?: number[];
+    interruptedCard: StoredCardInstance;
+    context: NonNullable<PendingOrdreInterruptState["context"]>;
+    activeCardContinuation?: {
+      request: PlayCardRequest;
+      forcedFollowUp?: StoredForcedFollowUpState;
+      skipStoredCardResolution?: boolean;
+      fizzleIfInvalid?: boolean;
+      summaryOverride?: string;
+      presentationCard?: CardView;
+      sorcellerieSacrificeChoiceResolved?: boolean;
+      sorcellerieSacrificeWaived?: boolean;
+    };
+    responseCardContinuation?: {
+      responderSeatNumber: number;
+      responseChoice: ResponseChoiceType;
+      annulationCount?: number;
+    };
   };
   pendingCurseRelease?: {
     seatNumber: number;

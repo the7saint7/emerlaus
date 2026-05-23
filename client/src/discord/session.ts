@@ -2,6 +2,7 @@ import { DiscordSDK, Events, RPCCloseCodes } from "@discord/embedded-app-sdk";
 import { buildAvatarDataUrl, isLegacyExternalAvatarUrl } from "../../../shared/avatar.js";
 import type { LocalUserProfile } from "../../../shared/types";
 import { fetchConfig } from "../api/gameApi";
+import { createRandomId } from "../utils/randomId";
 
 interface ActivitySession {
   instanceId: string;
@@ -32,7 +33,7 @@ function buildMockBrowserUser(): LocalUserProfile {
 
   const suffix = Math.floor(Math.random() * 900 + 100);
   const user: LocalUserProfile = {
-    userId: `browser-user-${crypto.randomUUID()}`,
+    userId: `browser-user-${createRandomId()}`,
     displayName: `Browser Player ${suffix}`,
     avatarUrl: buildAvatarDataUrl(`Browser Player ${suffix}`)
   };
