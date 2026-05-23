@@ -1897,7 +1897,7 @@ function getMassAttackStaffLoadedCount(card: StoredCardInstance): number {
 }
 
 function getMassAttackStaffLoadableCards(seat: StoredSeatState): StoredCardInstance[] {
-  const staffCard = getSeatMassAttackStaff(seat);
+  const staffCard = getSeatAttackStaff(seat);
   const config = staffCard == null ? undefined : getAttackStaffConfig(staffCard.cardId);
   return seat.hand.filter((card) => config != null && requireDefinition(card.cardId).category.code === config.loadCategory);
 }
@@ -7098,7 +7098,7 @@ function maybeQueueMassAttackStaffTurnAction(
   }
 
   const seatState = getStoredSeat(game, seatNumber);
-  const staffCard = getSeatMassAttackStaff(seatState);
+  const staffCard = getSeatAttackStaff(seatState);
   if (staffCard == null) {
     return false;
   }
@@ -10038,7 +10038,7 @@ export function selectPendingObject(match: StoredMatchState, userId: string, obj
   }
 
   if (pendingObjectChoice.mode === "mass_attack_staff_turn") {
-    const staffCard = getSeatMassAttackStaff(owner, pendingObjectChoice.sourceCard.instanceId);
+    const staffCard = getSeatAttackStaff(owner, pendingObjectChoice.sourceCard.instanceId);
     if (staffCard == null) {
       throw new Error("The staff is no longer equipped");
     }
