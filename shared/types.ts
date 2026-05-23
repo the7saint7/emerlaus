@@ -149,12 +149,14 @@ export interface ActionStartEvent {
 export interface CombatPresentationEvent {
   id: string;
   boxId?: string;
-  type: "response_choice" | "resistance_start" | "resistance_result" | "attack_impact" | "hp_loss" | "hp_gain";
+  type: "response_choice" | "ordre_interrupt" | "resistance_start" | "resistance_result" | "attack_impact" | "hp_loss" | "hp_gain";
   createdAt: string;
   seatNumber?: number;
   actorSeatNumber?: number;
   targetSeatNumber?: number;
   cardName?: string;
+  ordreCard?: CardView;
+  interruptedCard?: CardView;
   responseChoice?: ResponseChoiceType;
   responseCardCount?: number;
   bonus?: number;
@@ -333,6 +335,22 @@ export interface PendingSacrificeChoiceState {
   maxAmount: number;
 }
 
+export interface PendingSorcellerieSacrificeChoiceState {
+  actorSeatNumber: number;
+  cardName: string;
+  duplicateCard: CardView;
+}
+
+export interface PendingOrdreInterruptState {
+  ownerSeatNumber?: number;
+  actorSeatNumber?: number;
+  targetSeatNumbers?: number[];
+  cardName?: string;
+  card?: CardView;
+  context?: "active_card" | "response_card";
+  hidden: boolean;
+}
+
 export interface PendingCurseReleaseState {
   seatNumber: number;
   cardName: string;
@@ -402,6 +420,8 @@ export interface GameState {
   pendingDeathSearch?: PendingDeathSearchState;
   pendingPickpocket?: PendingPickpocketState;
   pendingSacrificeChoice?: PendingSacrificeChoiceState;
+  pendingSorcellerieSacrificeChoice?: PendingSorcellerieSacrificeChoiceState;
+  pendingOrdreInterrupt?: PendingOrdreInterruptState;
   pendingCurseRelease?: PendingCurseReleaseState;
   forcedFollowUp?: ForcedFollowUpState;
   sessionStats: MatchSessionStats;
@@ -532,6 +552,10 @@ export interface PendingActionResponseRequest {
   annulationCount?: number;
 }
 
+export interface PendingOrdreInterruptRequest {
+  choice: "cancel" | "pass";
+}
+
 export interface PendingObjectChoiceRequest {
   objectInstanceId: string;
 }
@@ -558,6 +582,10 @@ export interface PendingPickpocketRequest {
 
 export interface PendingSacrificeChoiceRequest {
   amount: number;
+}
+
+export interface PendingSorcellerieSacrificeChoiceRequest {
+  waiveSacrifice: boolean;
 }
 
 export interface PendingCurseReleaseRequest {

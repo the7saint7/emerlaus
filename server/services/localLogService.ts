@@ -77,6 +77,15 @@ export function persistMatchLogs(match: StoredMatchState): void {
           seatNumber: match.internalGame.pendingCurseRelease.seatNumber,
           sourceCardId: match.internalGame.pendingCurseRelease.sourceCardId
         },
+    pendingOrdreInterrupt: match.internalGame.pendingOrdreInterrupt == null
+      ? null
+      : {
+          ownerSeatNumber: match.internalGame.pendingOrdreInterrupt.ownerSeatNumber,
+          interruptedActorSeatNumber: match.internalGame.pendingOrdreInterrupt.interruptedActorSeatNumber,
+          interruptedTargetSeatNumbers: match.internalGame.pendingOrdreInterrupt.interruptedTargetSeatNumbers ?? [],
+          interruptedCardId: match.internalGame.pendingOrdreInterrupt.interruptedCard.cardId,
+          context: match.internalGame.pendingOrdreInterrupt.context
+        },
     forcedFollowUp: match.internalGame.forcedFollowUp == null
       ? null
       : {

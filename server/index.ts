@@ -20,8 +20,10 @@ import type {
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
+  PendingOrdreInterruptRequest,
   PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
+  PendingSorcellerieSacrificeChoiceRequest,
   PendingActionResponseRequest,
   PlayCardRequest,
   StartMatchRequest,
@@ -66,6 +68,8 @@ import {
   resolveMatchDeathSearch,
   resolveMatchPickpocket,
   resolveMatchSacrificeChoice,
+  resolveMatchSorcellerieSacrificeChoice,
+  resolveMatchOrdreInterrupt,
   resolveMatchCurseRelease,
   respondMatchAction,
   selectMatchObject,
@@ -529,6 +533,18 @@ app.post("/api/matches/:instanceId/respond", (request, response) => {
   }
 });
 
+app.post("/api/matches/:instanceId/ordre-interrupt", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingOrdreInterruptRequest;
+    response.json(resolveMatchOrdreInterrupt(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to resolve Ordre d'Emmerlaus interrupt"
+    });
+  }
+});
+
 app.post("/api/matches/:instanceId/select-object", (request, response) => {
   try {
     const userId = requireAuthenticatedUserId(request);
@@ -609,6 +625,18 @@ app.post("/api/matches/:instanceId/sacrifice-choice", (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to choose sacrifice amount"
+    });
+  }
+});
+
+app.post("/api/matches/:instanceId/sorcellerie-sacrifice-choice", (request, response) => {
+  try {
+    const userId = requireAuthenticatedUserId(request);
+    const body = request.body as PendingSorcellerieSacrificeChoiceRequest;
+    response.json(resolveMatchSorcellerieSacrificeChoice(request.params.instanceId, userId, body));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to choose Sorcellerie sacrifice option"
     });
   }
 });

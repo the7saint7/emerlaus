@@ -14,8 +14,10 @@ import type {
   PendingCurseReleaseRequest,
   PendingHandInspectionRequest,
   PendingObjectChoiceRequest,
+  PendingOrdreInterruptRequest,
   PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
+  PendingSorcellerieSacrificeChoiceRequest,
   PendingActionResponseRequest,
   FireObjectRequest,
   PlayCardRequest
@@ -258,6 +260,20 @@ export async function respondToPendingAction(
   return parseJson<MatchState>(response);
 }
 
+export async function resolvePendingOrdreInterrupt(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingOrdreInterruptRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/ordre-interrupt`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
 export async function selectPendingObject(
   instanceId: string,
   playerSessionToken: string,
@@ -348,6 +364,20 @@ export async function resolvePendingSacrificeChoice(
   request: PendingSacrificeChoiceRequest
 ): Promise<MatchState> {
   const response = await fetch(`/api/matches/${instanceId}/sacrifice-choice`, {
+    method: "POST",
+    headers: buildPlayerHeaders(playerSessionToken),
+    body: JSON.stringify(request)
+  });
+
+  return parseJson<MatchState>(response);
+}
+
+export async function resolvePendingSorcellerieSacrificeChoice(
+  instanceId: string,
+  playerSessionToken: string,
+  request: PendingSorcellerieSacrificeChoiceRequest
+): Promise<MatchState> {
+  const response = await fetch(`/api/matches/${instanceId}/sorcellerie-sacrifice-choice`, {
     method: "POST",
     headers: buildPlayerHeaders(playerSessionToken),
     body: JSON.stringify(request)

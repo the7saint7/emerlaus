@@ -19,8 +19,10 @@ import type {
   PendingBoardResetKeepRequest,
   PendingDeathSearchRequest,
   PendingPickpocketRequest,
+  PendingOrdreInterruptRequest,
   PendingPublicHandRevealReadyRequest,
   PendingSacrificeChoiceRequest,
+  PendingSorcellerieSacrificeChoiceRequest,
   PendingCurseReleaseRequest,
   PendingActionResponseRequest,
   FireObjectRequest,
@@ -50,6 +52,8 @@ import {
   resolvePendingDeathSearchForBot,
   resolvePendingPickpocket,
   resolvePendingSacrificeChoice,
+  resolvePendingSorcellerieSacrificeChoice,
+  resolvePendingOrdreInterrupt,
   resolvePendingCurseRelease,
   respondToPendingAction,
   selectPendingObject
@@ -450,6 +454,8 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
 
   const pendingObjectChoice = match.internalGame?.pendingObjectChoice;
   const pendingPublicHandReveal = match.internalGame?.pendingPublicHandReveal;
+  const pendingSorcellerieSacrificeChoice = match.internalGame?.pendingSorcellerieSacrificeChoice;
+  const pendingOrdreInterrupt = match.internalGame?.pendingOrdreInterrupt;
   if (pendingPublicHandReveal != null) {
     const timerKey = `${instanceId}:public-hand-reveal`;
     for (const [key, timer] of botTurnTimers.entries()) {
@@ -552,6 +558,41 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
     return;
   }
 
+  if (pendingSorcellerieSacrificeChoice != null) {
+    return;
+  }
+
+  if (pendingOrdreInterrupt != null) {
+    const ownerSeat = match.seats.find((seat) => seat.seatNumber === pendingOrdreInterrupt.ownerSeatNumber);
+    if (ownerSeat?.controllerType === "bot") {
+      const timerKey = `${instanceId}:ordre:${ownerSeat.seatNumber}`;
+      if (!botTurnTimers.has(timerKey)) {
+        const timer = setTimeout(() => {
+          botTurnTimers.delete(timerKey);
+          const latestMatch = getMatch(instanceId);
+          const latestInterrupt = latestMatch?.internalGame?.pendingOrdreInterrupt;
+          const latestOwnerSeat = latestMatch?.seats.find((seat) => seat.seatNumber === latestInterrupt?.ownerSeatNumber);
+          if (latestMatch != null && latestInterrupt != null && latestOwnerSeat?.controllerType === "bot") {
+            try {
+              resolvePendingOrdreInterrupt(latestMatch, latestOwnerSeat.userId, { choice: "cancel" });
+              saveMatch(latestMatch);
+              notifyMatchUpdated(instanceId);
+            } catch (error) {
+              appendServerDebugLog(
+                latestMatch,
+                "bot_ai",
+                `Seat ${latestOwnerSeat.seatNumber} Ordre d'Emmerlaus interrupt failed: ${error instanceof Error ? error.message : "Unknown error"}`
+              );
+            }
+          }
+          scheduleBotTurnIfNeeded(instanceId);
+        }, 500 + Math.floor(Math.random() * 500));
+        botTurnTimers.set(timerKey, timer);
+      }
+    }
+    return;
+  }
+
   const pendingAction = match.internalGame?.pendingAction;
   if (pendingAction != null) {
     const pendingResponders =
@@ -585,6 +626,11 @@ function scheduleBotTurnIfNeeded(instanceId: string): void {
         }
 
         const latestResponderSeat = latestMatch.seats.find((seat) => seat.seatNumber === responderSeat.seatNumber);
+        if (latestMatch.internalGame?.pendingSorcellerieSacrificeChoice != null) {
+          scheduleBotTurnIfNeeded(instanceId);
+          return;
+        }
+
         const latestPendingResponder = latestMatch.internalGame?.pendingAction?.responders
           .find((responder) => responder.seatNumber === responderSeat.seatNumber && responder.state === "pending");
         if (latestResponderSeat?.controllerType !== "bot" || latestPendingResponder == null) {
@@ -1061,6 +1107,11 @@ export function devDrawCard(
 
   const cardInstance = { instanceId: randomUUID(), cardId };
   seatState.hand.push(cardInstance);
+  appendServerDebugLog(
+    match,
+    "dev",
+    `Seat ${effectiveTargetSeatNumber} received dev-granted ${baseCardDefinitionById[cardId]?.name ?? cardId}`
+  );
   if (targetSeat.controllerType === "bot" && match.internalGame != null) {
     const requesterSeatNumber = requesterSeat.seatNumber;
     const priorityBySeat = match.internalGame.botPriorityCardsBySeat ?? {};
@@ -1092,6 +1143,20 @@ export function respondMatchAction(instanceId: string, userId: string, request: 
 
   clearBotTurnTimer(instanceId);
   respondToPendingAction(match, userId, request);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchOrdreInterrupt(instanceId: string, userId: string, request: PendingOrdreInterruptRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+  requireNotSpectator(match, userId);
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingOrdreInterrupt(match, userId, request);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);
@@ -1190,6 +1255,20 @@ export function resolveMatchSacrificeChoice(instanceId: string, userId: string, 
 
   clearBotTurnTimer(instanceId);
   resolvePendingSacrificeChoice(match, userId, request.amount);
+  saveMatch(match);
+  scheduleBotTurnIfNeeded(instanceId);
+  return buildPublicMatchState(match, userId);
+}
+
+export function resolveMatchSorcellerieSacrificeChoice(instanceId: string, userId: string, request: PendingSorcellerieSacrificeChoiceRequest): MatchState {
+  const match = requireMatch(instanceId);
+  if (match.status !== "in_progress") {
+    throw new Error("The match is not in progress");
+  }
+  requireNotSpectator(match, userId);
+
+  clearBotTurnTimer(instanceId);
+  resolvePendingSorcellerieSacrificeChoice(match, userId, request.waiveSacrifice);
   saveMatch(match);
   scheduleBotTurnIfNeeded(instanceId);
   return buildPublicMatchState(match, userId);

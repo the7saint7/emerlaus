@@ -25,6 +25,7 @@ import type {
   PendingActionOption,
   PendingObjectChoiceState,
   FireObjectRequest,
+  PendingOrdreInterruptRequest,
   PlayCardRequest,
   PendingActionResponseRequest,
   PendingActionResponderState,
@@ -62,6 +63,16 @@ const VITESSE_DU_VENT_CARD_ID = "vitesse-du-vent";
 const VITESSE_DU_VENT_REQUIRED_FOLLOW_UPS = 3;
 const ABUNDANCE_ALLOWED_CATEGORIES: CardCategoryCode[] = ["A", "AD", "AM"];
 const HUMAN_REFILL_TO_BOT_TURN_DELAY_MS = 2500;
+
+interface RemovedCardPlayOptions {
+  skipStoredCardResolution?: boolean;
+  fizzleIfInvalid?: boolean;
+  summaryOverride?: string;
+  presentationCard?: CardView;
+  sorcellerieSacrificeChoiceResolved?: boolean;
+  sorcellerieSacrificeWaived?: boolean;
+  ordreInterruptResolved?: boolean;
+}
 
 interface SuccessfulHitDamageModifierConfig {
   triggerNotation: string;
@@ -1178,6 +1189,7 @@ function listTargetableObjectOwners(
 ): number[] {
   const ignoreAttackImmunity = canTargetSeatStatuses(sourceDefinition);
   const includeSelf = canTargetSeatStatuses(sourceDefinition);
+  const canTargetAnyPermanent = canTargetSeatStatuses(sourceDefinition);
   return sortBySeatNumber(game.seatStates)
     .filter((seat) =>
       (includeSelf || seat.seatNumber !== actorSeatNumber)
@@ -1185,7 +1197,7 @@ function listTargetableObjectOwners(
       && (ignoreAttackImmunity || seat.attackImmunityTurns === 0)
       && (ignoreAttackImmunity || !hasActiveInvisibility(seat))
       && (
-        seat.objects.some((card) => requireDefinition(card.cardId).category.code === "O")
+        seat.objects.some((card) => canTargetAnyPermanent || requireDefinition(card.cardId).category.code === "O")
         || (canTargetSeatStatuses(sourceDefinition) && seat.statuses.length > 0)
       )
     )
@@ -1217,7 +1229,7 @@ function seatHasEligibleTargetObject(
   sourceDefinition?: BaseCardDefinition
 ): boolean {
   return getStoredSeat(game, seatNumber).objects.some((objectCard) =>
-    requireDefinition(objectCard.cardId).category.code === "O"
+    (canTargetSeatStatuses(sourceDefinition) || requireDefinition(objectCard.cardId).category.code === "O")
     && objectMatchesAllowedSlots(objectCard.cardId, allowedSlots)
   ) || (canTargetSeatStatuses(sourceDefinition) && getStoredSeat(game, seatNumber).statuses.length > 0);
 }
@@ -2075,7 +2087,7 @@ function beginMassAttackStaffFire(
 
 export function buildBotFireObjectRequest(match: StoredMatchState, seatNumber: number): FireObjectRequest | undefined {
   const game = match.internalGame;
-  if (game == null || game.currentTurnSeatNumber !== seatNumber || game.pendingAction != null || game.pendingObjectChoice != null) {
+  if (game == null || game.currentTurnSeatNumber !== seatNumber || game.pendingAction != null || game.pendingObjectChoice != null || game.pendingOrdreInterrupt != null) {
     return undefined;
   }
 
@@ -2099,7 +2111,7 @@ export function fireObjectAtTarget(match: StoredMatchState, userId: string, requ
   if (game == null) {
     throw new Error("Game not initialized");
   }
-  if (game.pendingAction != null || game.pendingObjectChoice != null || game.forcedFollowUp != null) {
+  if (game.pendingAction != null || game.pendingObjectChoice != null || game.pendingOrdreInterrupt != null || game.forcedFollowUp != null) {
     throw new Error("Resolve the current action before firing an object");
   }
 
@@ -2444,6 +2456,8 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     || game.pendingDeathSearch != null
     || game.pendingPickpocket != null
     || game.pendingSacrificeChoice != null
+    || game.pendingSorcellerieSacrificeChoice != null
+    || game.pendingOrdreInterrupt != null
     || game.pendingCurseRelease != null
   ) {
     return { canPlay: false, reason: "Resolve the current action first" };
@@ -2713,7 +2727,6 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
 
   const seatState = getStoredSeat(game, seatNumber);
   const hasMiroir = seatState.hand.some((card) => card.cardId === "miroir");
-  const hasOrdreDemmerlaus = seatState.hand.some((card) => card.cardId === ORDRE_DEMMERLAUS_CARD_ID);
   const temporalStopSuppressed = isTemporalStopResponseSuppressed(match, pendingAction, seatNumber);
   if (temporalStopSuppressed) {
     return [
@@ -2744,13 +2757,6 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
     const options: PendingActionOption[] = [
       { choice: "pass", label: "Pass", description: "Accept the reflected damage." }
     ];
-    if (hasOrdreDemmerlaus) {
-      options.push({
-        choice: "ordre-demmerlaus",
-        label: "Use Ordre d'Emmerlaus",
-        description: "Cancel this reflected action, even though it is outside the normal defense rules."
-      });
-    }
     if (hasMiroir && !isMirrorBlockedByAntiMirrorAmulet(match, pendingAction)) {
       options.push({ choice: "mirror", label: "Mirror", description: "Reflect it back again." });
     }
@@ -2788,14 +2794,6 @@ function getResponseOptionChoices(match: StoredMatchState, seatNumber: number): 
       choice: "annulation",
       label: pendingDefinition.defenseBand.annulationCardsRequired > 1 ? "Use Annulation x2" : "Use Annulation",
       description: "Cancel this action using Annulation."
-    });
-  }
-
-  if (hasOrdreDemmerlaus) {
-    options.push({
-      choice: "ordre-demmerlaus",
-      label: "Use Ordre d'Emmerlaus",
-      description: "Cancel this action with Ordre d'Emmerlaus, even if it is CA, E, or would normally need 2 Annulations."
     });
   }
 
@@ -2894,6 +2892,14 @@ function canPlayCardAsPendingResponse(match: StoredMatchState, seatNumber: numbe
 
   if (match.internalGame?.pendingSacrificeChoice != null) {
     return { canPlay: false, reason: "Choose the sacrifice amount first" };
+  }
+
+  if (match.internalGame?.pendingSorcellerieSacrificeChoice != null) {
+    return { canPlay: false, reason: "Choose whether to waive the Sorcellerie sacrifice first" };
+  }
+
+  if (match.internalGame?.pendingOrdreInterrupt != null) {
+    return { canPlay: false, reason: "Resolve the Ordre d'Emmerlaus interrupt first" };
   }
 
   const options = getResponseOptionChoices(match, seatNumber);
@@ -4029,6 +4035,243 @@ function queueSacrificeChoice(
   return true;
 }
 
+function findSorcellerieDuplicateSacrificeCard(game: StoredGameState, actorSeatNumber: number, sourceCard: StoredCardInstance): StoredCardInstance | undefined {
+  const sourceDefinition = requireDefinition(sourceCard.cardId);
+  if (sourceDefinition.category.code !== "SC" || !sourceDefinition.rules.effects.some((effect) => effect.type === "pay_hp")) {
+    return undefined;
+  }
+
+  return getStoredSeat(game, actorSeatNumber).hand.find((card) => card.cardId === sourceCard.cardId);
+}
+
+function queueSorcellerieSacrificeChoice(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceCard: StoredCardInstance,
+  boxId?: string
+): boolean {
+  const game = match.internalGame;
+  const pendingAction = game?.pendingAction;
+  if (game == null || pendingAction == null) {
+    return false;
+  }
+
+  const duplicateCard = findSorcellerieDuplicateSacrificeCard(game, actorSeatNumber, sourceCard);
+  if (duplicateCard == null) {
+    return false;
+  }
+
+  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  if (actorSeat.controllerType === "bot") {
+    pendingAction.sorcellerieSacrificeWaived = true;
+    discardInstances(game, [moveCardFromHand(getStoredSeat(game, actorSeatNumber).hand, duplicateCard.instanceId)]);
+    appendServerDebugLog(
+      match,
+      "sacrifice",
+      `Bot seat ${actorSeatNumber} discarded a duplicate ${requireDefinition(sourceCard.cardId).name} to waive the Sorcellerie HP sacrifice${boxId != null ? ` [box ${boxId}]` : ""}`
+    );
+    return false;
+  }
+
+  game.pendingSorcellerieSacrificeChoice = {
+    boxId,
+    actorSeatNumber,
+    sourceCard,
+    duplicateCard
+  };
+  appendServerDebugLog(
+    match,
+    "sacrifice",
+    `Seat ${actorSeatNumber} may discard duplicate ${requireDefinition(sourceCard.cardId).name} to waive the Sorcellerie HP sacrifice${boxId != null ? ` [box ${boxId}]` : ""}`
+  );
+  refreshSeatSummaries(match);
+  return true;
+}
+
+function queueDirectSorcellerieSacrificeChoice(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  sourceCard: StoredCardInstance,
+  directResolution: NonNullable<NonNullable<StoredGameState["pendingSorcellerieSacrificeChoice"]>["directResolution"]>
+): "none" | "queued" | "waived" {
+  const game = match.internalGame;
+  if (game == null) {
+    return "none";
+  }
+
+  const duplicateCard = findSorcellerieDuplicateSacrificeCard(game, actorSeatNumber, sourceCard);
+  if (duplicateCard == null) {
+    return "none";
+  }
+
+  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  if (actorSeat.controllerType === "bot") {
+    discardInstances(game, [moveCardFromHand(getStoredSeat(game, actorSeatNumber).hand, duplicateCard.instanceId)]);
+    appendServerDebugLog(
+      match,
+      "sacrifice",
+      `Bot seat ${actorSeatNumber} discarded a duplicate ${requireDefinition(sourceCard.cardId).name} to waive the Sorcellerie HP sacrifice`
+    );
+    return "waived";
+  }
+
+  game.pendingSorcellerieSacrificeChoice = {
+    actorSeatNumber,
+    sourceCard,
+    duplicateCard,
+    directResolution
+  };
+  appendServerDebugLog(
+    match,
+    "sacrifice",
+    `Seat ${actorSeatNumber} may discard duplicate ${requireDefinition(sourceCard.cardId).name} to waive the Sorcellerie HP sacrifice`
+  );
+  refreshSeatSummaries(match);
+  return "queued";
+}
+
+function findOrdreInterruptOwner(
+  match: StoredMatchState,
+  game: StoredGameState,
+  interruptedActorSeatNumber: number,
+  interruptedDefinition?: BaseCardDefinition,
+  interruptedTargetSeatNumbers: number[] = []
+): { seat: StoredSeatState; card: StoredCardInstance } | undefined {
+  for (const seat of game.seatStates) {
+    if (!seat.alive || seat.seatNumber === interruptedActorSeatNumber) {
+      continue;
+    }
+    if (getPublicSeat(match, seat.seatNumber).controllerType === "bot") {
+      continue;
+    }
+
+    const card = seat.hand.find((handCard) => handCard.cardId === ORDRE_DEMMERLAUS_CARD_ID);
+    if (card != null) {
+      return { seat, card };
+    }
+  }
+
+  if (interruptedDefinition != null && isAttackLikeDefinition(interruptedDefinition)) {
+    for (const seat of game.seatStates) {
+      if (
+        !seat.alive
+        || seat.seatNumber === interruptedActorSeatNumber
+        || !interruptedTargetSeatNumbers.includes(seat.seatNumber)
+        || getPublicSeat(match, seat.seatNumber).controllerType !== "bot"
+      ) {
+        continue;
+      }
+
+      const card = seat.hand.find((handCard) => handCard.cardId === ORDRE_DEMMERLAUS_CARD_ID);
+      if (card != null) {
+        return { seat, card };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function queueOrdreActiveCardInterrupt(
+  match: StoredMatchState,
+  actorSeatNumber: number,
+  removedCard: StoredCardInstance,
+  definition: BaseCardDefinition,
+  request: PlayCardRequest,
+  targetSeatNumbers: number[],
+  forcedFollowUp?: StoredForcedFollowUpState,
+  options?: RemovedCardPlayOptions
+): boolean {
+  const game = match.internalGame;
+  if (
+    game == null ||
+    definition.id === ORDRE_DEMMERLAUS_CARD_ID ||
+    options?.ordreInterruptResolved === true
+  ) {
+    return false;
+  }
+
+  const owner = findOrdreInterruptOwner(match, game, actorSeatNumber, definition, targetSeatNumbers);
+  if (owner == null) {
+    return false;
+  }
+
+  game.pendingOrdreInterrupt = {
+    ownerSeatNumber: owner.seat.seatNumber,
+    interruptedActorSeatNumber: actorSeatNumber,
+    interruptedTargetSeatNumbers: [...targetSeatNumbers],
+    interruptedCard: removedCard,
+    context: "active_card",
+    activeCardContinuation: {
+      request: { ...request },
+      forcedFollowUp: forcedFollowUp == null ? undefined : { ...forcedFollowUp },
+      skipStoredCardResolution: options?.skipStoredCardResolution,
+      fizzleIfInvalid: options?.fizzleIfInvalid,
+      summaryOverride: options?.summaryOverride,
+      presentationCard: options?.presentationCard,
+      sorcellerieSacrificeChoiceResolved: options?.sorcellerieSacrificeChoiceResolved,
+      sorcellerieSacrificeWaived: options?.sorcellerieSacrificeWaived
+    }
+  };
+  appendServerDebugLog(
+    match,
+    "ordre",
+    `Paused ${definition.name} from seat ${actorSeatNumber}${targetSeatNumbers.length === 0 ? "" : ` targeting seat(s) ${targetSeatNumbers.join(", ")}`}; seat ${owner.seat.seatNumber} may interrupt with ${requireDefinition(ORDRE_DEMMERLAUS_CARD_ID).name}`
+  );
+  refreshSeatSummaries(match);
+  return true;
+}
+
+function queueOrdreResponseCardInterrupt(
+  match: StoredMatchState,
+  responderSeatNumber: number,
+  responseChoice: ResponseChoiceType,
+  annulationCount?: number
+): boolean {
+  const game = match.internalGame;
+  const pendingAction = game?.pendingAction;
+  if (
+    game == null ||
+    pendingAction == null ||
+    responseChoice === "pass" ||
+    responseChoice === "resist" ||
+    responseChoice === "ordre-demmerlaus"
+  ) {
+    return false;
+  }
+
+  const responder = pendingAction.responders.find((candidate) => candidate.seatNumber === responderSeatNumber);
+  const interruptedCard = responder?.consumedCards[0];
+  if (interruptedCard == null) {
+    return false;
+  }
+
+  const owner = findOrdreInterruptOwner(match, game, responderSeatNumber);
+  if (owner == null) {
+    return false;
+  }
+
+  game.pendingOrdreInterrupt = {
+    ownerSeatNumber: owner.seat.seatNumber,
+    interruptedActorSeatNumber: responderSeatNumber,
+    interruptedTargetSeatNumbers: [...pendingAction.targetSeatNumbers],
+    interruptedCard,
+    context: "response_card",
+    responseCardContinuation: {
+      responderSeatNumber,
+      responseChoice,
+      annulationCount
+    }
+  };
+  appendServerDebugLog(
+    match,
+    "ordre",
+    `Paused response ${requireDefinition(interruptedCard.cardId).name} from seat ${responderSeatNumber}; seat ${owner.seat.seatNumber} may interrupt`
+  );
+  refreshSeatSummaries(match);
+  return true;
+}
+
 function redrawSeatHand(match: StoredMatchState, seatNumber: number, redrawCount?: number, boxId?: string): void {
   const game = match.internalGame;
   if (game == null) {
@@ -4556,6 +4799,24 @@ function swapSeatOrderPreservingPlayerState(
   }
   if (game.pendingSacrificeChoice != null) {
     game.pendingSacrificeChoice.actorSeatNumber = remapSeatNumberReference(game.pendingSacrificeChoice.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingSacrificeChoice.actorSeatNumber;
+  }
+  if (game.pendingSorcellerieSacrificeChoice != null) {
+    game.pendingSorcellerieSacrificeChoice.actorSeatNumber = remapSeatNumberReference(game.pendingSorcellerieSacrificeChoice.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingSorcellerieSacrificeChoice.actorSeatNumber;
+  }
+  if (game.pendingOrdreInterrupt != null) {
+    game.pendingOrdreInterrupt.ownerSeatNumber = remapSeatNumberReference(game.pendingOrdreInterrupt.ownerSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingOrdreInterrupt.ownerSeatNumber;
+    game.pendingOrdreInterrupt.interruptedActorSeatNumber = remapSeatNumberReference(game.pendingOrdreInterrupt.interruptedActorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingOrdreInterrupt.interruptedActorSeatNumber;
+    game.pendingOrdreInterrupt.interruptedTargetSeatNumbers = game.pendingOrdreInterrupt.interruptedTargetSeatNumbers?.map((seatNumber) =>
+      remapSeatNumberReference(seatNumber, leftSeatNumber, rightSeatNumber) ?? seatNumber
+    );
+    if (game.pendingOrdreInterrupt.activeCardContinuation?.forcedFollowUp != null) {
+      game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.actorSeatNumber = remapSeatNumberReference(game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.actorSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.actorSeatNumber;
+      game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.targetSeatNumber = remapSeatNumberReference(game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.targetSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.targetSeatNumber;
+      game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.turnOwnerSeatNumber = remapSeatNumberReference(game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.turnOwnerSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingOrdreInterrupt.activeCardContinuation.forcedFollowUp.turnOwnerSeatNumber;
+    }
+    if (game.pendingOrdreInterrupt.responseCardContinuation != null) {
+      game.pendingOrdreInterrupt.responseCardContinuation.responderSeatNumber = remapSeatNumberReference(game.pendingOrdreInterrupt.responseCardContinuation.responderSeatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingOrdreInterrupt.responseCardContinuation.responderSeatNumber;
+    }
   }
   if (game.pendingCurseRelease != null) {
     game.pendingCurseRelease.seatNumber = remapSeatNumberReference(game.pendingCurseRelease.seatNumber, leftSeatNumber, rightSeatNumber) ?? game.pendingCurseRelease.seatNumber;
@@ -7717,6 +7978,8 @@ function buildPublicGameState(match: StoredMatchState, viewerSeatNumber?: number
     pendingDeathSearch: buildPendingDeathSearchPublicState(match, viewerSeatNumber),
     pendingPickpocket: buildPendingPickpocketPublicState(match, viewerSeatNumber),
     pendingSacrificeChoice: buildPendingSacrificeChoicePublicState(match),
+    pendingSorcellerieSacrificeChoice: buildPendingSorcellerieSacrificeChoicePublicState(match),
+    pendingOrdreInterrupt: buildPendingOrdreInterruptPublicState(match, viewerSeatNumber),
     pendingCurseRelease: buildPendingCurseReleasePublicState(match),
     sessionStats: {
       seatStats: game.sessionStats.seatStats.map((seatStats) => ({ ...seatStats }))
@@ -8083,6 +8346,46 @@ function buildPendingSacrificeChoicePublicState(match: StoredMatchState): GameSt
   };
 }
 
+function buildPendingSorcellerieSacrificeChoicePublicState(match: StoredMatchState): GameState["pendingSorcellerieSacrificeChoice"] {
+  const game = match.internalGame;
+  const pendingChoice = game?.pendingSorcellerieSacrificeChoice;
+  if (game == null || pendingChoice == null) {
+    return undefined;
+  }
+
+  const duplicateDefinition = requireDefinition(pendingChoice.duplicateCard.cardId);
+  return {
+    actorSeatNumber: pendingChoice.actorSeatNumber,
+    cardName: requireDefinition(pendingChoice.sourceCard.cardId).name,
+    duplicateCard: buildCardView(pendingChoice.duplicateCard, duplicateDefinition, "hand", false)
+  };
+}
+
+function buildPendingOrdreInterruptPublicState(match: StoredMatchState, viewerSeatNumber?: number): GameState["pendingOrdreInterrupt"] {
+  const game = match.internalGame;
+  const pendingInterrupt = game?.pendingOrdreInterrupt;
+  if (game == null || pendingInterrupt == null) {
+    return undefined;
+  }
+
+  const viewerHasOrdre = viewerSeatNumber != null
+    && getStoredSeat(game, viewerSeatNumber).hand.some((card) => card.cardId === ORDRE_DEMMERLAUS_CARD_ID);
+  if (!viewerHasOrdre) {
+    return { hidden: true };
+  }
+
+  const definition = requireDefinition(pendingInterrupt.interruptedCard.cardId);
+  return {
+    ownerSeatNumber: viewerSeatNumber,
+    actorSeatNumber: pendingInterrupt.interruptedActorSeatNumber,
+    targetSeatNumbers: pendingInterrupt.interruptedTargetSeatNumbers == null ? undefined : [...pendingInterrupt.interruptedTargetSeatNumbers],
+    cardName: definition.name,
+    card: buildCardView(pendingInterrupt.interruptedCard, definition, "discard", false),
+    context: pendingInterrupt.context,
+    hidden: false
+  };
+}
+
 function buildPendingCurseReleasePublicState(match: StoredMatchState): GameState["pendingCurseRelease"] {
   const game = match.internalGame;
   const pendingCurseRelease = game?.pendingCurseRelease;
@@ -8201,6 +8504,26 @@ function finalizeResolvedAction(match: StoredMatchState, actorSeatNumber: number
     return;
   }
 
+  if (game.pendingSorcellerieSacrificeChoice != null) {
+    appendServerDebugLog(
+      match,
+      "sacrifice",
+      `Turn resolution paused for ${requireDefinition(game.pendingSorcellerieSacrificeChoice.sourceCard.cardId).name}; seat ${game.pendingSorcellerieSacrificeChoice.actorSeatNumber} must choose whether to waive the HP sacrifice`
+    );
+    refreshSeatSummaries(match);
+    return;
+  }
+
+  if (game.pendingOrdreInterrupt != null) {
+    appendServerDebugLog(
+      match,
+      "ordre",
+      `Turn resolution paused for ${requireDefinition(game.pendingOrdreInterrupt.interruptedCard.cardId).name}; hidden Ordre d'Emmerlaus interrupt pending`
+    );
+    refreshSeatSummaries(match);
+    return;
+  }
+
   if (game.pendingCurseRelease != null) {
     appendServerDebugLog(
       match,
@@ -8297,6 +8620,8 @@ function resolveMirror(match: StoredMatchState, pendingAction: StoredPendingActi
     sourceZone: pendingAction.sourceZone ?? "hand",
     fromMirror: true,
     mirrorOriginActorSeatNumber: originActorSeatNumber,
+    deferredPayHpApplied: pendingAction.deferredPayHpApplied,
+    sorcellerieSacrificeWaived: pendingAction.sorcellerieSacrificeWaived,
     corruptionPowerRingDamage: pendingAction.corruptionPowerRingDamage,
     corruptionPowerRingCard: pendingAction.corruptionPowerRingCard,
     corruptionPowerRingChooserSeatNumber: pendingAction.corruptionPowerRingChooserSeatNumber,
@@ -8332,6 +8657,10 @@ function autoRespondIfNeeded(match: StoredMatchState): void {
   const game = match.internalGame;
   const pendingAction = game?.pendingAction;
   if (game == null || pendingAction == null || game.pendingSacrificeChoice != null) {
+    return;
+  }
+
+  if (game.pendingSorcellerieSacrificeChoice != null) {
     return;
   }
 
@@ -8533,6 +8862,10 @@ function beginPendingAction(
     return;
   }
 
+  if (queueSorcellerieSacrificeChoice(match, actorSeatNumber, removedCard, boxId)) {
+    return;
+  }
+
   autoRespondIfNeeded(match);
 }
 
@@ -8541,6 +8874,11 @@ function applyDeferredPayHpEffectsForPendingAction(
   pendingAction: StoredPendingActionState,
   definition: BaseCardDefinition
 ): boolean {
+  if (pendingAction.sorcellerieSacrificeWaived === true) {
+    pendingAction.deferredPayHpApplied = true;
+    return true;
+  }
+
   if (pendingAction.deferredPayHpApplied === true) {
     return true;
   }
@@ -8810,6 +9148,63 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
   }
 }
 
+function cancelMirrorResponseWithOrdreDemmerlaus(
+  match: StoredMatchState,
+  pendingAction: StoredPendingActionState,
+  responder: StoredPendingActionResponderState
+): boolean {
+  const game = match.internalGame;
+  const pausedAction = game?.pausedSequentialAction;
+  if (
+    game == null ||
+    pendingAction.fromMirror !== true ||
+    pausedAction == null ||
+    responder.choice !== "ordre-demmerlaus"
+  ) {
+    return false;
+  }
+
+  const mirrorResponder = pausedAction.responders.find((candidate) =>
+    candidate.seatNumber === pendingAction.actorSeatNumber &&
+    candidate.choice === "mirror"
+  );
+  if (mirrorResponder == null) {
+    return false;
+  }
+
+  discardInstances(game, responder.consumedCards);
+  mirrorResponder.choice = "pass";
+  mirrorResponder.state = "locked";
+
+  const ordreName = requireDefinition(ORDRE_DEMMERLAUS_CARD_ID).name;
+  const mirrorName = requireDefinition("miroir").name;
+  const responderName = getPublicSeat(match, responder.seatNumber).displayName;
+  appendDealerMessage(match, `${responderName} canceled ${mirrorName} with ${ordreName}.`);
+  appendServerDebugLog(
+    match,
+    "mirror",
+    `Seat ${responder.seatNumber} canceled seat ${pendingAction.actorSeatNumber}'s mirror with ${ordreName}`
+  );
+
+  game.pendingAction = pausedAction;
+  game.pausedSequentialAction = undefined;
+  if (pendingAction.deferredPayHpApplied === true) {
+    pausedAction.deferredPayHpApplied = true;
+  }
+
+  refreshSeatSummaries(match);
+  if (pausedAction.responders.every((candidate) => candidate.state !== "pending")) {
+    if (pausedAction.responseMode === "per_target") {
+      finalizePendingAction(match);
+    } else {
+      resolvePendingAction(match);
+    }
+  } else {
+    autoRespondIfNeeded(match);
+  }
+  return true;
+}
+
 function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPendingActionResponderState): void {
   const game = match.internalGame;
   const pendingAction = game?.pendingAction;
@@ -8827,6 +9222,10 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
     && supportsDeferredCollectiveMirrorHit(definition);
   if (!getStoredSeat(game, targetSeatNumber).alive) {
     discardInstances(game, responder.consumedCards);
+    return;
+  }
+
+  if (responder.choice === "ordre-demmerlaus" && cancelMirrorResponseWithOrdreDemmerlaus(match, pendingAction, responder)) {
     return;
   }
 
@@ -9212,6 +9611,9 @@ function finalizePendingAction(match: StoredMatchState): void {
 
     game.pendingAction = undefined;
     if (pausedAction != null) {
+      if (pendingAction.deferredPayHpApplied === true) {
+        pausedAction.deferredPayHpApplied = true;
+      }
       game.pendingAction = pausedAction;
       game.pausedSequentialAction = undefined;
       appendServerDebugLog(match, "mirror", "Mirror chain resolved; resuming outer action");
@@ -9276,6 +9678,9 @@ function resolvePendingAction(match: StoredMatchState): void {
     }
 
     resolvePerTargetResponder(match, currentResponder);
+    if (game.pendingAction !== pendingAction) {
+      return;
+    }
     if (game.pendingDeathSearch != null || game.pendingObjectChoice != null || game.pendingPickpocket != null) {
       refreshSeatSummaries(match);
       return;
@@ -9960,26 +10365,47 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
     responder.consumedCards = [];
   }
 
-  recordResponseCardsPlayed(match, responderSeat.seatNumber, responder.consumedCards.length);
+  if (queueOrdreResponseCardInterrupt(match, responderSeat.seatNumber, request.choice, request.annulationCount)) {
+    return;
+  }
+
+  continueCommittedPendingResponse(match, responderSeat.seatNumber, request.choice);
+}
+
+function continueCommittedPendingResponse(match: StoredMatchState, responderSeatNumber: number, choice: ResponseChoiceType): void {
+  const game = match.internalGame;
+  const pendingAction = game?.pendingAction;
+  if (game == null || pendingAction == null) {
+    return;
+  }
+
+  const responder = getPendingResponder(game, responderSeatNumber);
+  if (responder == null) {
+    return;
+  }
+
+  recordResponseCardsPlayed(match, responderSeatNumber, responder.consumedCards.length);
 
   pushPresentationEvent(match, {
     boxId: pendingAction.boxId,
     type: "response_choice",
-    seatNumber: responderSeat.seatNumber,
+    seatNumber: responderSeatNumber,
     actorSeatNumber: pendingAction.actorSeatNumber,
     cardName: requireDefinition(pendingAction.storedCard.cardId).name,
-    responseChoice: request.choice,
+    responseChoice: choice,
     responseCardCount: responder.consumedCards.length || undefined
   });
 
-  // Mirror starts a chain immediately for both per_target and collective modes
-  if (request.choice === "mirror") {
-    resolveMirror(match, pendingAction, responderSeat.seatNumber);
+  if (choice === "mirror") {
+    resolveMirror(match, pendingAction, responderSeatNumber);
     return;
   }
 
   if (pendingAction.responseMode === "per_target") {
     resolvePerTargetResponder(match, responder);
+    if (game.pendingAction !== pendingAction) {
+      return;
+    }
     if (game.pendingDeathSearch != null || game.pendingObjectChoice != null || game.pendingPickpocket != null) {
       refreshSeatSummaries(match);
       return;
@@ -9992,9 +10418,9 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
       autoRespondIfNeeded(match);
     }
   } else {
-    if (request.choice === "ordre-demmerlaus") {
+    if (choice === "ordre-demmerlaus") {
       resolvePendingAction(match);
-    } else if (request.choice === "annulation") {
+    } else if (choice === "annulation") {
       const annulationRequired = requireDefinition(pendingAction.storedCard.cardId).defenseBand?.annulationCardsRequired ?? 1;
       const committedAnnulations = pendingAction.responders
         .filter((candidate) => candidate.choice === "annulation")
@@ -10019,6 +10445,130 @@ export function respondToPendingAction(match: StoredMatchState, userId: string, 
       return;
     }
   }
+}
+
+export function resolvePendingOrdreInterrupt(match: StoredMatchState, userId: string, request: PendingOrdreInterruptRequest): void {
+  const game = match.internalGame;
+  const pendingInterrupt = game?.pendingOrdreInterrupt;
+  if (game == null || pendingInterrupt == null) {
+    throw new Error("No pending Ordre d'Emmerlaus interrupt");
+  }
+
+  const ownerSeat = match.seats.find((seat) => seat.userId === userId);
+  const requesterState = ownerSeat == null ? undefined : getStoredSeat(game, ownerSeat.seatNumber);
+  const requesterHasOrdre = requesterState?.hand.some((card) => card.cardId === ORDRE_DEMMERLAUS_CARD_ID) === true;
+  if (ownerSeat == null || (ownerSeat.seatNumber !== pendingInterrupt.ownerSeatNumber && !requesterHasOrdre)) {
+    throw new Error("This seat cannot resolve this Ordre d'Emmerlaus interrupt");
+  }
+  if (ownerSeat.seatNumber !== pendingInterrupt.ownerSeatNumber && requesterHasOrdre) {
+    appendServerDebugLog(
+      match,
+      "ordre",
+      `Corrected pending Ordre owner from seat ${pendingInterrupt.ownerSeatNumber} to seat ${ownerSeat.seatNumber}`
+    );
+    pendingInterrupt.ownerSeatNumber = ownerSeat.seatNumber;
+  }
+
+  if (request.choice === "pass") {
+    game.pendingOrdreInterrupt = undefined;
+    appendServerDebugLog(
+      match,
+      "ordre",
+      `Seat ${ownerSeat.seatNumber} passed on interrupting ${requireDefinition(pendingInterrupt.interruptedCard.cardId).name}`
+    );
+    if (pendingInterrupt.context === "active_card" && pendingInterrupt.activeCardContinuation != null) {
+      const continuation = pendingInterrupt.activeCardContinuation;
+      resolveRemovedCardPlay(
+        match,
+        pendingInterrupt.interruptedActorSeatNumber,
+        pendingInterrupt.interruptedCard,
+        requireDefinition(pendingInterrupt.interruptedCard.cardId),
+        continuation.request,
+        continuation.forcedFollowUp,
+        {
+          skipStoredCardResolution: continuation.skipStoredCardResolution,
+          fizzleIfInvalid: continuation.fizzleIfInvalid,
+          summaryOverride: continuation.summaryOverride,
+          presentationCard: continuation.presentationCard,
+          sorcellerieSacrificeChoiceResolved: continuation.sorcellerieSacrificeChoiceResolved,
+          sorcellerieSacrificeWaived: continuation.sorcellerieSacrificeWaived,
+          ordreInterruptResolved: true
+        }
+      );
+      return;
+    }
+
+    if (pendingInterrupt.context === "response_card" && pendingInterrupt.responseCardContinuation != null) {
+      continueCommittedPendingResponse(
+        match,
+        pendingInterrupt.responseCardContinuation.responderSeatNumber,
+        pendingInterrupt.responseCardContinuation.responseChoice
+      );
+      return;
+    }
+
+    refreshSeatSummaries(match);
+    return;
+  }
+
+  const ownerState = getStoredSeat(game, ownerSeat.seatNumber);
+  const ordreHandCard = ownerState.hand.find((card) => card.cardId === ORDRE_DEMMERLAUS_CARD_ID);
+  if (ordreHandCard == null) {
+    throw new Error("Ordre d'Emmerlaus is no longer in hand");
+  }
+  const ordreCard = moveCardFromHand(ownerState.hand, ordreHandCard.instanceId);
+  discardInstances(game, [ordreCard]);
+
+  const interruptedDefinition = requireDefinition(pendingInterrupt.interruptedCard.cardId);
+  const ordreDefinition = requireDefinition(ORDRE_DEMMERLAUS_CARD_ID);
+  const ordreName = ordreDefinition.name;
+  appendDealerMessage(
+    match,
+    `${ownerSeat.displayName} cancels ${interruptedDefinition.name} with ${ordreName}.`
+  );
+  pushPresentationEvent(match, {
+    type: "ordre_interrupt",
+    seatNumber: ownerSeat.seatNumber,
+    actorSeatNumber: pendingInterrupt.interruptedActorSeatNumber,
+    cardName: interruptedDefinition.name,
+    ordreCard: buildCardView(ordreCard, ordreDefinition, "discard", false),
+    interruptedCard: buildCardView(pendingInterrupt.interruptedCard, interruptedDefinition, "discard", false)
+  });
+  appendServerDebugLog(
+    match,
+    "ordre",
+    `Seat ${ownerSeat.seatNumber} canceled ${interruptedDefinition.name} from seat ${pendingInterrupt.interruptedActorSeatNumber}`
+  );
+
+  if (pendingInterrupt.context === "active_card") {
+    discardInstances(game, [pendingInterrupt.interruptedCard]);
+    const continuation = pendingInterrupt.activeCardContinuation;
+    if (continuation?.forcedFollowUp != null) {
+      game.forcedFollowUp = undefined;
+    }
+    game.pendingOrdreInterrupt = undefined;
+    finalizeResolvedAction(match, continuation?.forcedFollowUp?.turnOwnerSeatNumber ?? pendingInterrupt.interruptedActorSeatNumber);
+    return;
+  }
+
+  if (pendingInterrupt.context === "response_card" && pendingInterrupt.responseCardContinuation != null) {
+    const pendingAction = game.pendingAction;
+    const responder = pendingAction?.responders.find((candidate) =>
+      candidate.seatNumber === pendingInterrupt.responseCardContinuation?.responderSeatNumber
+    );
+    if (responder != null) {
+      discardInstances(game, responder.consumedCards);
+      responder.consumedCards = [];
+      responder.choice = "pass";
+      responder.state = "locked";
+    }
+    game.pendingOrdreInterrupt = undefined;
+    continueCommittedPendingResponse(match, pendingInterrupt.responseCardContinuation.responderSeatNumber, "pass");
+    return;
+  }
+
+  game.pendingOrdreInterrupt = undefined;
+  refreshSeatSummaries(match);
 }
 
 function resolvePendingTurnContinuation(
@@ -10812,6 +11362,79 @@ export function resolvePendingSacrificeChoice(match: StoredMatchState, userId: s
   autoRespondIfNeeded(match);
 }
 
+export function resolvePendingSorcellerieSacrificeChoice(match: StoredMatchState, userId: string, waiveSacrifice: boolean): void {
+  const game = match.internalGame;
+  const pendingChoice = game?.pendingSorcellerieSacrificeChoice;
+  if (game == null || pendingChoice == null) {
+    throw new Error("No pending Sorcellerie sacrifice choice");
+  }
+
+  const actorSeat = match.seats.find((seat) => seat.userId === userId);
+  if (actorSeat == null || actorSeat.seatNumber !== pendingChoice.actorSeatNumber) {
+    throw new Error("This seat cannot choose the Sorcellerie sacrifice option");
+  }
+
+  const pendingAction = game.pendingAction;
+  const directResolution = pendingChoice.directResolution;
+  if (directResolution == null && (pendingAction == null || pendingAction.boxId !== pendingChoice.boxId)) {
+    throw new Error("Pending action no longer matches the Sorcellerie sacrifice choice");
+  }
+
+  const definition = requireDefinition(pendingChoice.sourceCard.cardId);
+  if (waiveSacrifice) {
+    const actorState = getStoredSeat(game, actorSeat.seatNumber);
+    const duplicateCard = actorState.hand.find((card) => card.instanceId === pendingChoice.duplicateCard.instanceId && card.cardId === pendingChoice.sourceCard.cardId);
+    if (duplicateCard == null) {
+      throw new Error("Duplicate Sorcellerie card is no longer in hand");
+    }
+
+    const discardedDuplicate = moveCardFromHand(actorState.hand, duplicateCard.instanceId);
+    discardInstances(game, [discardedDuplicate]);
+    if (pendingAction != null) {
+      pendingAction.sorcellerieSacrificeWaived = true;
+    }
+    appendDealerMessage(match, `${actorSeat.displayName} discards a duplicate ${definition.name} to waive the HP sacrifice.`);
+    appendServerDebugLog(
+      match,
+      "sacrifice",
+      `Seat ${actorSeat.seatNumber} discarded duplicate ${definition.name} to waive the Sorcellerie HP sacrifice${pendingChoice.boxId != null ? ` [box ${pendingChoice.boxId}]` : ""}`
+    );
+  } else {
+    if (pendingAction != null) {
+      pendingAction.sorcellerieSacrificeWaived = false;
+    }
+    appendServerDebugLog(
+      match,
+      "sacrifice",
+      `Seat ${actorSeat.seatNumber} kept duplicate ${definition.name}; HP sacrifice remains pending${pendingChoice.boxId != null ? ` [box ${pendingChoice.boxId}]` : ""}`
+    );
+  }
+
+  game.pendingSorcellerieSacrificeChoice = undefined;
+  if (directResolution != null) {
+    resolveRemovedCardPlay(
+      match,
+      pendingChoice.actorSeatNumber,
+      pendingChoice.sourceCard,
+      definition,
+      directResolution.request,
+      directResolution.forcedFollowUp,
+      {
+        skipStoredCardResolution: directResolution.skipStoredCardResolution,
+        fizzleIfInvalid: directResolution.fizzleIfInvalid,
+        summaryOverride: directResolution.summaryOverride,
+        presentationCard: directResolution.presentationCard,
+        sorcellerieSacrificeChoiceResolved: true,
+        sorcellerieSacrificeWaived: waiveSacrifice
+      }
+    );
+    return;
+  }
+
+  refreshSeatSummaries(match);
+  autoRespondIfNeeded(match);
+}
+
 export function resolvePendingCurseRelease(
   match: StoredMatchState,
   userId: string,
@@ -10922,12 +11545,7 @@ function resolveRemovedCardPlay(
   definition: BaseCardDefinition,
   request: PlayCardRequest,
   forcedFollowUp?: StoredForcedFollowUpState,
-  options?: {
-    skipStoredCardResolution?: boolean;
-    fizzleIfInvalid?: boolean;
-    summaryOverride?: string;
-    presentationCard?: CardView;
-  }
+  options?: RemovedCardPlayOptions
 ): void {
   const game = match.internalGame;
   if (game == null) {
@@ -11058,6 +11676,10 @@ function resolveRemovedCardPlay(
     }
 
     throw new Error(invalidReason);
+  }
+
+  if (request.mode === "active" && queueOrdreActiveCardInterrupt(match, actorSeatNumber, removedCard, definition, request, effectiveTargetSeatNumbers, forcedFollowUp, options)) {
+    return;
   }
 
   if (request.mode === "active") {
@@ -11386,6 +12008,29 @@ function resolveRemovedCardPlay(
     return;
   }
 
+  let sorcellerieSacrificeWaived = options?.sorcellerieSacrificeWaived === true;
+  if (options?.sorcellerieSacrificeChoiceResolved !== true) {
+    const sorcellerieChoiceResult = queueDirectSorcellerieSacrificeChoice(
+      match,
+      actorSeatNumber,
+      removedCard,
+      {
+        request: { ...request },
+        forcedFollowUp: forcedFollowUp == null ? undefined : { ...forcedFollowUp },
+        skipStoredCardResolution: options?.skipStoredCardResolution,
+        fizzleIfInvalid: options?.fizzleIfInvalid,
+        summaryOverride: options?.summaryOverride,
+        presentationCard: options?.presentationCard
+      }
+    );
+    if (sorcellerieChoiceResult === "queued") {
+      return;
+    }
+    if (sorcellerieChoiceResult === "waived") {
+      sorcellerieSacrificeWaived = true;
+    }
+  }
+
   const boxId = randomUUID();
   appendServerDebugLog(match, "box", `Opened box ${boxId} for seat ${actorSeatNumber} using ${definition.name}`);
   pushGameEvent(match, {
@@ -11406,6 +12051,10 @@ function resolveRemovedCardPlay(
   let currentTargetSeatNumbers = [...effectiveTargetSeatNumbers];
   let currentFinalizeActorSeatNumber = forcedFollowUp?.turnOwnerSeatNumber;
   for (const effect of definition.rules.effects) {
+    if (sorcellerieSacrificeWaived && effect.type === "pay_hp") {
+      continue;
+    }
+
     const pausedForObjectChoice = applyEffect(
       match,
       currentActorSeatNumber,
@@ -11702,6 +12351,14 @@ export function playCardFromHand(match: StoredMatchState, userId: string, reques
     throw new Error("Resolve the current action first");
   }
 
+  if (game.pendingSorcellerieSacrificeChoice != null) {
+    throw new Error("Resolve the current action first");
+  }
+
+  if (game.pendingOrdreInterrupt != null) {
+    throw new Error("Resolve the current action first");
+  }
+
   if (game.pendingCurseRelease != null) {
     throw new Error("Resolve the current action first");
   }
@@ -11950,6 +12607,57 @@ function getBotResponseChoiceForPriorityCard(
   return undefined;
 }
 
+function isBotOrdreSelfRemovalStatus(status: StoredSeatStatus): boolean {
+  const definition = requireDefinition(status.cardId);
+  return (
+    isAnnulationReleasableStatus(definition)
+    || FULL_TURN_NO_RIPOSTE_STATUS_CARD_IDS.has(status.cardId)
+    || PERSISTENT_OWNER_TURN_MASS_DAMAGE_BY_CARD_ID[status.cardId] != null
+    || status.cardId === "detonation-13"
+  );
+}
+
+function pickBotOrdreTargetPermanentInstanceId(match: StoredMatchState, seatNumber: number): string | undefined {
+  const game = match.internalGame;
+  if (game == null) {
+    return undefined;
+  }
+
+  type Candidate = { instanceId: string; priority: number };
+  const candidates: Candidate[] = [];
+  for (const owner of sortBySeatNumber(game.seatStates)) {
+    if (!owner.alive) {
+      continue;
+    }
+
+    const isSelf = owner.seatNumber === seatNumber;
+    for (const status of owner.statuses) {
+      const isSelfRemoval = isSelf && isBotOrdreSelfRemovalStatus(status);
+      const isOpponentEffect = !isSelf && !isBotOrdreSelfRemovalStatus(status);
+      if (isSelfRemoval || isOpponentEffect) {
+        candidates.push({
+          instanceId: status.instanceId,
+          priority: isSelfRemoval ? 100 : 80
+        });
+      }
+    }
+
+    if (isSelf) {
+      continue;
+    }
+
+    for (const object of owner.objects) {
+      candidates.push({
+        instanceId: object.instanceId,
+        priority: object.cardId === "sanctuaire-demmerlaus" ? 95 : 70
+      });
+    }
+  }
+
+  const bestPriority = candidates.reduce((best, candidate) => Math.max(best, candidate.priority), 0);
+  return pickRandom(candidates.filter((candidate) => candidate.priority === bestPriority))?.instanceId;
+}
+
 export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number): PlayCardRequest | undefined {
   const game = match.internalGame;
   if (game == null) {
@@ -12078,6 +12786,14 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
         }
         break;
       case "target_object": {
+        if (isOrdreDemmerlausDefinition(definition)) {
+          request.targetObjectInstanceId = pickBotOrdreTargetPermanentInstanceId(match, seatNumber);
+          if (request.targetObjectInstanceId == null) {
+            continue;
+          }
+          break;
+        }
+
         const allowedObjectSlots = getAllowedObjectSlotsForDefinition(definition);
         const ownerSeatNumber = pickRandom(
           listTargetableObjectOwners(game, seatNumber, definition).filter((candidateSeatNumber) =>
@@ -12090,7 +12806,7 @@ export function buildBotPlayRequest(match: StoredMatchState, seatNumber: number)
 
         const ownerState = getStoredSeat(game, ownerSeatNumber);
         const targetableObjects = ownerState.objects.filter((card) =>
-          requireDefinition(card.cardId).category.code === "O"
+          (canTargetSeatStatuses(definition) || requireDefinition(card.cardId).category.code === "O")
           && objectMatchesAllowedSlots(card.cardId, allowedObjectSlots)
         );
         const targetableStatuses = canTargetSeatStatuses(definition)
@@ -12169,6 +12885,14 @@ function buildBotViergePlayRequest(
       }
       break;
     case "target_object": {
+      if (isOrdreDemmerlausDefinition(replayDefinition)) {
+        request.targetObjectInstanceId = pickBotOrdreTargetPermanentInstanceId(match, seatNumber);
+        if (request.targetObjectInstanceId == null) {
+          return undefined;
+        }
+        break;
+      }
+
       const allowedObjectSlots = getAllowedObjectSlotsForDefinition(replayDefinition);
       const ownerSeatNumber = pickRandom(
         listTargetableObjectOwners(game, seatNumber, replayDefinition).filter((candidateSeatNumber) =>
@@ -12181,7 +12905,7 @@ function buildBotViergePlayRequest(
 
       const ownerState = getStoredSeat(game, ownerSeatNumber);
       const targetableObjects = ownerState.objects.filter((card) =>
-        requireDefinition(card.cardId).category.code === "O"
+        (canTargetSeatStatuses(replayDefinition) || requireDefinition(card.cardId).category.code === "O")
         && objectMatchesAllowedSlots(card.cardId, allowedObjectSlots)
       );
       const targetableStatuses = canTargetSeatStatuses(replayDefinition)
