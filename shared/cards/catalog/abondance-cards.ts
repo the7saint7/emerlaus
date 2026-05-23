@@ -818,11 +818,11 @@ export const abondanceCardDefinitions = [
         },
         resistanceAccrueAllowed: false,
         annulationAllowed: true,
-        annulationCardsRequired: 0,
+        annulationCardsRequired: 1,
         mirrorAllowed: false
       },
       implementation: {
-        status: "generic",
+        status: "manual",
         notes: "Self-heal of 50 HP. Fully handled by the generic heal effect. Annulation allowed during defense window."
       }
     }
