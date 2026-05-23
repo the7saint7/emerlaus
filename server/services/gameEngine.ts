@@ -5277,9 +5277,8 @@ function resolveTelekinesie(
 
   const definition = requireDefinition("telekinesie");
   const targetState = getStoredSeat(game, targetSeatNumber);
-  const revealedCards = targetState.hand.splice(0);
+  const revealedCards = [...targetState.hand];
   const projectedCards = revealedCards.filter((card) => requireDefinition(card.cardId).category.code === "AD");
-  const nonProjectedCards = revealedCards.filter((card) => requireDefinition(card.cardId).category.code !== "AD");
 
   pushGameEvent(match, {
     id: randomUUID(),
@@ -5293,13 +5292,8 @@ function resolveTelekinesie(
     projectedCards: projectedCards.map((card) => buildCardView(card, requireDefinition(card.cardId), "hand", false))
   });
 
-  if (nonProjectedCards.length > 0) {
-    discardInstances(game, nonProjectedCards);
-  }
-
   if (projectedCards.length === 0) {
-    drawCards(match, targetSeatNumber, game.minimumHandSize);
-    appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} reveals no AD cards for ${definition.name} and redraws.`);
+    appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} reveals no AD cards for ${definition.name}.`);
     return;
   }
 
@@ -5322,14 +5316,15 @@ function resolveTelekinesie(
       targetSeatNumber,
       card: buildCardView(projectedCard, requireDefinition(projectedCard.cardId), "hand", false)
     });
-    resolveTelekinesieProjectedCard(match, actorSeatNumber, targetSeatNumber, projectedCard, boxId);
-    discardInstances(game, [projectedCard]);
+    const playedCard = moveCardFromHand(getStoredSeat(game, targetSeatNumber).hand, projectedCard.instanceId);
+    resolveTelekinesieProjectedCard(match, actorSeatNumber, targetSeatNumber, playedCard, boxId);
+    discardInstances(game, [playedCard]);
   }
 
   if (getStoredSeat(game, targetSeatNumber).alive) {
-    drawCards(match, targetSeatNumber, game.minimumHandSize);
+    drawCards(match, targetSeatNumber, projectedCards.length);
   }
-  appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} redraws after ${definition.name}.`);
+  appendDealerMessage(match, `${getPublicSeat(match, targetSeatNumber).displayName} draws ${projectedCards.length} replacement card(s) after ${definition.name}.`);
 }
 
 function resolveTelekinesieProjectedCard(

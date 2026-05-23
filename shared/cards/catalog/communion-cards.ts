@@ -393,7 +393,7 @@ export const communionCardDefinitions = [
     implementation: {
       status: "manual",
       handler: "telekinesie-project-ad-hand",
-      notes: "Reveals target hand, fires each AD card in that hand at the target without response, then target redraws."
+      notes: "Reveals target hand, fires each AD card in that hand at the target without response, keeps non-AD cards, then draws one replacement card per projected AD card."
     }
   }),
   makeCard({
