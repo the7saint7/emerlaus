@@ -1321,6 +1321,76 @@ function resolveChosenSacrificeDamageAmount(chosenAmount: number, expression: Ex
   return chosenAmount * (expression.multiplier ?? 1);
 }
 
+function evaluateDeterministicHpCost(
+  match: StoredMatchState,
+  expression: RollExpression,
+  actorSeat: SeatState,
+  targetSeat?: SeatState
+): number | undefined {
+  switch (expression.kind) {
+    case "fixed":
+      if (expression.scaleBy === "power") {
+        return expression.amount + actorSeat.powerLevel! * (expression.bonusPerPower ?? 1);
+      }
+
+      if (expression.scaleBy === "target_power") {
+        return targetSeat == null
+          ? undefined
+          : expression.amount + targetSeat.powerLevel! * (expression.bonusPerPower ?? 1);
+      }
+
+      if (expression.scaleBy === "multiply_power") {
+        return expression.amount * Math.max(0, actorSeat.powerLevel! + (expression.powerBonus ?? 0));
+      }
+
+      if (expression.scaleBy === "multiply_target_power") {
+        return targetSeat == null
+          ? undefined
+          : expression.amount * Math.max(0, targetSeat.powerLevel! + (expression.powerBonus ?? 0));
+      }
+
+      return expression.amount;
+    case "current_hp_fraction":
+      return Math.max(1, Math.ceil((targetSeat?.hp ?? actorSeat.hp) * expression.numerator / expression.denominator));
+    case "total_active_players_times":
+      return expression.amount * (match.internalGame == null ? 0 : aliveSeatNumbers(match.internalGame).length);
+    case "dice":
+    case "dice_per_power":
+    case "sacrifice_amount":
+      return undefined;
+  }
+}
+
+function getDeterministicPayHpCost(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): number | undefined {
+  const actorSeat = getActorSeatForAction(match, actorSeatNumber, definition, "hand");
+  let total = 0;
+  for (const effect of definition.rules.effects) {
+    if (effect.type !== "pay_hp") {
+      continue;
+    }
+
+    const amount = evaluateDeterministicHpCost(match, effect.amount, actorSeat, actorSeat);
+    if (amount == null) {
+      return undefined;
+    }
+    total += amount;
+  }
+
+  return total;
+}
+
+function getUnaffordablePayHpReason(match: StoredMatchState, actorSeatNumber: number, definition: BaseCardDefinition): string | undefined {
+  const cost = getDeterministicPayHpCost(match, actorSeatNumber, definition);
+  if (cost == null || cost <= 0) {
+    return undefined;
+  }
+
+  const actorSeat = getPublicSeat(match, actorSeatNumber);
+  return cost >= actorSeat.hp
+    ? `This sacrifice requires ${cost} HP and would kill you`
+    : undefined;
+}
+
 function isTargetDependentRollExpression(expression: RollExpression): boolean {
   if (expression.kind === "current_hp_fraction") {
     return true;
@@ -2402,6 +2472,11 @@ function canPlayCardActively(match: StoredMatchState, actorSeatNumber: number, c
     && getEquippedPowerRings(actorSeat).length === 0
   ) {
     return { canPlay: false, reason: "This card requires an equipped power ring" };
+  }
+
+  const unaffordablePayHpReason = getUnaffordablePayHpReason(match, actorSeatNumber, definition);
+  if (unaffordablePayHpReason != null) {
+    return { canPlay: false, reason: unaffordablePayHpReason };
   }
 
   if (
@@ -3938,11 +4013,12 @@ function queueSacrificeChoice(
     return false;
   }
 
+  const survivableMaxAmount = Math.max(0, maxAmount - 1);
   game.pendingSacrificeChoice = {
     boxId,
     actorSeatNumber,
     sourceCard,
-    maxAmount
+    maxAmount: survivableMaxAmount
   };
   appendServerDebugLog(
     match,
@@ -8430,34 +8506,15 @@ function beginPendingAction(
     createdAt: new Date().toISOString()
   };
 
-  for (const effect of definition.rules.effects) {
-    if (effect.type !== "pay_hp") {
-      continue;
-    }
-
-    applyEffect(
-      match,
-      actorSeatNumber,
-      removedCard,
-      definition,
-      effect,
-      targetSeatNumbers,
-      request.targetObjectInstanceId,
-      boxId,
-      1,
-      undefined,
-      "hand",
-      powerSourceSeatNumber
-    );
-  }
-
   if (sharedSacrificeEffect != null) {
     const actorHp = getPublicSeat(match, actorSeatNumber).hp;
     if (queueSacrificeChoice(match, actorSeatNumber, removedCard, actorHp, boxId)) {
       return;
     }
 
-    game.pendingAction.sharedSacrificeAmount = Math.max(1, Math.floor(actorHp / 2));
+    game.pendingAction.sharedSacrificeAmount = actorHp > 1
+      ? Math.max(1, Math.floor(actorHp / 2))
+      : 0;
     appendServerDebugLog(
       match,
       "sacrifice",
@@ -8477,6 +8534,54 @@ function beginPendingAction(
   }
 
   autoRespondIfNeeded(match);
+}
+
+function applyDeferredPayHpEffectsForPendingAction(
+  match: StoredMatchState,
+  pendingAction: StoredPendingActionState,
+  definition: BaseCardDefinition
+): boolean {
+  if (pendingAction.deferredPayHpApplied === true) {
+    return true;
+  }
+
+  const payHpEffects = definition.rules.effects.filter(
+    (effect): effect is Extract<CardEffect, { type: "pay_hp" }> => effect.type === "pay_hp"
+  );
+  if (payHpEffects.length === 0) {
+    return true;
+  }
+
+  const costSeatNumber = pendingAction.mirrorOriginActorSeatNumber ?? pendingAction.actorSeatNumber;
+  const unaffordablePayHpReason = getUnaffordablePayHpReason(match, costSeatNumber, definition);
+  if (unaffordablePayHpReason != null) {
+    appendDealerMessage(match, `${getPublicSeat(match, costSeatNumber).displayName} cannot pay the sacrifice for ${definition.name}.`);
+    appendServerDebugLog(
+      match,
+      "effect",
+      `${definition.name} sacrifice failed for seat ${costSeatNumber}: ${unaffordablePayHpReason}${pendingAction.boxId != null ? ` [box ${pendingAction.boxId}]` : ""}`
+    );
+    return false;
+  }
+
+  pendingAction.deferredPayHpApplied = true;
+  for (const effect of payHpEffects) {
+    applyEffect(
+      match,
+      costSeatNumber,
+      pendingAction.storedCard,
+      definition,
+      effect,
+      [costSeatNumber],
+      pendingAction.targetObjectInstanceId,
+      pendingAction.boxId,
+      1,
+      undefined,
+      pendingAction.sourceZone ?? "hand",
+      pendingAction.powerSourceSeatNumber
+    );
+  }
+  return true;
 }
 
 function resumeAfterDeathSearch(
@@ -8665,6 +8770,10 @@ function resolvePerDamageEffectResponder(match: StoredMatchState, responder: Sto
       : 0;
 
     if (amount > 0) {
+      if (!applyDeferredPayHpEffectsForPendingAction(match, pendingAction, definition)) {
+        continue;
+      }
+
       pushPresentationEvent(match, {
         boxId: pendingAction.boxId,
         type: "attack_impact",
@@ -8914,6 +9023,10 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
         }
 
         if (!resisted) {
+          if (!applyDeferredPayHpEffectsForPendingAction(match, pendingAction, definition)) {
+            continue;
+          }
+
           const pausedForObjectChoice = applyEffect(
             match,
             currentActorSeatNumber,
@@ -8985,6 +9098,10 @@ function resolvePerTargetResponder(match: StoredMatchState, responder: StoredPen
       ) * (successfulHitDamageContext?.damageMultiplier ?? 1);
 
       if (amount > 0) {
+        if (!applyDeferredPayHpEffectsForPendingAction(match, pendingAction, definition)) {
+          continue;
+        }
+
         pushPresentationEvent(match, {
           boxId: pendingAction.boxId,
           type: "attack_impact",
@@ -9494,6 +9611,10 @@ function resolvePendingAction(match: StoredMatchState): void {
           !resistedTargets.has(seatNumber) &&
           getStoredSeat(game, seatNumber).alive
       );
+      if (remainingTargets.length > 0 && !applyDeferredPayHpEffectsForPendingAction(match, pendingAction, definition)) {
+        continue;
+      }
+
       const pausedForObjectChoice = applyEffect(
         match,
         pendingAction.actorSeatNumber,
@@ -9587,16 +9708,6 @@ function resolvePendingAction(match: StoredMatchState): void {
       const successfulHitDamageContext = successfulHitDamageContextBySeatNumber.get(targetSeatNumber);
       const actorSeat = successfulHitDamageContext?.actorSeat ?? defaultActorSeat;
       const willTakeHpLossAfterResistance = effectMayApplyHpLossAfterResistance(definition, effect, resistedTargets.has(targetSeatNumber));
-      if (willTakeHpLossAfterResistance) {
-        pushPresentationEvent(match, {
-          boxId: pendingAction.boxId,
-          type: "attack_impact",
-          actorSeatNumber: pendingAction.actorSeatNumber,
-          targetSeatNumber,
-          cardName: definition.name
-        });
-      }
-
       const baseAmount = willTakeHpLossAfterResistance
         ? sharedDamageBase
           ?? evaluateRoll(
@@ -9621,6 +9732,18 @@ function resolvePendingAction(match: StoredMatchState): void {
         ) * (successfulHitDamageContext?.damageMultiplier ?? timedPotionDamageMultiplier)
         : 0;
 
+      if (amount > 0 && !applyDeferredPayHpEffectsForPendingAction(match, pendingAction, definition)) {
+        continue;
+      }
+      if (amount > 0) {
+        pushPresentationEvent(match, {
+          boxId: pendingAction.boxId,
+          type: "attack_impact",
+          actorSeatNumber: pendingAction.actorSeatNumber,
+          targetSeatNumber,
+          cardName: definition.name
+        });
+      }
       const dealt = applyDamage(match, targetSeatNumber, amount, definition, false, pendingAction.boxId, pendingAction.actorSeatNumber);
       if (effect.type === "lifesteal" && dealt > 0 && getStoredSeat(game, pendingAction.actorSeatNumber).alive) {
         healBySeatNumber.set(
@@ -9646,6 +9769,10 @@ function resolvePendingAction(match: StoredMatchState): void {
       const amount = baseAmount * deferredTimedPotionDamageMultiplier;
 
       if (amount > 0) {
+        if (!applyDeferredPayHpEffectsForPendingAction(match, pendingAction, definition)) {
+          continue;
+        }
+
         pushPresentationEvent(match, {
           boxId: pendingAction.boxId,
           type: "attack_impact",
@@ -11512,6 +11639,11 @@ function validateActionRequestBeforeHandRemoval(
     )
   ) {
     throw new Error("Puissance totale requires an A/AD/AM card in hand");
+  }
+
+  const unaffordablePayHpReason = getUnaffordablePayHpReason(match, actorSeatNumber, definition);
+  if (unaffordablePayHpReason != null) {
+    throw new Error(unaffordablePayHpReason);
   }
 
   if (

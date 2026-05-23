@@ -60,6 +60,7 @@ export interface StoredPendingActionState extends Omit<PendingActionState, "card
   sourceZone?: "hand" | "object";
   skipStoredCardResolution?: boolean;
   sharedSacrificeAmount?: number;
+  deferredPayHpApplied?: boolean;
   powerSourceSeatNumber?: number;
   forceAllOpponents?: boolean;
   corruptionPowerRingDamage?: number;
