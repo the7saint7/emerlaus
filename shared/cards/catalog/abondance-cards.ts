@@ -992,7 +992,7 @@ export const abondanceCardDefinitions = [
       implementation: {
         status: "manual",
         handler: "pacte-tenebreux",
-        notes: "Body-bound persistent self-status. Hand-played AD and AM cards gain +2 temporary power, and opponents take -3 on resistance against those hand-played AD and AM attacks."
+        notes: "Body-bound persistent self-status. Hand-played AD and AM cards gain +2 temporary power, and opponents take -3 on resistance against those hand-played AD and AM attacks. Bâton d’attaque massive object fires also get the -3 resistance exception."
       }
     }
   ),

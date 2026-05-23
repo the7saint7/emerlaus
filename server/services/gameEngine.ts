@@ -4687,8 +4687,16 @@ function computeResistanceThreshold(match: StoredMatchState, seatNumber: number,
 
     if (
       pendingAction.actorSeatNumber !== seatNumber
-      && pendingAction.sourceZone === "hand"
-      && (actionDefinition.category.code === "AD" || actionDefinition.category.code === "AM")
+      && (
+        (
+          pendingAction.sourceZone === "hand"
+          && (actionDefinition.category.code === "AD" || actionDefinition.category.code === "AM")
+        )
+        || (
+          pendingAction.sourceZone === "object"
+          && actionDefinition.id === MASS_ATTACK_STAFF_CARD_ID
+        )
+      )
       && getStoredSeat(game, pendingAction.actorSeatNumber).statuses.some((status) => status.cardId === "pacte-tenebreux")
     ) {
       modifier -= 3;
